@@ -11,8 +11,8 @@ export default function Home({ session }) {
 
   const load = async () => {
     const [{ data }, { data: o }] = await Promise.all([
-      supabase.from('deals').select('id,slug,title,address,status,created_at').order('created_at', { ascending: false }),
-      supabase.from('owners').select('email'),
+      supabase.from('commercial_deals').select('id,slug,title,address,status,created_at').order('created_at', { ascending: false }),
+      supabase.from('commercial_owners').select('email'),
     ]);
     setDeals(data || []);
     setOwner((o || []).length > 0);
@@ -24,9 +24,9 @@ export default function Home({ session }) {
     const slug = slugify(form.slug || form.title);
     const folder = (form.folder.match(/[A-Za-z0-9_-]{20,}/) || [''])[0];
     setMsg('Creating…');
-    const { data, error } = await supabase.from('deals').insert({ slug, title: form.title.trim(), address: form.address.trim() }).select('id,slug').single();
+    const { data, error } = await supabase.from('commercial_deals').insert({ slug, title: form.title.trim(), address: form.address.trim() }).select('id,slug').single();
     if (error) return setMsg(error.code === '23505' ? 'That page name is taken. Pick another.' : 'Couldn’t create the deal.');
-    if (folder) await supabase.from('deal_private').insert({ deal_id: data.id, drive_folder_id: folder });
+    if (folder) await supabase.from('commercial_deal_private').insert({ deal_id: data.id, drive_folder_id: folder });
     setForm({ title: '', address: '', slug: '', folder: '' });
     setMsg('');
     window.location.hash = `#/d/${data.slug}`;

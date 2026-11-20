@@ -9,7 +9,7 @@ const MAX = 20 * 1024 * 1024;
 export function useUploads(deal) {
   const [rows, setRows] = useState(null);
   const load = async () => {
-    const { data } = await supabase.from('uploads').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false });
+    const { data } = await supabase.from('commercial_uploads').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false });
     const list = data || [];
     if (list.length) {
       const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(list.map((r) => r.storage_path), 3600);
@@ -21,7 +21,7 @@ export function useUploads(deal) {
   useEffect(() => {
     load();
     const sub = supabase.channel(`u-${deal.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'uploads', filter: `deal_id=eq.${deal.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'commercial_uploads', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
   }, [deal.id]);
@@ -43,7 +43,7 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
       const path = `${deal.id}/${crypto.randomUUID()}-${safe}`;
       const up = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || 'application/octet-stream' });
       if (up.error) { setBusy(`${f.name} didn’t upload. Try again.`); continue; }
-      const { error } = await supabase.from('uploads').insert({
+      const { error } = await supabase.from('commercial_uploads').insert({
         deal_id: deal.id, storage_path: path, file_name: f.name.slice(0, 200), mime: f.type || 'application/octet-stream',
         size_bytes: f.size, kind: f.type.startsWith('image/') ? 'photo' : 'document',
         visibility: allowShare && share ? 'seller' : 'team', note: note.slice(0, 500), uploaded_by_email: me.email, uploaded_by_role: role,
@@ -78,7 +78,7 @@ export function FileList({ rows, canShare, onChange }) {
   if (!rows) return <Empty>Loading…</Empty>;
   if (!rows.length) return <Empty>Nothing uploaded yet.</Empty>;
   const toggle = async (r) => {
-    await supabase.from('uploads').update({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }).eq('id', r.id);
+    await supabase.from('commercial_uploads').update({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }).eq('id', r.id);
     onChange?.();
   };
   return (

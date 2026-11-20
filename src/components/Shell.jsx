@@ -5,7 +5,7 @@ export default function Shell({ children, session, title, subtitle, role }) {
     <div className="min-h-screen">
       <header className="border-b border-line bg-white/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <a href="#/" className="font-display text-lg font-semibold tracking-tight">Deal Room</a>
+          <a href="#/" className="font-display text-lg font-semibold tracking-tight">Oilgate Commercial</a>
           {session && (
             <div className="flex items-center gap-3 text-sm text-ink-soft">
               {role && <span className="rounded-full bg-warm-soft px-2.5 py-0.5 text-xs font-medium text-ink">{role}</span>}

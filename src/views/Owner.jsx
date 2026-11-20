@@ -25,19 +25,19 @@ function People({ deal }) {
   const [rows, setRows] = useState(null);
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
-  const load = () => supabase.from('deal_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
+  const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
   const add = async (e) => {
     e.preventDefault();
     setErr('');
     const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: f.role === 'realtor' ? topic() : null };
-    const { error } = await supabase.from('deal_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
+    const { error } = await supabase.from('commercial_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
     if (error) return setErr(error.message);
     setF({ email: '', role: 'realtor', display_name: '' });
     load();
   };
-  const setStatus = async (r, status) => { await supabase.from('deal_members').update({ status }).eq('id', r.id); load(); };
+  const setStatus = async (r, status) => { await supabase.from('commercial_members').update({ status }).eq('id', r.id); load(); };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -86,7 +86,7 @@ function SellerEditor({ deal, onSaved }) {
   const addRow = (key) => setC({ ...c, [key]: [...(c[key] || []), { label: '', value: '' }] });
   const delRow = (key, i) => setC({ ...c, [key]: c[key].filter((_, j) => j !== i) });
   const save = async () => {
-    const { data, error } = await supabase.from('deals').update({ seller_content: c }).eq('id', deal.id).select().single();
+    const { data, error } = await supabase.from('commercial_deals').update({ seller_content: c }).eq('id', deal.id).select().single();
     setSaved(error ? error.message : 'Saved. The seller sees this now.');
     if (data) onSaved(data);
   };
@@ -124,11 +124,11 @@ function Settings({ deal, onSaved }) {
   const [folder, setFolder] = useState('');
   const [d, setD] = useState({ title: deal.title, address: deal.address, status: deal.status });
   const [msg, setMsg] = useState('');
-  useEffect(() => { supabase.from('deal_private').select('drive_folder_id').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setFolder(data?.drive_folder_id || '')); }, [deal.id]);
+  useEffect(() => { supabase.from('commercial_deal_private').select('drive_folder_id').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setFolder(data?.drive_folder_id || '')); }, [deal.id]);
   const save = async () => {
     const id = (folder.match(/folders\/([A-Za-z0-9_-]+)/) || [])[1] || folder.trim();
-    const a = await supabase.from('deals').update(d).eq('id', deal.id).select().single();
-    const b = id ? await supabase.from('deal_private').upsert({ deal_id: deal.id, drive_folder_id: id, updated_at: new Date().toISOString() }) : { error: null };
+    const a = await supabase.from('commercial_deals').update(d).eq('id', deal.id).select().single();
+    const b = id ? await supabase.from('commercial_deal_private').upsert({ deal_id: deal.id, drive_folder_id: id, updated_at: new Date().toISOString() }) : { error: null };
     setMsg(a.error?.message || b.error?.message || 'Saved.');
     if (a.data) onSaved(a.data);
   };
@@ -152,9 +152,9 @@ function Settings({ deal, onSaved }) {
 function Notes({ deal, me }) {
   const [rows, setRows] = useState([]);
   const [body, setBody] = useState('');
-  const load = () => supabase.from('owner_notes').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setRows(data || []));
+  const load = () => supabase.from('commercial_owner_notes').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
-  const add = async (e) => { e.preventDefault(); if (!body.trim()) return; await supabase.from('owner_notes').insert({ deal_id: deal.id, body: body.trim() }); setBody(''); load(); };
+  const add = async (e) => { e.preventDefault(); if (!body.trim()) return; await supabase.from('commercial_owner_notes').insert({ deal_id: deal.id, body: body.trim() }); setBody(''); load(); };
   return (
     <Card>
       <CardTitle>Your private notes</CardTitle>
@@ -166,7 +166,7 @@ function Notes({ deal, me }) {
 
 function OwnerAlerts() {
   const [t, setT] = useState(null);
-  useEffect(() => { supabase.from('private_settings').select('value').eq('key', 'owner_ntfy_topic').maybeSingle().then(({ data }) => setT(data?.value || '')); }, []);
+  useEffect(() => { supabase.from('commercial_settings').select('value').eq('key', 'owner_ntfy_topic').maybeSingle().then(({ data }) => setT(data?.value || '')); }, []);
   return <AlertsCard topic={t} who="You get a push for every view, message, upload and interest change on every property." />;
 }
 

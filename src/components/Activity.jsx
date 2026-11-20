@@ -6,7 +6,7 @@ import { Card, CardTitle, Empty } from './Shell.jsx';
 export default function Activity({ deal, title = 'Activity', kinds }) {
   const [rows, setRows] = useState(null);
   const load = async () => {
-    let q = supabase.from('activity').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(60);
+    let q = supabase.from('commercial_activity').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(60);
     if (kinds) q = q.in('kind', kinds);
     const { data } = await q;
     setRows(data || []);
@@ -14,7 +14,7 @@ export default function Activity({ deal, title = 'Activity', kinds }) {
   useEffect(() => {
     load();
     const sub = supabase.channel(`a-${deal.id}-${(kinds || []).join()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activity', filter: `deal_id=eq.${deal.id}` }, load)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_activity', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
   }, [deal.id]);

@@ -35,13 +35,13 @@ export default function Seller({ deal, me, preview }) {
 
   useEffect(() => {
     if (preview) return;
-    supabase.from('seller_interest').select('level').eq('deal_id', deal.id).eq('email', me.email).maybeSingle().then(({ data }) => setLevel(data?.level || null));
+    supabase.from('commercial_interest').select('level').eq('deal_id', deal.id).eq('email', me.email).maybeSingle().then(({ data }) => setLevel(data?.level || null));
   }, [deal.id]);
 
   const mark = async (l) => {
     if (preview) return;
     setLevel(l);
-    await supabase.from('seller_interest').upsert({ deal_id: deal.id, email: me.email, level: l, updated_at: new Date().toISOString() });
+    await supabase.from('commercial_interest').upsert({ deal_id: deal.id, email: me.email, level: l, updated_at: new Date().toISOString() });
   };
 
   return (

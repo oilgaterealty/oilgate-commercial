@@ -1,5 +1,5 @@
 /**
- * Deal Rooms → Google Drive relay. Runs inside YOUR Google account as a
+ * Oilgate Commercial → Google Drive relay. Runs inside YOUR Google account as a
  * free Apps Script project, so files land in your own Drive folders and no
  * outside user ever gets Drive access.
  *
@@ -12,7 +12,7 @@
  *   SUPABASE_SERVICE_KEY  the project's secret/service key (never commit it)
  * Then run installTrigger() once and approve the Drive permission prompt.
  */
-const BUCKET = 'deal-files';
+const BUCKET = 'commercial-files';
 
 function props_() {
   const p = PropertiesService.getScriptProperties();
@@ -36,10 +36,10 @@ function relayUploads() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return;
   try {
-    const pending = JSON.parse(api_('/rest/v1/uploads?select=id,deal_id,storage_path,file_name,mime,uploaded_by_role&drive_file_id=is.null&order=created_at&limit=20').getContentText());
+    const pending = JSON.parse(api_('/rest/v1/commercial_uploads?select=id,deal_id,storage_path,file_name,mime,uploaded_by_role&drive_file_id=is.null&order=created_at&limit=20').getContentText());
     if (!pending.length) return;
     const folders = {};
-    JSON.parse(api_('/rest/v1/deal_private?select=deal_id,drive_folder_id').getContentText())
+    JSON.parse(api_('/rest/v1/commercial_deal_private?select=deal_id,drive_folder_id').getContentText())
       .forEach(function (r) { folders[r.deal_id] = r.drive_folder_id; });
 
     pending.forEach(function (u) {
@@ -49,7 +49,7 @@ function relayUploads() {
         .getBlob().setName(u.uploaded_by_role + ' - ' + u.file_name);
       if (u.mime) blob.setContentType(u.mime);
       const file = DriveApp.getFolderById(folderId).createFile(blob);
-      api_('/rest/v1/uploads?id=eq.' + u.id, { method: 'patch', payload: JSON.stringify({ drive_file_id: file.getId() }) });
+      api_('/rest/v1/commercial_uploads?id=eq.' + u.id, { method: 'patch', payload: JSON.stringify({ drive_file_id: file.getId() }) });
     });
   } finally {
     lock.releaseLock();

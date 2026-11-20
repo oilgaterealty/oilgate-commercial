@@ -9,4 +9,4 @@ export const supabase = configured
   ? createClient(SUPABASE_URL, KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true } })
   : null;
 
-export const BUCKET = 'deal-files';
+export const BUCKET = 'commercial-files';

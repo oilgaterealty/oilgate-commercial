@@ -10,7 +10,7 @@ const INTEREST = { interested: 'Wants to talk', questions: 'Has questions first'
 
 export function SellerPulse({ deal }) {
   const [rows, setRows] = useState([]);
-  useEffect(() => { supabase.from('seller_interest').select('*').eq('deal_id', deal.id).then(({ data }) => setRows(data || [])); }, [deal.id]);
+  useEffect(() => { supabase.from('commercial_interest').select('*').eq('deal_id', deal.id).then(({ data }) => setRows(data || [])); }, [deal.id]);
   return (
     <Card>
       <CardTitle>Seller interest</CardTitle>

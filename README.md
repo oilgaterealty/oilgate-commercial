@@ -1,4 +1,4 @@
-# Oilgate Deal Rooms
+# Oilgate Commercial
 
 One private site for every commercial deal. Each property gets its own page
 (`#/d/<page-name>`) with three role views:
@@ -35,10 +35,12 @@ That's it: same pages, no code changes.
 
 ## Setup
 
-1. Create a Supabase project and run `supabase/migrations/0001_deal_rooms.sql`.
-2. In SQL, add the owner: `insert into owners(email) values ('you@example.com');`
+1. Create a Supabase project and run `supabase/migrations/0001_commercial.sql` then `0002_commercial_hardening.sql`.
+2. In SQL, add the owner: `insert into commercial_owners(email) values ('you@example.com');`
    and set the first deal's Drive folder:
-   `insert into deal_private(deal_id, drive_folder_id) select id, '<folder id>' from deals where slug='charlotte';`
+   `insert into commercial_deal_private(deal_id, drive_folder_id) select id, '<folder id>' from commercial_deals where slug='charlotte';`
+   Every table, function and the storage bucket start with `commercial_` / `commercial-`, so the
+   site can share a Supabase project with other apps without touching their tables.
 3. Supabase → Auth → URL configuration: set Site URL and redirect URL to the
    GitHub Pages address. Turn on the Google provider with your own OAuth client.
 4. GitHub repo → Settings → Secrets and variables → Actions → **Variables**:

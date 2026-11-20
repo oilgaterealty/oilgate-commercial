@@ -10,13 +10,13 @@ export default function Thread({ deal, channel, role, me, title, hint, readOnly 
   const end = useRef(null);
 
   const load = async () => {
-    const { data } = await supabase.from('messages').select('*').eq('deal_id', deal.id).eq('channel', channel).order('created_at');
+    const { data } = await supabase.from('commercial_messages').select('*').eq('deal_id', deal.id).eq('channel', channel).order('created_at');
     setRows(data || []);
   };
   useEffect(() => {
     load();
     const sub = supabase.channel(`m-${deal.id}-${channel}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `deal_id=eq.${deal.id}` }, load)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_messages', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
   }, [deal.id, channel]);
@@ -26,7 +26,7 @@ export default function Thread({ deal, channel, role, me, title, hint, readOnly 
     e.preventDefault();
     if (!body.trim()) return;
     setBusy(true);
-    const { error } = await supabase.from('messages').insert({ deal_id: deal.id, channel, body: body.trim(), author_email: me.email, author_role: role, author_name: me.name || '' });
+    const { error } = await supabase.from('commercial_messages').insert({ deal_id: deal.id, channel, body: body.trim(), author_email: me.email, author_role: role, author_name: me.name || '' });
     setBusy(false);
     if (!error) { setBody(''); load(); }
   };

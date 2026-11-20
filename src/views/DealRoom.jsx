@@ -12,12 +12,12 @@ export default function DealRoom({ slug, tab, session }) {
   useEffect(() => {
     (async () => {
       const [{ data: role }, { data: deal }] = await Promise.all([
-        supabase.rpc('my_role', { p_slug: slug }),
-        supabase.from('deals').select('*').eq('slug', slug).maybeSingle(),
+        supabase.rpc('commercial_my_role', { p_slug: slug }),
+        supabase.from('commercial_deals').select('*').eq('slug', slug).maybeSingle(),
       ]);
-      const { data: member } = await supabase.from('deal_members').select('display_name,ntfy_topic,role').eq('deal_id', deal?.id ?? '00000000-0000-0000-0000-000000000000').eq('email', session.user.email.toLowerCase()).maybeSingle();
+      const { data: member } = await supabase.from('commercial_members').select('display_name,ntfy_topic,role').eq('deal_id', deal?.id ?? '00000000-0000-0000-0000-000000000000').eq('email', session.user.email.toLowerCase()).maybeSingle();
       setState({ loading: false, role, deal, member });
-      if (deal && role && role !== 'owner') supabase.rpc('log_view', { p_slug: slug });
+      if (deal && role && role !== 'owner') supabase.rpc('commercial_log_view', { p_slug: slug });
     })();
   }, [slug, session.user.email]);
 
