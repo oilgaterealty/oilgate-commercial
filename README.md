@@ -41,10 +41,11 @@ That's it: same pages, no code changes.
    `insert into commercial_deal_private(deal_id, drive_folder_id) select id, '<folder id>' from commercial_deals where slug='charlotte';`
    Every table, function and the storage bucket start with `commercial_` / `commercial-`, so the
    site can share a Supabase project with other apps without touching their tables.
-3. Supabase → Auth → URL configuration: set Site URL and redirect URL to the
-   GitHub Pages address. Turn on the Google provider with your own OAuth client.
-4. GitHub repo → Settings → Secrets and variables → Actions → **Variables**:
-   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (the publishable key only).
+3. Supabase → Auth → URL configuration: ADD the GitHub Pages address to Redirect URLs.
+   If the project is shared with another app, do not change its Site URL.
+   Google sign-in works if the project already has the Google provider on.
+4. `.env.production` holds the project URL and the public anon key (browser-safe).
+   Repo variables with the same names override it.
 5. GitHub repo → Settings → Pages → Source: GitHub Actions. Push to `main`.
 6. Optional Drive copy: new Apps Script project, paste `drive-relay/Code.gs`,
    set the two Script properties, run `installTrigger()` once.
