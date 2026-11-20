@@ -150,7 +150,8 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     debtMonthly = pmt(x.rate, x.years, loan);
     cashIn = x.price * (x.downPct / 100) + (x.price * x.closingPct) / 100 + o.b.rehab;
     allIn = x.price + (x.price * x.closingPct) / 100 + o.b.rehab;
-    extra = [['Loan amount', loan, '$']];
+    sellerMonthly = null; // paid once at closing
+    extra = [['Seller is paid at closing', x.price, '$'], ['Loan amount', loan, '$']];
   }
 
   const keepMonthly = o.cashFlow / 12 - debtMonthly;
@@ -174,6 +175,7 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
 // Generally accepted tests (Nov 19 rule): DSCR 1.20-1.25, break-even <= ~85%, cash-on-cash 8-12%, all-in <= ~75% of ARV.
 export function grade(metric, v) {
   if (v === null || v === undefined || Number.isNaN(v)) return 'none';
+  v = Math.round(v * 100) / 100; // grade what is shown, so 1.25x never reads as "close"
   switch (metric) {
     case 'dscr': return v >= 1.25 ? 'pass' : v >= 1.2 ? 'close' : 'fail';
     case 'breakEven': return v <= 0.85 ? 'pass' : v <= 0.9 ? 'close' : 'fail';

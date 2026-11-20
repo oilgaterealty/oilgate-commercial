@@ -47,6 +47,7 @@ function Option({ o, open, onOpen, liked, onLike, onAsk, preview }) {
         </div>
         <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{o.title}</h3>
         <p className="mt-1 text-ink-soft">{o.tagline}</p>
+        {!open && <p className="mt-3 text-sm font-medium underline-offset-4 hover:underline">See how it works ›</p>}
       </button>
       {open && (
         <div className="mt-4 space-y-4">
@@ -88,7 +89,7 @@ export default function Seller({ deal, me, preview }) {
   const [rows, load] = useUploads(deal);
   const [level, setLevel] = useState(null);
   const [fav, setFav] = useState(null);
-  const [open, setOpen] = useState(null);
+  const [open, setOpen] = useState((deal.seller_content?.options || [])[0]?.key ?? null);
   const photos = photosOf((rows || []).filter((r) => r.visibility === 'seller'));
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
   const options = c.options || [];
@@ -123,7 +124,7 @@ export default function Seller({ deal, me, preview }) {
           {c.options_note && <p className="mb-4 max-w-3xl rounded-2xl bg-warm-soft px-4 py-3 text-sm">{c.options_note}</p>}
           <div className="grid items-start gap-4 lg:grid-cols-3">
             {options.map((o) => (
-              <Option key={o.key} o={o} open={open === o.key || open === null && options.length === 1} onOpen={() => setOpen(open === o.key ? null : o.key)}
+              <Option key={o.key} o={o} open={open === o.key} onOpen={() => setOpen(open === o.key ? null : o.key)}
                 liked={fav === o.key} onLike={() => save(level || 'interested', o.key)} preview={preview}
                 onAsk={(q) => sendToOwner(deal, me, 'seller', q, `Option ${o.key}`)} />
             ))}

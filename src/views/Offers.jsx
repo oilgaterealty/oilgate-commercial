@@ -42,7 +42,7 @@ export function Results({ r }) {
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Metric label="You keep / mo (whole building)" value={money(r.keepMonthly)} tone={grade('keep', r.keepMonthly)} sub={r.operating.b.units ? `${money(r.keepMonthly / r.operating.b.units)} per unit` : ''} />
-        <Metric label="Seller gets / mo" value={money(r.sellerMonthly)} sub={r.sellerNet !== null ? `${money(r.sellerNet)} after their loan` : 'Before their own loan payment'} />
+        <Metric label="Seller gets / mo" value={r.sellerMonthly === null ? 'At closing' : money(r.sellerMonthly)} sub={r.sellerMonthly === null ? '' : r.sellerNet !== null ? `${money(r.sellerNet)} after their loan` : 'Before their own loan payment'} />
         <Metric label="DSCR" value={Number.isFinite(r.dscr) ? r.dscr.toFixed(2) + 'x' : 'No payment'} tone={grade('dscr', r.dscr)} sub="Target 1.20–1.25" />
         <Metric label="Cash-on-cash" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)} sub={r.cashIn > 0 ? `${money(r.cashIn)} in` : 'Target 8–12%'} />
         <Metric label="All-in vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)} sub={`${money(r.allIn)} of ${money(r.operating.b.value)}`} />

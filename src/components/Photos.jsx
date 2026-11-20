@@ -23,7 +23,7 @@ export function Hero({ photos, empty = 'Photos are coming after our walkthrough.
 
   if (!photos.length) {
     return (
-      <div className="flex aspect-[16/7] w-full items-center justify-center rounded-3xl border border-dashed border-line bg-warm-soft/60 text-center">
+      <div className="flex h-28 w-full items-center justify-center rounded-3xl border border-dashed border-line bg-warm-soft/60 text-center">
         <p className="px-6 text-lg text-ink-soft">{empty}</p>
       </div>
     );
