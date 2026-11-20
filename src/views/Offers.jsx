@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { BASE_DEFAULTS, BASE_FIELDS, KNOWN_BASE, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
+import { plain } from '../lib/plain.js';
 
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
@@ -92,6 +93,30 @@ function BuildingNumbers({ base, setBase, o, owner }) {
   );
 }
 
+function Differ({ offers, evals, active, setActive }) {
+  const rows = [['owns', 'Who owns the building'], ['payoff', 'When the seller is paid off'], ['cash', 'Our cash up front'], ['risk', 'Main risk']];
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-line bg-white">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead><tr>
+          <th className="w-40 px-3 py-2 text-left text-xs font-normal uppercase tracking-wider text-ink-soft">How they differ</th>
+          {offers.map((x) => (
+            <th key={x.id} onClick={() => setActive(x.id)} className={`cursor-pointer px-3 py-2 text-left font-medium ${x.id === active ? 'bg-warm-soft/70' : 'hover:bg-warm-soft/30'}`}>{x.name}</th>
+          ))}
+        </tr></thead>
+        <tbody className="divide-y divide-line">
+          {rows.map(([k, l]) => (
+            <tr key={k}>
+              <td className="px-3 py-2 text-xs text-ink-soft">{l}</td>
+              {offers.map((x) => <td key={x.id} className={`px-3 py-2 align-top ${x.id === active ? 'bg-warm-soft/40' : ''}`}>{plain(x.structure, evals[x.id])[k]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Owner: saves. Reviewer and lender: building facts are locked; terms and assumptions are a what-if that never saves.
 export default function Offers({ deal, canSave, onlyShared }) {
   const owner = !!canSave;
@@ -150,6 +175,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
 
   return (
     <div className="space-y-5">
+      {offers.length > 1 && <Differ offers={offers} evals={evals} active={active} setActive={setActive} />}
       <div className="flex flex-wrap items-center gap-2">
         {offers.map((x) => (
           <button key={x.id} onClick={() => setActive(x.id)}
@@ -176,7 +202,11 @@ export default function Offers({ deal, canSave, onlyShared }) {
               ? <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
                   className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
               : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
-            <p className="mb-3 px-1 text-xs text-ink-soft">{STRUCTURES[cur.structure].label}. Change one number and watch the results move.</p>
+            <div className="mb-3 space-y-1.5 rounded-xl bg-warm-soft/60 px-3 py-2.5 text-sm">
+              {plain(cur.structure, r).lines.map((t, i) => <p key={i}>{t}</p>)}
+              <p className="text-ink-soft"><span className="font-medium text-ink">Main risk:</span> {plain(cur.structure, r).risk}.</p>
+            </div>
+            <p className="mb-2 px-1 text-xs text-ink-soft">Change one number and watch the results move.</p>
             {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
               const d = STRUCTURES[cur.structure].defaults[k];
               const v = cur.inputs?.[k];

@@ -64,3 +64,13 @@ test('building facts are locked for everyone but the owner', async () => {
   for (const k of ['units', 'rent', 'taxes', 'insurance']) assert.ok(KNOWN_BASE.includes(k), k);
   for (const k of ['refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
 });
+
+test('plain-English lines use the live math', async () => {
+  const { plain } = await import('../src/lib/plain.js');
+  const w = plain('wrap', evaluate('wrap', { note: 400000, rate: 6 }, B));
+  assert.ok(w.lines[1].includes('$2,000/mo'));
+  const c = plain('cash', evaluate('cash', { price: 100000, downPct: 25, rate: 7, years: 30, closingPct: 2 }, B));
+  assert.equal(c.payoff, 'At closing');
+  const m = plain('master_lease', evaluate('master_lease', { payment: 4000, optionPrice: 380000, sellerAdvances: 20000, exerciseClosing: 5000, creditPct: 50 }, B));
+  assert.ok(m.lines[1].includes('$400,000'));
+});
