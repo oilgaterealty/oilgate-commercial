@@ -1,13 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, KNOWN_BASE, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
 
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
-function NumberRow({ label, unit, value, onChange, changed }) {
+function NumberRow({ label, unit, value, onChange, changed, locked }) {
   const step = stepFor(unit, label);
   const v = value ?? '';
+  if (locked) {
+    const shown = unit === '$' ? money(+v) : unit === '%' ? `${v}%` : unit === 'x' ? `${v}x` : v;
+    return (
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <span className="text-sm text-ink-soft">{label}</span>
+        <span className="flex items-center gap-2 text-sm font-medium" title="From the property's records. Only LaVante can change it.">{shown}<span className="rounded-full bg-warm-soft px-2 py-0.5 text-[10px] uppercase tracking-wider text-ink-soft">Locked</span></span>
+      </div>
+    );
+  }
   const bump = (d) => onChange(Math.round((+v + d * step) * 100) / 100);
   return (
     <label className="flex items-center justify-between gap-3 py-1.5">
@@ -57,7 +66,7 @@ export function Results({ r }) {
   );
 }
 
-function BuildingNumbers({ base, setBase, o }) {
+function BuildingNumbers({ base, setBase, o, owner }) {
   const [open, setOpen] = useState(false);
   return (
     <Card>
@@ -67,11 +76,13 @@ function BuildingNumbers({ base, setBase, o }) {
       </button>
       {open && (
         <div className="mt-3">
-          <p className="mb-2 text-xs text-ink-soft">Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.</p>
+          <p className="mb-2 text-xs text-ink-soft">{owner
+            ? 'Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.'
+            : 'Locked numbers come from the property’s records. The rest are assumptions: try your own, nothing you change is saved.'}</p>
           <div className="grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                onChange={(v) => setBase({ ...base, [k]: v })} />
+                locked={!owner && KNOWN_BASE.includes(k)} onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
           </div>
           <p className="mt-2 text-xs text-ink-soft">Refi loan {money(o.refiLoan)}, limited by {o.refiLimitedBy}. Cap rate {pct(o.capRate, 1)}.</p>
@@ -81,10 +92,12 @@ function BuildingNumbers({ base, setBase, o }) {
   );
 }
 
-// Owner: saves. Reviewer and lender: can try numbers, nothing saves.
+// Owner: saves. Reviewer and lender: building facts are locked; terms and assumptions are a what-if that never saves.
 export default function Offers({ deal, canSave, onlyShared }) {
+  const owner = !!canSave;
   const [offers, setOffers] = useState(null);
   const [base, setBaseState] = useState({});
+  const original = useRef(null);
   const [active, setActive] = useState(null);
   const [saved, setSaved] = useState('');
   const timers = useRef({});
@@ -97,6 +110,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
       const list = (a.data || []).filter((x) => !onlyShared || x['share_' + onlyShared]);
       setOffers(list);
       setBaseState(b.data?.base || {});
+      original.current = { list, base: b.data?.base || {} };
       if (list.length) setActive(list[0].id);
     });
   }, [deal.id]);
@@ -107,6 +121,8 @@ export default function Offers({ deal, canSave, onlyShared }) {
     setSaved('Saving…');
     timers.current[key] = setTimeout(async () => { const { error } = await fn(); setSaved(error ? 'Not saved. Check your connection.' : 'Saved'); }, 600);
   };
+  const reset = () => { setOffers(original.current.list); setBaseState(original.current.base); };
+  const touched = !owner && original.current && (offers !== original.current.list || base !== original.current.base);
   const setBase = (b) => { setBaseState(b); later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: b, updated_at: new Date().toISOString() })); };
   const patch = (id, p) => {
     setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...p } : o)));
@@ -141,18 +157,25 @@ export default function Offers({ deal, canSave, onlyShared }) {
             {x.name} <span className={active === x.id ? 'text-white/70' : 'text-ink-soft'}>· {money(evals[x.id].keepMonthly)}/mo</span>
           </button>
         ))}
-        <select value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
-          <option value="">+ Add an offer</option>
-          {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-        </select>
-        <span className="ml-auto text-xs text-ink-soft">{canSave ? saved : 'Try your own numbers here. Nothing you change is saved.'}</span>
+        {owner && (
+          <select value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
+            <option value="">+ Add an offer</option>
+            {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+          </select>
+        )}
+        <span className="ml-auto flex items-center gap-2 text-xs text-ink-soft">
+          {owner ? saved : 'Try your own terms. Nothing you change is saved.'}
+          {touched && <button onClick={reset} className="rounded-full border border-line bg-white px-3 py-1 text-ink hover:border-ink">Reset</button>}
+        </span>
       </div>
 
       {!cur ? <Card><Empty>{canSave ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card> : (
         <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
           <Card>
-            <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
-              className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
+            {owner
+              ? <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
+                  className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
+              : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
             <p className="mb-3 px-1 text-xs text-ink-soft">{STRUCTURES[cur.structure].label}. Change one number and watch the results move.</p>
             {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
               const d = STRUCTURES[cur.structure].defaults[k];
@@ -160,12 +183,16 @@ export default function Offers({ deal, canSave, onlyShared }) {
               return <NumberRow key={k} label={l} unit={u} value={v ?? d} changed={v !== undefined && v !== d}
                 onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
             })}
-            <textarea value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
-              className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
-              <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
-            </div>
+            {owner ? (
+              <>
+                <textarea value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
+                  className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
+                  <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
+                </div>
+              </>
+            ) : cur.note ? <p className="mt-3 whitespace-pre-line rounded-xl bg-warm-soft/60 px-3 py-2 text-sm">{cur.note}</p> : null}
             {canSave && (
               <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
                 <p className="font-medium">Who else can see this offer</p>
@@ -202,7 +229,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
           </div>
         </div>
       )}
-      <BuildingNumbers base={base} setBase={setBase} o={o} />
+      <BuildingNumbers base={base} setBase={setBase} o={o} owner={owner} />
     </div>
   );
 }

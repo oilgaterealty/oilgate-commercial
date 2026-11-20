@@ -42,15 +42,21 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
-  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['offers', 'Offers'], ['messages', 'Messages']];
+  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div className="space-y-5">
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {active === 'overview' && (
         <>
-          <Hero photos={photos} />
+          {photos.length > 0 && <Hero photos={photos} />}
           <Facts deal={deal} numbers={!viewer} />
+          {!viewer && (
+            <section>
+              <h2 className="mb-3 font-display text-2xl font-semibold">The offers</h2>
+              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} />
+            </section>
+          )}
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>
@@ -66,7 +72,6 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           </div>
         </>
       )}
-      {active === 'offers' && <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} />}
       {active === 'messages' && <Messages deal={deal} me={me} role={role} preview={preview} />}
     </div>
   );

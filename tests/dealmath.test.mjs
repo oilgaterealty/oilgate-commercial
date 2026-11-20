@@ -58,3 +58,9 @@ test('a blank deal shows dashes instead of crashing', () => {
 test('editing one input changes the result live', () => {
   assert.ok(evaluate('wrap', { note: 400000, rate: 7 }, B).keepMonthly < evaluate('wrap', { note: 400000, rate: 6 }, B).keepMonthly);
 });
+
+test('building facts are locked for everyone but the owner', async () => {
+  const { KNOWN_BASE } = await import('../src/lib/dealmath.js');
+  for (const k of ['units', 'rent', 'taxes', 'insurance']) assert.ok(KNOWN_BASE.includes(k), k);
+  for (const k of ['refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
+});

@@ -27,6 +27,8 @@ function People({ deal }) {
   const [rows, setRows] = useState(null);
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
+  const [done, setDone] = useState('');
+  const link = window.location.origin + window.location.pathname;
   const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
@@ -36,6 +38,7 @@ function People({ deal }) {
     const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: ALERTED.includes(f.role) ? topic() : null };
     const { error } = await supabase.from('commercial_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
     if (error) return setErr(error.message);
+    setDone(`${row.email} can sign in now as ${roleLabel[row.role].toLowerCase()}. Send them the site link.`);
     setF({ email: '', role: 'realtor', display_name: '' });
     load();
   };
@@ -63,7 +66,7 @@ function People({ deal }) {
         )}
       </Card>
       <Card>
-        <CardTitle>Add someone</CardTitle>
+        <CardTitle>Invite someone</CardTitle>
         <form onSubmit={add} className="space-y-3">
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
@@ -75,8 +78,11 @@ function People({ deal }) {
             <option value="viewer">Viewer: photos and shared files, read-only</option>
           </select>
           {err && <p className="text-sm text-red-700">{err}</p>}
-          <Button type="submit" className="w-full">Give access</Button>
-          <p className="text-xs text-ink-soft">Nothing is sent. They get in by signing in with this exact email at this site’s address, once you share it.</p>
+          <Button type="submit" className="w-full">Invite</Button>
+          {done && <p className="text-sm text-green-800">{done}</p>}
+          <button type="button" onClick={() => { navigator.clipboard?.writeText(link); setDone('Site link copied.'); }}
+            className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy site link</button>
+          <p className="text-xs text-ink-soft">Nothing is emailed. They sign in with this exact email at the site link you send them, and see only their role’s page.</p>
         </form>
       </Card>
     </div>

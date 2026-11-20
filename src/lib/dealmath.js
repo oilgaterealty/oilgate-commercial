@@ -24,6 +24,10 @@ export const BASE_FIELDS = [
   ['refiReserve', 'Reserves held back at refi', '$'],
 ];
 
+// Facts about the building (from the rent roll, bills and seller records). Only the owner can change these.
+// Everything else is an assumption anyone with access can try a what-if on.
+export const KNOWN_BASE = ['units', 'rent', 'taxes', 'insurance', 'utilities', 'admin', 'turns'];
+
 export const BASE_DEFAULTS = {
   units: 0, rent: 0, vacancyPct: 7, taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 10, reservesPerUnit: 300, value: 0, rehab: 0,
