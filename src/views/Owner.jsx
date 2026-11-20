@@ -1,0 +1,220 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase.js';
+import { when, roleLabel } from '../lib/format.js';
+import { Card, CardTitle, Button, Field, Empty } from '../components/Shell.jsx';
+import Thread from '../components/Thread.jsx';
+import Files from '../components/Files.jsx';
+import Activity from '../components/Activity.jsx';
+import Seller from './Seller.jsx';
+import Realtor, { SellerPulse, AlertsCard } from './Realtor.jsx';
+
+const TABS = [
+  ['overview', 'Overview'],
+  ['messages', 'Messages'],
+  ['files', 'Files'],
+  ['people', 'People'],
+  ['seller-page', 'Seller page'],
+  ['settings', 'Settings'],
+  ['preview-seller', 'See as seller'],
+  ['preview-realtor', 'See as realtor'],
+];
+
+const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
+
+function People({ deal }) {
+  const [rows, setRows] = useState(null);
+  const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
+  const [err, setErr] = useState('');
+  const load = () => supabase.from('deal_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
+  useEffect(() => { load(); }, [deal.id]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    setErr('');
+    const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: f.role === 'realtor' ? topic() : null };
+    const { error } = await supabase.from('deal_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
+    if (error) return setErr(error.message);
+    setF({ email: '', role: 'realtor', display_name: '' });
+    load();
+  };
+  const setStatus = async (r, status) => { await supabase.from('deal_members').update({ status }).eq('id', r.id); load(); };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <Card>
+        <CardTitle>Who can open this property</CardTitle>
+        {!rows ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>Only you so far.</Empty> : (
+          <ul className="divide-y divide-line">
+            {rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div>
+                  <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                  <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}</p>
+                  {r.ntfy_topic && r.status === 'active' && <p className="mt-1 text-xs text-ink-soft">Alert topic: <code className="select-all">{r.ntfy_topic}</code></p>}
+                </div>
+                {r.status === 'active'
+                  ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
+                  : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card>
+        <CardTitle>Add someone</CardTitle>
+        <form onSubmit={add} className="space-y-3">
+          <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+          <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
+          <select className="w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+            <option value="realtor">Realtor</option>
+            <option value="seller">Seller</option>
+            <option value="guest">Guest (read-only)</option>
+          </select>
+          {err && <p className="text-sm text-red-700">{err}</p>}
+          <Button type="submit" className="w-full">Give access</Button>
+          <p className="text-xs text-ink-soft">Nothing is sent. They get in by signing in with this exact email at this site’s address, once you share it.</p>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function SellerEditor({ deal, onSaved }) {
+  const [c, setC] = useState(deal.seller_content || {});
+  const [saved, setSaved] = useState('');
+  const setRow = (key, i, field, v) => setC({ ...c, [key]: c[key].map((r, j) => (j === i ? { ...r, [field]: v } : r)) });
+  const addRow = (key) => setC({ ...c, [key]: [...(c[key] || []), { label: '', value: '' }] });
+  const delRow = (key, i) => setC({ ...c, [key]: c[key].filter((_, j) => j !== i) });
+  const save = async () => {
+    const { data, error } = await supabase.from('deals').update({ seller_content: c }).eq('id', deal.id).select().single();
+    setSaved(error ? error.message : 'Saved. The seller sees this now.');
+    if (data) onSaved(data);
+  };
+  const block = (key, title) => (
+    <div>
+      <p className="mb-2 text-sm font-medium">{title}</p>
+      {(c[key] || []).map((r, i) => (
+        <div key={i} className="mb-2 flex gap-2">
+          <Field value={r.label} placeholder="Line" onChange={(e) => setRow(key, i, 'label', e.target.value)} />
+          <Field value={r.value} placeholder="Detail" onChange={(e) => setRow(key, i, 'value', e.target.value)} />
+          <Button kind="secondary" onClick={() => delRow(key, i)}>×</Button>
+        </div>
+      ))}
+      <Button kind="secondary" onClick={() => addRow(key)}>Add a line</Button>
+    </div>
+  );
+  return (
+    <Card>
+      <CardTitle>What the seller reads</CardTitle>
+      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only what’s on this card. Keep every line true. No prices or terms until you’ve agreed them.</p>
+      <div className="space-y-4">
+        <Field value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
+        <textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
+        <div className="grid gap-6 md:grid-cols-2">
+          {block('carry_now', 'What you carry now')}
+          {block('with_us', 'What you’d have with us')}
+        </div>
+        <div className="flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{saved}</span></div>
+      </div>
+    </Card>
+  );
+}
+
+function Settings({ deal, onSaved }) {
+  const [folder, setFolder] = useState('');
+  const [d, setD] = useState({ title: deal.title, address: deal.address, status: deal.status });
+  const [msg, setMsg] = useState('');
+  useEffect(() => { supabase.from('deal_private').select('drive_folder_id').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setFolder(data?.drive_folder_id || '')); }, [deal.id]);
+  const save = async () => {
+    const id = (folder.match(/folders\/([A-Za-z0-9_-]+)/) || [])[1] || folder.trim();
+    const a = await supabase.from('deals').update(d).eq('id', deal.id).select().single();
+    const b = id ? await supabase.from('deal_private').upsert({ deal_id: deal.id, drive_folder_id: id, updated_at: new Date().toISOString() }) : { error: null };
+    setMsg(a.error?.message || b.error?.message || 'Saved.');
+    if (a.data) onSaved(a.data);
+  };
+  return (
+    <Card>
+      <CardTitle>Property settings</CardTitle>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field value={d.title} placeholder="Name" onChange={(e) => setD({ ...d, title: e.target.value })} />
+        <Field value={d.address} placeholder="Address" onChange={(e) => setD({ ...d, address: e.target.value })} />
+        <Field value={folder} placeholder="Google Drive folder link" onChange={(e) => setFolder(e.target.value)} />
+        <select className="rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
+          <option value="active">Active</option><option value="closed">Closed</option><option value="archived">Archived</option>
+        </select>
+      </div>
+      <p className="mt-3 text-xs text-ink-soft">The Drive folder is only visible to you. Page address: #/d/{deal.slug}</p>
+      <div className="mt-4 flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{msg}</span></div>
+    </Card>
+  );
+}
+
+function Notes({ deal, me }) {
+  const [rows, setRows] = useState([]);
+  const [body, setBody] = useState('');
+  const load = () => supabase.from('owner_notes').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setRows(data || []));
+  useEffect(() => { load(); }, [deal.id]);
+  const add = async (e) => { e.preventDefault(); if (!body.trim()) return; await supabase.from('owner_notes').insert({ deal_id: deal.id, body: body.trim() }); setBody(''); load(); };
+  return (
+    <Card>
+      <CardTitle>Your private notes</CardTitle>
+      <form onSubmit={add} className="mb-4 flex gap-2"><Field value={body} placeholder="Only you see these" onChange={(e) => setBody(e.target.value)} /><Button type="submit">Add</Button></form>
+      {rows.length === 0 ? <Empty>No notes yet.</Empty> : rows.map((n) => <p key={n.id} className="border-t border-line py-2 text-sm">{n.body} <span className="text-xs text-ink-soft">· {when(n.created_at)}</span></p>)}
+    </Card>
+  );
+}
+
+function OwnerAlerts() {
+  const [t, setT] = useState(null);
+  useEffect(() => { supabase.from('private_settings').select('value').eq('key', 'owner_ntfy_topic').maybeSingle().then(({ data }) => setT(data?.value || '')); }, []);
+  return <AlertsCard topic={t} who="You get a push for every view, message, upload and interest change on every property." />;
+}
+
+export default function Owner({ deal: initial, me, tab }) {
+  const [deal, setDeal] = useState(initial);
+  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
+  const fakeMe = { email: '__preview__', name: 'Preview' };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm uppercase tracking-[0.18em] text-warm">{deal.address}</p>
+        <h1 className="mt-1 font-display text-4xl font-semibold tracking-tight">{deal.title}</h1>
+      </div>
+      <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1">
+        {TABS.map(([k, label]) => (
+          <a key={k} href={`#/d/${deal.slug}/${k}`}
+            className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm transition ${active === k ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>{label}</a>
+        ))}
+      </nav>
+
+      {active === 'overview' && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <Activity deal={deal} title="Everything that’s happened" />
+          <div className="space-y-6"><SellerPulse deal={deal} /><OwnerAlerts /></div>
+        </div>
+      )}
+      {active === 'messages' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Thread deal={deal} channel="seller" role="owner" me={me} title="Seller conversation" hint="The seller, the realtor and you." />
+          <Thread deal={deal} channel="team" role="owner" me={me} title="Team" hint="You and the realtor. The seller never sees this." />
+        </div>
+      )}
+      {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
+      {active === 'people' && <People deal={deal} />}
+      {active === 'seller-page' && <SellerEditor deal={deal} onSaved={setDeal} />}
+      {active === 'settings' && <div className="space-y-6"><Settings deal={deal} onSaved={setDeal} /><Notes deal={deal} me={me} /></div>}
+      {active === 'preview-seller' && <Preview label="seller"><Seller deal={deal} me={fakeMe} preview /></Preview>}
+      {active === 'preview-realtor' && <Preview label="realtor"><Realtor deal={deal} me={fakeMe} role="realtor" preview /></Preview>}
+    </div>
+  );
+}
+
+function Preview({ label, children }) {
+  return (
+    <div className="rounded-3xl border-2 border-dashed border-warm p-4 sm:p-6">
+      <p className="mb-6 text-sm text-warm">This is what the {label} sees. Nothing here can be sent from preview.</p>
+      {children}
+    </div>
+  );
+}
