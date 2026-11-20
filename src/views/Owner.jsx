@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { Card, CardTitle, Button, Field, Empty } from '../components/Shell.jsx';
-import Thread from '../components/Thread.jsx';
+import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell.jsx';
+import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
+import Photos from '../components/Photos.jsx';
 import Activity from '../components/Activity.jsx';
-import Seller from './Seller.jsx';
-import Realtor, { SellerPulse, AlertsCard } from './Realtor.jsx';
+import Offers from './Offers.jsx';
+import { SellerPulse, AlertsCard } from './Realtor.jsx';
 
 const TABS = [
   ['overview', 'Overview'],
+  ['offers', 'Offers'],
+  ['photos', 'Photos'],
   ['messages', 'Messages'],
   ['files', 'Files'],
-  ['people', 'People'],
   ['seller-page', 'Seller page'],
   ['settings', 'Settings'],
-  ['preview-seller', 'See as seller'],
-  ['preview-realtor', 'See as realtor'],
 ];
+const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
+const ALERTED = ['realtor', 'reviewer', 'lender'];
 
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
 
@@ -31,7 +33,7 @@ function People({ deal }) {
   const add = async (e) => {
     e.preventDefault();
     setErr('');
-    const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: f.role === 'realtor' ? topic() : null };
+    const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: ALERTED.includes(f.role) ? topic() : null };
     const { error } = await supabase.from('commercial_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
     if (error) return setErr(error.message);
     setF({ email: '', role: 'realtor', display_name: '' });
@@ -42,7 +44,7 @@ function People({ deal }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <Card>
-        <CardTitle>Who can open this property</CardTitle>
+        <CardTitle>People</CardTitle>
         {!rows ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>Only you so far.</Empty> : (
           <ul className="divide-y divide-line">
             {rows.map((r) => (
@@ -66,9 +68,11 @@ function People({ deal }) {
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
           <select className="w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-            <option value="realtor">Realtor</option>
-            <option value="seller">Seller</option>
-            <option value="guest">Guest (read-only)</option>
+            <option value="realtor">Realtor: messages, photos, files</option>
+            <option value="seller">Seller: the seller page only</option>
+            <option value="reviewer">Reviewer: offers and files you share</option>
+            <option value="lender">Lender: offers and files you share</option>
+            <option value="viewer">Viewer: photos and shared files, read-only</option>
           </select>
           {err && <p className="text-sm text-red-700">{err}</p>}
           <Button type="submit" className="w-full">Give access</Button>
@@ -86,7 +90,8 @@ function SellerEditor({ deal, onSaved }) {
   const addRow = (key) => setC({ ...c, [key]: [...(c[key] || []), { label: '', value: '' }] });
   const delRow = (key, i) => setC({ ...c, [key]: c[key].filter((_, j) => j !== i) });
   const save = async () => {
-    const { data, error } = await supabase.from('commercial_deals').update({ seller_content: c }).eq('id', deal.id).select().single();
+    const clean = { ...c, options: (c.options || []).map((o) => ({ ...o, steps: (o.steps || []).map((x) => x.trim()).filter(Boolean), you_get: (o.you_get || []).filter((r) => r.label) })) };
+    const { data, error } = await supabase.from('commercial_deals').update({ seller_content: clean }).eq('id', deal.id).select().single();
     setSaved(error ? error.message : 'Saved. The seller sees this now.');
     if (data) onSaved(data);
   };
@@ -106,10 +111,33 @@ function SellerEditor({ deal, onSaved }) {
   return (
     <Card>
       <CardTitle>What the seller reads</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only what’s on this card. Keep every line true. No prices or terms until you’ve agreed them.</p>
+      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only what’s on this card, plus photos you mark for the seller. Keep every line true. Your offers math never shows here. <a className="underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a></p>
       <div className="space-y-4">
         <Field value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
         <textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
+        <div className="space-y-3 rounded-2xl border border-line p-4">
+          <p className="text-sm font-medium">The options the seller can pick from</p>
+          <Field value={c.options_title || ''} placeholder="Section title, e.g. Three ways we could do this" onChange={(e) => setC({ ...c, options_title: e.target.value })} />
+          <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={c.options_note || ''} placeholder="Note shown above the options" onChange={(e) => setC({ ...c, options_note: e.target.value })} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            {(c.options || []).map((o, i) => {
+              const set = (p) => setC({ ...c, options: c.options.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+              return (
+                <div key={i} className="space-y-2 rounded-xl bg-paper p-3">
+                  <div className="flex gap-2"><Field className="!w-14" value={o.key} onChange={(e) => set({ key: e.target.value.slice(0, 3) })} /><Field value={o.title} placeholder="Title" onChange={(e) => set({ title: e.target.value })} /></div>
+                  <Field value={o.tagline || ''} placeholder="One line" onChange={(e) => set({ tagline: e.target.value })} />
+                  <textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.steps || []).join('\n')} placeholder="How it works, one step per line" onChange={(e) => set({ steps: e.target.value.split('\n') })} />
+                  <textarea className="min-h-20 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.you_get || []).map((r) => `${r.label} | ${r.value}`).join('\n')} placeholder="What they get: label | value, one per line"
+                    onChange={(e) => set({ you_get: e.target.value.split('\n').map((l) => { const [label, ...v] = l.split('|'); return { label: (label || '').trim(), value: v.join('|').trim() }; }) })} />
+                  <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.ask || ''} placeholder="What we’d ask of them" onChange={(e) => set({ ask: e.target.value })} />
+                  <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.watch || ''} placeholder="Worth knowing" onChange={(e) => set({ watch: e.target.value })} />
+                  <Button kind="secondary" onClick={() => setC({ ...c, options: c.options.filter((_, j) => j !== i) })}>Remove option</Button>
+                </div>
+              );
+            })}
+          </div>
+          <Button kind="secondary" onClick={() => setC({ ...c, options: [...(c.options || []), { key: String.fromCharCode(65 + (c.options || []).length), title: '', tagline: '', steps: [], you_get: [] }] })}>Add an option</Button>
+        </div>
         <div className="grid gap-6 md:grid-cols-2">
           {block('carry_now', 'What you carry now')}
           {block('with_us', 'What you’d have with us')}
@@ -173,20 +201,15 @@ function OwnerAlerts() {
 export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
   const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
-  const fakeMe = { email: '__preview__', name: 'Preview' };
-
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm uppercase tracking-[0.18em] text-warm">{deal.address}</p>
-        <h1 className="mt-1 font-display text-4xl font-semibold tracking-tight">{deal.title}</h1>
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Tabs tabs={TABS} active={active} base={`#/d/${deal.slug}`} />
+        <div className="mb-5 flex flex-wrap items-center gap-1 text-sm">
+          <span className="mr-1 text-ink-soft">See as</span>
+          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
+        </div>
       </div>
-      <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1">
-        {TABS.map(([k, label]) => (
-          <a key={k} href={`#/d/${deal.slug}/${k}`}
-            className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm transition ${active === k ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>{label}</a>
-        ))}
-      </nav>
 
       {active === 'overview' && (
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -194,27 +217,12 @@ export default function Owner({ deal: initial, me, tab }) {
           <div className="space-y-6"><SellerPulse deal={deal} /><OwnerAlerts /></div>
         </div>
       )}
-      {active === 'messages' && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Thread deal={deal} channel="seller" role="owner" me={me} title="Seller conversation" hint="The seller, the realtor and you." />
-          <Thread deal={deal} channel="team" role="owner" me={me} title="Team" hint="You and the realtor. The seller never sees this." />
-        </div>
-      )}
+      {active === 'offers' && <Offers deal={deal} canSave />}
+      {active === 'photos' && <Photos deal={deal} role="owner" me={me} />}
+      {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
-      {active === 'people' && <People deal={deal} />}
       {active === 'seller-page' && <SellerEditor deal={deal} onSaved={setDeal} />}
-      {active === 'settings' && <div className="space-y-6"><Settings deal={deal} onSaved={setDeal} /><Notes deal={deal} me={me} /></div>}
-      {active === 'preview-seller' && <Preview label="seller"><Seller deal={deal} me={fakeMe} preview /></Preview>}
-      {active === 'preview-realtor' && <Preview label="realtor"><Realtor deal={deal} me={fakeMe} role="realtor" preview /></Preview>}
-    </div>
-  );
-}
-
-function Preview({ label, children }) {
-  return (
-    <div className="rounded-3xl border-2 border-dashed border-warm p-4 sm:p-6">
-      <p className="mb-6 text-sm text-warm">This is what the {label} sees. Nothing here can be sent from preview.</p>
-      {children}
+      {active === 'settings' && <div className="space-y-6"><People deal={deal} /><Settings deal={deal} onSaved={setDeal} /><Notes deal={deal} me={me} /></div>}
     </div>
   );
 }

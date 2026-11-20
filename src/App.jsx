@@ -25,6 +25,6 @@ export default function App() {
   if (session === undefined) return <Shell><p className="text-ink-soft">Loading…</p></Shell>;
   if (!session) return <SignIn />;
   return route.name === 'deal'
-    ? <DealRoom slug={route.slug} tab={route.tab} session={session} />
+    ? <DealRoom slug={route.slug} tab={route.tab} sub={route.sub} session={session} />
     : <Home session={session} />;
 }

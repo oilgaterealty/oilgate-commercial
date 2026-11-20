@@ -24,7 +24,7 @@ export default function SignIn() {
 
   return (
     <Shell>
-      <div className="mx-auto max-w-md pt-10">
+      <div className="mx-auto max-w-md pt-6">
         <h1 className="font-display text-4xl font-semibold tracking-tight">Welcome</h1>
         <p className="mt-2 text-ink-soft">Sign in to see the property page you were invited to.</p>
         <Card className="mt-6 space-y-4">

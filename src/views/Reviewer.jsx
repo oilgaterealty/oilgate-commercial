@@ -1,0 +1,73 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase.js';
+import { operating, money, pct } from '../lib/dealmath.js';
+import { Card, CardTitle, Empty, Tabs } from '../components/Shell.jsx';
+import Messages from '../components/Messages.jsx';
+import { useUploads, Uploader, FileList } from '../components/Files.jsx';
+import { Hero, photosOf } from '../components/Photos.jsx';
+import Offers from './Offers.jsx';
+
+function Facts({ deal, numbers }) {
+  const [base, setBase] = useState(null);
+  useEffect(() => {
+    if (!numbers) return;
+    supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setBase(data?.base || {}));
+  }, [deal.id]);
+  const o = base && operating(base);
+  return (
+    <Card>
+      <CardTitle>The property</CardTitle>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+        <div><dt className="text-ink-soft">Address</dt><dd className="font-medium">{deal.address}</dd></div>
+        <div><dt className="text-ink-soft">Units</dt><dd className="font-medium">{o ? o.b.units : 9}</dd></div>
+        {o && <>
+          <div><dt className="text-ink-soft">Rent assumed</dt><dd className="font-medium">{money(o.b.rent)}/unit/mo</dd></div>
+          <div><dt className="text-ink-soft">Stabilized NOI</dt><dd className="font-medium">{money(o.noi)}/yr</dd></div>
+          <div><dt className="text-ink-soft">Value used</dt><dd className="font-medium">{money(o.b.value)}</dd></div>
+          <div><dt className="text-ink-soft">Cap rate</dt><dd className="font-medium">{pct(o.capRate, 1)}</dd></div>
+          <div><dt className="text-ink-soft">Rent-ready budget</dt><dd className="font-medium">{money(o.b.rehab)}</dd></div>
+          <div><dt className="text-ink-soft">Refi assumed</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
+        </>}
+      </dl>
+      {o && <p className="mt-3 text-xs text-ink-soft">Rents, taxes, insurance and repairs are unverified until the rent roll, bills and bids are in. The seller’s loan terms are unconfirmed. No lender has quoted.</p>}
+    </Card>
+  );
+}
+
+// Reviewer, lender and viewer. Each sees only what the owner shared with that role.
+export default function Reviewer({ deal, me, role, preview, tab }) {
+  const [rows, load] = useUploads(deal);
+  const viewer = role === 'viewer' || role === 'guest';
+  const shared = (rows || []).filter((r) => preview ? (r.audience || []).includes(role) : true);
+  const photos = photosOf(shared);
+  const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
+  const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
+  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['offers', 'Offers'], ['messages', 'Messages']];
+  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
+  return (
+    <div className="space-y-5">
+      {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
+      {active === 'overview' && (
+        <>
+          <Hero photos={photos} />
+          <Facts deal={deal} numbers={!viewer} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardTitle>Documents</CardTitle>
+              {docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
+            </Card>
+            {!viewer && (
+              <Card>
+                <CardTitle>Send us files</CardTitle>
+                <Uploader deal={deal} role={role} me={me} onDone={load} label="Upload files" preview={preview} />
+                <div className="mt-4">{mine.length ? <FileList rows={mine} /> : <Empty>Nothing sent yet.</Empty>}</div>
+              </Card>
+            )}
+          </div>
+        </>
+      )}
+      {active === 'offers' && <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} />}
+      {active === 'messages' && <Messages deal={deal} me={me} role={role} preview={preview} />}
+    </div>
+  );
+}

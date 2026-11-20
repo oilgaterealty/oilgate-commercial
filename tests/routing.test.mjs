@@ -4,8 +4,9 @@ import { parseHash } from '../src/lib/useHashRoute.js';
 import { slugify } from '../src/lib/format.js';
 
 test('deal routes parse slug and tab', () => {
-  assert.deepEqual(parseHash('#/d/Charlotte/people'), { name: 'deal', slug: 'charlotte', tab: 'people' });
-  assert.deepEqual(parseHash('#/d/quayle'), { name: 'deal', slug: 'quayle', tab: '' });
+  assert.deepEqual(parseHash('#/d/Charlotte/people'), { name: 'deal', slug: 'charlotte', tab: 'people', sub: '' });
+  assert.deepEqual(parseHash('#/d/quayle'), { name: 'deal', slug: 'quayle', tab: '', sub: '' });
+  assert.deepEqual(parseHash('#/d/charlotte/view/seller'), { name: 'deal', slug: 'charlotte', tab: 'view', sub: 'seller' });
   assert.deepEqual(parseHash('#/'), { name: 'home' });
   assert.deepEqual(parseHash(''), { name: 'home' });
 });

@@ -33,7 +33,7 @@ export default function Home({ session }) {
   };
 
   return (
-    <Shell session={session} title="Your properties" subtitle={owner ? 'Every deal you run, in one place.' : 'Properties you’ve been invited to.'}>
+    <Shell session={session} head={<h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Your properties</h1>}>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="grid gap-4 sm:grid-cols-2">
           {deals === null && <Empty>Loading…</Empty>}

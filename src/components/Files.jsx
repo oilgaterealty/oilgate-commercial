@@ -28,7 +28,7 @@ export function useUploads(deal) {
   return [rows, load];
 }
 
-export function Uploader({ deal, role, me, onDone, label = 'Upload files', allowShare }) {
+export function Uploader({ deal, role, me, onDone, label = 'Upload files', allowShare, preview, accept = ACCEPT, hint }) {
   const [busy, setBusy] = useState('');
   const [share, setShare] = useState(false);
   const [note, setNote] = useState('');
@@ -56,35 +56,52 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-dashed border-line bg-paper p-4">
+    <div className={`space-y-3 rounded-xl border border-dashed border-line bg-paper p-4 ${preview ? 'pointer-events-none opacity-70' : ''}`}>
       <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Add a note (optional)"
         className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink" />
       <div className="flex flex-wrap items-center gap-3">
         <label className="cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink-soft">
-          {label}<input type="file" multiple accept={ACCEPT} className="hidden" onChange={pick} />
+          {label}<input type="file" multiple accept={accept} className="hidden" disabled={preview} onChange={pick} />
         </label>
         {allowShare && (
           <label className="flex items-center gap-2 text-sm text-ink-soft">
-            <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} /> Show to seller
+            <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} /> Seller can see
           </label>
         )}
       </div>
       {busy && <p className="text-sm text-ink-soft">{busy}</p>}
+      {hint && <p className="text-xs text-ink-soft">{hint}</p>}
     </div>
   );
 }
 
-export function FileList({ rows, canShare, onChange }) {
+const AUD = [['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
+
+export function ShareChips({ r, onChange, owner }) {
+  const set = async (patch) => { await supabase.from('commercial_uploads').update(patch).eq('id', r.id); onChange?.(); };
+  const chip = (on, label, fn) => (
+    <button key={label} onClick={fn} className={`rounded-full px-2.5 py-1 text-xs font-medium ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
+  );
+  return (
+    <div className="flex flex-wrap gap-1">
+      {chip(r.visibility === 'seller', 'Seller', () => set({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }))}
+      {owner && AUD.map(([k, l]) => chip((r.audience || []).includes(k), l, () => set({ audience: (r.audience || []).includes(k) ? r.audience.filter((x) => x !== k) : [...(r.audience || []), k] })))}
+    </div>
+  );
+}
+
+export function FileList({ rows, canShare, owner, onChange }) {
   if (!rows) return <Empty>Loading…</Empty>;
   if (!rows.length) return <Empty>Nothing uploaded yet.</Empty>;
-  const toggle = async (r) => {
-    await supabase.from('commercial_uploads').update({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }).eq('id', r.id);
+  const remove = async (r) => {
+    if (!window.confirm(`Delete ${r.file_name}?`)) return;
+    await supabase.from('commercial_uploads').delete().eq('id', r.id);
     onChange?.();
   };
   return (
     <ul className="divide-y divide-line">
       {rows.map((r) => (
-        <li key={r.id} className="flex items-center gap-3 py-3">
+        <li key={r.id} className="flex flex-wrap items-center gap-3 py-3">
           {r.kind === 'photo' && r.url
             ? <img src={r.url} alt="" className="h-12 w-12 rounded-lg object-cover" />
             : <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-warm-soft text-xs font-medium">DOC</span>}
@@ -92,11 +109,8 @@ export function FileList({ rows, canShare, onChange }) {
             <a href={r.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium hover:underline">{r.file_name}</a>
             <p className="text-xs text-ink-soft">{roleLabel[r.uploaded_by_role]} · {when(r.created_at)} · {bytes(r.size_bytes)}{r.note ? ` · ${r.note}` : ''}</p>
           </div>
-          {canShare && (
-            <button onClick={() => toggle(r)} className={`rounded-full px-3 py-1 text-xs font-medium ${r.visibility === 'seller' ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>
-              {r.visibility === 'seller' ? 'Seller can see' : 'Team only'}
-            </button>
-          )}
+          {canShare && <ShareChips r={r} owner={owner} onChange={onChange} />}
+          {owner && <button onClick={() => remove(r)} className="text-xs text-ink-soft hover:text-red-700">Delete</button>}
         </li>
       ))}
     </ul>
@@ -118,13 +132,14 @@ export function PhotoGrid({ rows }) {
   );
 }
 
-export default function Files({ deal, role, me, title = 'Files', canShare, allowShare, readOnly }) {
+export default function Files({ deal, role, me, title = 'Files', canShare, allowShare, readOnly, preview, only }) {
   const [rows, load] = useUploads(deal);
+  const list = rows && (only ? rows.filter((r) => r.kind === only) : rows);
   return (
     <Card>
       <CardTitle>{title}</CardTitle>
-      {!readOnly && <Uploader deal={deal} role={role} me={me} onDone={load} allowShare={allowShare} />}
-      <div className="mt-4"><FileList rows={rows} canShare={canShare} onChange={load} /></div>
+      {!readOnly && <Uploader deal={deal} role={role} me={me} onDone={load} allowShare={allowShare} preview={preview} />}
+      <div className="mt-4"><FileList rows={list} canShare={canShare && !preview} owner={role === 'owner' && !preview} onChange={load} /></div>
     </Card>
   );
 }
