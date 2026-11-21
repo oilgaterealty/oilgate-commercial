@@ -4,6 +4,7 @@
 // never in this (public) code. These blanks are only a starting template.
 export const BASE_FIELDS = [
   ['units', 'Units', 'n'],
+  ['tenthUnitRepair', 'Extra repair cost if there are 10 units', '$'],
   ['rent', 'Rent per unit / mo', '$'],
   ['vacancyPct', 'Vacancy + collection loss', '%'],
   ['taxes', 'Taxes / yr', '$'],
@@ -15,63 +16,75 @@ export const BASE_FIELDS = [
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
   ['value', 'Value after rent-ready (ARV)', '$'],
   ['rehab', 'Rent-ready budget', '$'],
-  ['refiRate', 'Refi rate', '%'],
-  ['refiYears', 'Refi term (years)', 'n'],
-  ['refiLtv', 'Refi max loan-to-value', '%'],
-  ['refiDscr', 'Refi minimum DSCR', 'x'],
-  ['refiFeesPct', 'Refi fees (% of loan)', '%'],
-  ['refiFeesFlat', 'Refi fees, flat', '$'],
-  ['refiReserve', 'Reserves held back at refi', '$'],
+  ['refiRate', 'Refinance rate', '%'],
+  ['refiYears', 'Refinance term (years)', 'n'],
+  ['refiLtv', 'Most a bank lends, as % of value', '%'],
+  ['refiDscr', 'How much rent must exceed the bank payment', 'x'],
+  ['refiFeesPct', 'Refinance fees (% of loan)', '%'],
+  ['refiFeesFlat', 'Refinance fees, flat', '$'],
+  ['refiReserve', 'Cash the bank holds back at refinance', '$'],
+];
+
+// Short-term rental (Airbnb) assumptions. Defaults are placeholders; each deal's real numbers live in its private row.
+export const STR_FIELDS = [
+  ['strNightly', 'Nightly rate', '$'],
+  ['strOccPct', 'Nights booked', '%'],
+  ['strFeesPct', 'Platform fees (% of bookings)', '%'],
+  ['strCleaningPerStay', 'Cleaning fee charged per stay', '$'],
+  ['strNightsPerStay', 'Average nights per stay', 'n'],
+  ['strCostsMo', 'Extra costs per Airbnb unit / mo (utilities, supplies, cleaning)', '$'],
 ];
 
 // Facts about the building (from the rent roll, bills and seller records). Only the owner can change these.
 // Everything else is an assumption anyone with access can try a what-if on.
-export const KNOWN_BASE = ['units', 'rent', 'taxes', 'insurance', 'utilities', 'admin', 'turns'];
+// Units, rent and the Airbnb switch are what-ifs anyone on the team can try; only LaVante's changes save.
+export const KNOWN_BASE = ['taxes', 'insurance', 'utilities', 'admin', 'turns'];
 
 export const BASE_DEFAULTS = {
-  units: 0, rent: 0, vacancyPct: 7, taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
+  units: 0, tenthUnitRepair: 12000, rent: 0, vacancyPct: 7,
+  strUnits: 0, strNightly: 0, strOccPct: 0, strFeesPct: 15, strCleaningPerStay: 0, strNightsPerStay: 3, strCostsMo: 0, taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 10, reservesPerUnit: 300, value: 0, rehab: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
 };
 
 export const STRUCTURES = {
   master_lease: {
-    label: 'Master lease with option',
+    label: 'Lease now, buy later',
     fields: [
-      ['payment', 'Lease payment to seller / mo (once full)', '$'],
-      ['optionPrice', 'Locked option price', '$'],
-      ['sellerAdvances', 'Seller advances added to the price', '$'],
-      ['creditPct', 'Share of each payment credited to the price', '%'],
+      ['payment', 'Monthly payment to the seller (once full)', '$'],
+      ['optionPrice', 'Price we lock in to buy later', '$'],
+      ['sellerAdvances', 'Seller’s upfront money, added to the price', '$'],
+      ['creditPct', 'Share of each payment that counts toward the price', '%'],
       ['exerciseClosing', 'Closing costs when we buy', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
     defaults: { payment: 0, optionPrice: 0, sellerAdvances: 0, creditPct: 100, exerciseClosing: 0, buyerCash: 0 },
   },
   wrap: {
-    label: 'Wrap',
+    label: 'Buy now, seller is paid monthly',
     fields: [
-      ['note', 'Wrap note (price + seller advances)', '$'],
-      ['rate', 'Wrap rate', '%'],
-      ['amortYears', 'Amortization years (0 = interest-only)', 'n'],
+      ['note', 'What we owe the seller (price + their upfront money)', '$'],
+      ['rate', 'Interest rate we pay the seller', '%'],
+      ['amortYears', 'Years to pay it down (0 = interest only)', 'n'],
       ['sellerLoanPayment', 'Seller’s own loan payment / mo (0 = unknown)', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
     defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, buyerCash: 0 },
   },
   partnership: {
-    label: 'Partnership with step-ups',
+    label: 'Partner now, buy out later',
     fields: [
-      ['buyout', 'Buyout price at refi', '$'],
-      ['sellerAdvances', 'Seller advances repaid at buyout', '$'],
-      ['stepUp', 'Step-up to seller / mo when full (whole building)', '$'],
-      ['monthsToBuyout', 'Months to buyout', 'n'],
+      ['buyout', 'Buyout price, paid by a refinance', '$'],
+      ['sellerAdvances', 'Seller’s upfront money, paid back at buyout', '$'],
+      ['stepUp', 'Monthly payment to the seller once full', '$'],
+      ['monthsToBuyout', 'Months until we buy them out', 'n'],
       ['closing', 'Closing costs at buyout', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
     defaults: { buyout: 0, sellerAdvances: 0, stepUp: 0, monthsToBuyout: 12, closing: 0, buyerCash: 0 },
   },
   cash: {
-    label: 'Straight purchase with a bank loan',
+    label: 'Straight sale with a bank loan',
     fields: [
       ['price', 'Price', '$'],
       ['downPct', 'Down payment', '%'],
@@ -99,10 +112,15 @@ export function pv(ratePct, years, payment) {
 
 export function operating(baseIn = {}) {
   const b = { ...BASE_DEFAULTS, ...Object.fromEntries(Object.entries(baseIn).map(([k, v]) => [k, num(v, BASE_DEFAULTS[k])])) };
-  const gpr = b.units * b.rent * 12;
-  const egi = gpr * (1 - b.vacancyPct / 100);
+  const str = strMonthly(b);
+  const strUnits = Math.max(0, Math.min(b.units, Math.round(b.strUnits)));
+  const ltrUnits = b.units - strUnits;
+  const gpr = ltrUnits * b.rent * 12 + strUnits * str.gross * 12;
+  const egi = ltrUnits * b.rent * 12 * (1 - b.vacancyPct / 100) + strUnits * str.collected * 12;
   const mgmt = egi * (b.mgmtPct / 100);
-  const fixed = b.taxes + b.insurance + b.utilities + b.admin + b.turns;
+  const fixed = b.taxes + b.insurance + b.utilities + b.admin + b.turns + strUnits * b.strCostsMo * 12;
+  const extraRepair = b.units >= 10 ? b.tenthUnitRepair : 0;
+  b.rehab += extraRepair;
   const noi = egi - mgmt - fixed;
   const reserves = b.units * b.reservesPerUnit;
   const cashFlow = noi - reserves; // yearly, before any debt or payment to the seller
@@ -111,7 +129,16 @@ export function operating(baseIn = {}) {
   const refiLoan = Math.min(loanByDscr, loanByLtv);
   const refiNet = refiLoan - (refiLoan * b.refiFeesPct) / 100 - b.refiFeesFlat - b.refiReserve;
   const refiPayment = pmt(b.refiRate, b.refiYears, refiLoan);
-  return { b, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
+  return { b, str, strUnits, ltrUnits, extraRepair, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
+}
+
+// One Airbnb unit, per month: what guests pay (gross), and what we collect after platform fees.
+export function strMonthly(b) {
+  const nights = 30.4 * (b.strOccPct / 100);
+  const stays = b.strNightsPerStay > 0 ? nights / b.strNightsPerStay : 0;
+  const gross = nights * b.strNightly + stays * b.strCleaningPerStay;
+  const collected = gross * (1 - b.strFeesPct / 100);
+  return { nights, gross, collected, net: collected - b.strCostsMo };
 }
 
 // Occupancy needed to cover fixed costs, reserves and the yearly payment.
@@ -132,7 +159,7 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     extra = [
       ['Credits needed before a refi can buy it', needed, '$'],
       ['Months until we can buy', months, 'mo'],
-      ['You keep after we buy and refi', o.cashFlow / 12 - o.refiPayment, '$/mo'],
+      ['You keep after we buy and refinance', o.cashFlow / 12 - o.refiPayment, '$/mo'],
     ];
   } else if (structure === 'wrap') {
     debtMonthly = sellerMonthly = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
@@ -146,7 +173,7 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     const gap = x.buyout + x.sellerAdvances + x.closing - o.refiNet;
     extra = [
       ['You keep before the buyout (after step-ups)', o.cashFlow / 12 - x.stepUp, '$/mo'],
-      ['Refi shortfall at buyout (negative = cash left over)', gap, '$'],
+      ['Refinance comes up short at buyout by (negative = cash left over)', gap, '$'],
       ['Seller receives at buyout', x.buyout + x.sellerAdvances, '$'],
     ];
   } else if (structure === 'cash') {
@@ -158,6 +185,7 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     extra = [['Seller is paid at closing', x.price, '$'], ['Loan amount', loan, '$']];
   }
 
+  if (structure !== 'cash') allIn += o.extraRepair;
   const keepMonthly = o.cashFlow / 12 - debtMonthly;
   const dscr = debtMonthly > 0 ? o.cashFlow / (debtMonthly * 12) : Infinity;
   return {

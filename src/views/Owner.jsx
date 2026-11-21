@@ -5,9 +5,8 @@ import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
-import Activity from '../components/Activity.jsx';
 import Offers from './Offers.jsx';
-import { SellerPulse, AlertsCard } from './Realtor.jsx';
+import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 
@@ -73,7 +72,7 @@ function People({ deal }) {
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
           <select className="w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-            <option value="realtor">Realtor: messages, photos, files</option>
+            <option value="realtor">Realtor: deal, offers, photos, messages, files</option>
             <option value="seller">Seller: the seller page only</option>
             <option value="reviewer">Reviewer: offers and files you share</option>
             <option value="lender">Lender: offers and files you share</option>
@@ -220,17 +219,14 @@ export default function Owner({ deal: initial, me, tab }) {
       </div>
 
       {active === 'overview' && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <Dashboard deal={deal} me={me} />
-          <aside className="space-y-6"><div className="max-h-[560px] overflow-y-auto"><Activity deal={deal} title="Recent activity" /></div><OwnerAlerts /></aside>
-        </div>
+        <Dashboard deal={deal} me={me} role="owner" />
       )}
-      {active === 'offers' && <Offers deal={deal} canSave />}
+      {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
       {active === 'photos' && <Photos deal={deal} role="owner" me={me} />}
       {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
       {active === 'seller-page' && <div className="space-y-5"><LoanPosition deal={deal} role="owner" /><SellerEditor deal={deal} onSaved={setDeal} /></div>}
-      {active === 'settings' && <div className="space-y-6"><People deal={deal} /><Settings deal={deal} onSaved={setDeal} /><Notes deal={deal} me={me} /></div>}
+      {active === 'settings' && <div className="space-y-6"><People deal={deal} /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Settings deal={deal} onSaved={setDeal} /><OwnerAlerts /></div><Notes deal={deal} me={me} /></div>}
     </div>
   );
 }

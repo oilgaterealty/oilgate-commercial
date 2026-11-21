@@ -138,7 +138,7 @@ export default function Seller({ deal, me, preview }) {
         <section>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <h2 className="font-display text-3xl font-semibold">{c.options_title || 'Three ways we could do this'}</h2>
-            <div className="flex gap-2" aria-label="Option layout"><Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Compare options</Button><Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Cards</Button></div>
+            <div className="flex gap-2" aria-label="Option layout"><Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button><Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Card view</Button></div>
           </div>
           {c.options_note && <p className="mb-4 max-w-3xl rounded-2xl bg-warm-soft px-4 py-3 text-sm">{c.options_note}</p>}
           {view === 'table' && <div className="comparison-scroll" tabIndex={0} aria-label="Options comparison; scroll horizontally"><table className="comparison-table"><thead><tr><th>Compare</th>{options.map(o => <th key={o.key}>Option {o.key}<br />{o.title}</th>)}</tr></thead><tbody>
@@ -155,7 +155,7 @@ export default function Seller({ deal, me, preview }) {
         </section>
       )}
 
-      <LoanPosition deal={deal} role="seller" preview={preview} />
+      <LoanPosition deal={deal} role="seller" preview={preview} me={me} />
 
       {(c.carry_now?.length || c.with_us?.length) && (
         <div className="grid gap-4 md:grid-cols-2">

@@ -50,11 +50,18 @@ test('v2 migration only creates, alters or drops commercial_ objects', () => {
   assert.doesNotMatch(v2, /\b(truncate|drop table|drop function)\b/i);
 });
 
-test('seller and realtor pages never load offers or underwriting', () => {
-  for (const f of ['Seller.jsx', 'Realtor.jsx']) {
-    const src = readFileSync(new URL(`../src/views/${f}`, import.meta.url), 'utf8');
-    for (const t of ['commercial_offers', 'commercial_models', 'Offers', 'dealmath', 'owner_notes', 'deal_private']) assert.ok(!src.includes(t), `${f}: ${t}`);
-  }
+test('seller page never loads offers or underwriting', () => {
+  const src = readFileSync(new URL('../src/views/Seller.jsx', import.meta.url), 'utf8');
+  for (const t of ['commercial_offers', 'commercial_models', 'Offers', 'dealmath', 'Switches', 'owner_notes', 'deal_private']) assert.ok(!src.includes(t), t);
+});
+
+test('realtor sees offers read-only (v3) but never owner notes, private settings or saving', () => {
+  const src = readFileSync(new URL('../src/views/Realtor.jsx', import.meta.url), 'utf8');
+  for (const t of ['owner_notes', 'deal_private', 'canSave', 'People', 'Settings']) assert.ok(!src.includes(t), t);
+  const v3 = readFileSync(new URL('../supabase/migrations/0008_v3_roles_tasks.sql', import.meta.url), 'utf8');
+  for (const m of v3.matchAll(/(?:alter table|on) (\S+)/g)) assert.match(m[1], /^public\.commercial_/, m[1]);
+  assert.doesNotMatch(v3, /'seller'|'viewer'|\b(truncate|drop table|drop function)\b/i);
+  assert.match(v3, /models_review[\s\S]*for select/);
 });
 
 test('offers are readable only by the owner, or a reviewer/lender it was shared with', () => {

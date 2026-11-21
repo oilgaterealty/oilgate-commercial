@@ -6,7 +6,7 @@ import Messages from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Hero, photosOf } from '../components/Photos.jsx';
 import Offers from './Offers.jsx';
-import { UnitNote, WorkBoard } from '../components/DealWorkspace.jsx';
+import { WorkBoard } from '../components/DealWorkspace.jsx';
 import LenderTerms from './LenderTerms.jsx';
 
 function Facts({ deal, numbers }) {
@@ -15,20 +15,21 @@ function Facts({ deal, numbers }) {
     if (!numbers) return;
     supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setBase(data?.base || {}));
   }, [deal.id]);
-  const o = base && operating({ ...base, units: 9 });
+  const o = base && operating({ units: 9, ...base });
   return (
     <Card>
       <CardTitle>The property</CardTitle>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
         <div><dt className="text-ink-soft">Address</dt><dd className="font-medium">{deal.address}</dd></div>
         <div><dt className="text-ink-soft">Units</dt><dd className="font-medium">{o ? o.b.units : 9}</dd></div>
+        {o && base.askPrice ? <div><dt className="text-ink-soft">Current offer (seller’s number)</dt><dd className="font-medium">{money(+base.askPrice)}</dd></div> : null}
         {o && <>
           <div><dt className="text-ink-soft">Rent assumed</dt><dd className="font-medium">{money(o.b.rent)}/unit/mo</dd></div>
-          <div><dt className="text-ink-soft">Stabilized NOI</dt><dd className="font-medium">{money(o.noi)}/yr</dd></div>
-          <div><dt className="text-ink-soft">Value used</dt><dd className="font-medium">{money(o.b.value)}</dd></div>
-          <div><dt className="text-ink-soft">Cap rate</dt><dd className="font-medium">{pct(o.capRate, 1)}</dd></div>
-          <div><dt className="text-ink-soft">Rent-ready budget</dt><dd className="font-medium">{money(o.b.rehab)}</dd></div>
-          <div><dt className="text-ink-soft">Refi assumed</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
+          <div><dt className="text-ink-soft">Yearly profit before payments</dt><dd className="font-medium">{money(o.noi)}/yr</dd></div>
+          <div><dt className="text-ink-soft">Value after repairs</dt><dd className="font-medium">{money(o.b.value)}</dd></div>
+          <div><dt className="text-ink-soft">Yearly return on value</dt><dd className="font-medium">{pct(o.capRate, 1)}</dd></div>
+          <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-medium">{money(o.b.rehab)}</dd></div>
+          <div><dt className="text-ink-soft">Refinance assumed</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
         </>}
       </dl>
       {o && <p className="mt-3 text-xs text-ink-soft">Rents, taxes, insurance and repairs are unverified until the rent roll, bills and bids are in. The seller’s loan terms are unconfirmed. No lender has quoted.</p>}
@@ -52,14 +53,13 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {active === 'overview' && (
         <>
-          {!viewer && <UnitNote />}
           {role === 'lender' && <LenderTerms deal={deal} me={me} preview={preview} />}
           {photos.length > 0 && <Hero photos={photos} />}
           <Facts deal={deal} numbers={!viewer} />
           {!viewer && (
             <section>
               <h2 className="mb-3 font-display text-2xl font-semibold">The offers</h2>
-              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} />
+              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} />
             </section>
           )}
           <div className="grid gap-6 lg:grid-cols-2">

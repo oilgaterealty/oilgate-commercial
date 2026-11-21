@@ -1,39 +1,134 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { operating, money, pct } from '../lib/dealmath.js';
+import { evaluate, money, pct } from '../lib/dealmath.js';
+import { useDealModel } from '../lib/useDealModel.js';
 import { Card, CardTitle, Empty, Button } from '../components/Shell.jsx';
 import { useUploads, FileList } from '../components/Files.jsx';
-import { UnitNote, WorkBoard } from '../components/DealWorkspace.jsx';
-import { SellerPulse } from './Realtor.jsx';
+import { photosOf } from '../components/Photos.jsx';
+import { WorkBoard } from '../components/DealWorkspace.jsx';
+import Activity from '../components/Activity.jsx';
+import Switches, { SendWhatIf } from '../components/Switches.jsx';
+import { SellerPulse } from '../components/Pulse.jsx';
 import { when, roleLabel } from '../lib/format.js';
 
-export default function Dashboard({ deal, me }) {
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
+
+function Tile({ label, children, sub, strong }) {
+  return (
+    <div className={`rounded-2xl p-3 ${strong ? 'bg-ink text-white' : 'bg-paper'}`}>
+      <dt className={`text-xs ${strong ? 'text-warm' : 'text-ink-soft'}`}>{label}</dt>
+      <dd className="mt-1 font-display text-xl font-semibold leading-tight">{children}</dd>
+      {sub && <p className={`mt-0.5 text-xs ${strong ? 'text-white/70' : 'text-ink-soft'}`}>{sub}</p>}
+    </div>
+  );
+}
+
+// Owner types the number the seller is currently asking. Everyone else reads it.
+function CurrentOffer({ base, setBase, owner }) {
+  const v = base.askPrice;
+  if (!owner) return <Tile label="Current offer (seller’s number)" strong sub="Being discussed, not signed">{v ? money(+v) : 'Not set yet'}</Tile>;
+  return (
+    <div className="rounded-2xl bg-ink p-3 text-white">
+      <label htmlFor="ask" className="text-xs text-warm">Current offer (seller’s number)</label>
+      <div className="relative mt-1">
+        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-xl text-white/60">$</span>
+        <input id="ask" type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, askPrice: e.target.value === '' ? '' : +e.target.value })}
+          className="w-full rounded-lg border border-white/20 bg-white/10 py-1 pl-6 pr-2 font-display text-xl font-semibold text-white outline-none focus:border-warm" />
+      </div>
+      <p className="mt-0.5 text-xs text-white/70">Being discussed, not signed. Only you can change it.</p>
+    </div>
+  );
+}
+
+function PhotoTile({ photos, href }) {
+  const [first, ...rest] = photos;
+  return (
+    <Card className="!p-3">
+      {!first ? <Empty>Photos will show here once they’re uploaded.</Empty> : (
+        <>
+          <a href={href} className="block overflow-hidden rounded-2xl"><img src={first.url} alt={first.note || 'The building'} className="h-44 w-full object-cover transition hover:scale-[1.02]" /></a>
+          <div className="mt-2 grid grid-cols-4 gap-2">
+            {rest.slice(0, 4).map((p) => <a key={p.id} href={href}><img src={p.url} alt={p.note || 'Property photo'} className="h-14 w-full rounded-lg object-cover" /></a>)}
+          </div>
+          <a href={href} className="mt-2 inline-block text-sm underline">See all {photos.length} photos</a>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Overview for LaVante and (with fewer powers) the realtor.
+export default function Dashboard({ deal, me, role = 'owner', preview }) {
+  const owner = role === 'owner' && !preview;
+  const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
+  const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
+  const { offers, base, setBase } = model;
   const [messages, setMessages] = useState([]);
-  const [base, setBase] = useState(null);
-  const [bias, setBias] = useState([]);
-  const [error, setError] = useState('');
   const [filePreview, setFilePreview] = useState(null);
   useEffect(() => {
-    Promise.all([
-      Promise.all(['seller', 'realtor', 'reviewer', 'lender', 'viewer'].map(role => supabase.from('commercial_messages').select('*').eq('deal_id', deal.id).eq('author_role', role).order('created_at', { ascending: false }).limit(1))),
-      supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
-      supabase.from('commercial_bia').select('*').eq('deal_id', deal.id),
-    ]).then(([m, b, sheets]) => {
-      setMessages(m.flatMap(x => x.data || [])); setBase(b.data?.base || null); setBias(sheets.data || []);
-      if (m.some(x => x.error) || b.error || sheets.error) setError('Some dashboard information could not load. Refresh to try again.');
-    });
-  }, [deal.id]);
-  const o = base && operating({ ...base, units: 9 });
-  const roles = ['seller', 'realtor', 'reviewer', 'lender', 'viewer'];
-  return <div className="space-y-5"><UnitNote />{error && <p role="alert">{error}</p>}
-    <Card><CardTitle>Deal at a glance</CardTitle><dl className="grid grid-cols-2 gap-5 sm:grid-cols-4">{[['Status', deal.status], ['Underwritten units', '9'], ['Annual NOI', o ? money(o.noi) : 'Awaiting numbers'], ['Value used', o ? money(o.b.value) : 'Awaiting numbers'], ['Monthly rent / unit', o ? money(o.b.rent) : 'Awaiting numbers'], ['Cap rate', o ? pct(o.capRate, 1) : 'Awaiting numbers']].map(([l, v]) => <div key={l}><dt className="text-xs text-ink-soft">{l}</dt><dd className="mt-1 font-display text-xl font-semibold">{v}</dd></div>)}</dl><a className="mt-4 inline-block text-sm underline" href={`#/d/${deal.slug}/offers`}>Review all offer numbers</a></Card>
-    <SellerPulse deal={deal} />
-    <Card><CardTitle>Latest messages by role</CardTitle><ul className="divide-y divide-line">{roles.map(role => { const m = messages.find(x => x.author_role === role); return <li key={role} className="py-3"><div className="flex items-center justify-between gap-2"><strong className="text-sm">{roleLabel[role]}</strong>{m && <a className="text-sm underline" href={`#/d/${deal.slug}/messages?thread=${m.conversation_id || ''}`}>Reply</a>}</div>{m ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{m.body}</p><p className="mt-1 text-xs text-ink-soft">{when(m.created_at)}</p></> : <Empty>No messages yet.</Empty>}</li>; })}</ul></Card>
-    <Card><CardTitle>Recent files</CardTitle><FileList rows={rows?.slice(0, 5)} /><div className="mt-2 flex flex-wrap gap-2">{rows?.slice(0, 5).filter(x => x.url && (x.kind === 'photo' || x.mime === 'application/pdf')).map(x => <Button key={x.id} kind="secondary" onClick={() => setFilePreview(x)}>Preview {x.file_name}</Button>)}</div>{filePreview && <div className="mt-4 rounded-xl border border-line p-3"><div className="mb-2 flex items-center justify-between gap-3"><p className="truncate text-sm font-medium">{filePreview.file_name}</p><Button kind="secondary" onClick={() => setFilePreview(null)}>Close preview</Button></div>{filePreview.kind === 'photo' ? <img src={filePreview.url} alt={filePreview.note || filePreview.file_name} className="max-h-80 w-full object-contain" /> : <iframe title={`Preview ${filePreview.file_name}`} src={filePreview.url} className="h-96 w-full" />}</div>}<a className="mt-3 inline-block text-sm underline" href={`#/d/${deal.slug}/files`}>All files and uploads</a></Card>
-    <WorkBoard deal={deal} me={me} role="owner" />
-    <WorkBoard deal={deal} me={me} role="owner" kind="research" title="Research to share" />
-    <WorkBoard deal={deal} me={me} role="owner" kind="update" title="Deal updates" />
-    <Card><CardTitle>Realtor BIA sheets</CardTitle>{!bias.length ? <Empty>No BIA sheets submitted yet.</Empty> : bias.map(b => <div key={b.author_email} className="border-t border-line py-3"><p className="font-medium">{b.author_email}</p>{Object.entries(b.answers).map(([k, v]) => <p key={k} className="mt-2 whitespace-pre-wrap text-sm"><strong>{k.replaceAll('_', ' ')}:</strong> {v}</p>)}</div>)}</Card>
-  </div>;
+    if (role !== 'owner') return;
+    Promise.all(['seller', 'realtor', 'reviewer', 'lender', 'viewer'].map(r => supabase.from('commercial_messages').select('*').eq('deal_id', deal.id).eq('author_role', r).order('created_at', { ascending: false }).limit(1)))
+      .then((m) => setMessages(m.flatMap(x => x.data || [])));
+  }, [deal.id, role]);
+
+  const visible = preview ? (rows || []).filter((r) => (r.audience || []).includes(role)) : rows || [];
+  const photos = photosOf(visible);
+  const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, base) }));
+  const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);
+  const o = evaluate('cash', {}, base).operating;
+  const ready = offers !== null;
+
+  return (
+    <div className="space-y-5">
+      {model.error && <p role="alert" className="text-sm text-red-700">{model.error}</p>}
+      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+        <div className="space-y-5">
+          <Card>
+            <CardTitle aside={<a className="text-sm underline" href={`${root}/offers`}>Compare the offers</a>}>Deal at a glance</CardTitle>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <CurrentOffer base={base} setBase={setBase} owner={owner} />
+              <Tile label="Best cash flow" strong sub={best ? `${best.x.name} · whole building` : ''}>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
+              <Tile label="Monthly rent / unit" sub={o.strUnits ? `${o.strUnits} unit${o.strUnits > 1 ? 's' : ''} as Airbnb` : 'Regular rentals'}>{money(o.b.rent)}</Tile>
+              <Tile label="Status">{cap(deal.status)}</Tile>
+              <Tile label="Units" sub={o.extraRepair ? `Adds ${money(o.extraRepair)} repair` : 'Underwriting'}>{o.b.units}</Tile>
+              <Tile label="Yearly profit before payments" sub="Net operating income">{money(o.noi)}</Tile>
+              <Tile label="Value after repairs">{money(o.b.value)}</Tile>
+              <Tile label="Repair budget" sub={`Yearly return on value ${pct(o.capRate, 1)}`}>{money(o.b.rehab)}</Tile>
+            </dl>
+            <div className="mt-4"><Switches base={base} setBase={setBase} owner={owner} /></div>
+            {!owner && <div className="mt-3"><SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} /></div>}
+            {owner && model.saved && <p className="mt-2 text-xs text-ink-soft">{model.saved}</p>}
+          </Card>
+          <WorkBoard deal={deal} me={me} role={role} preview={preview} />
+        </div>
+        <aside className="space-y-5">
+          <PhotoTile photos={photos} href={`${root}/photos`} />
+          <SellerPulse deal={deal} />
+        </aside>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {role === 'owner' && (
+          <Card><CardTitle>Latest messages by role</CardTitle><ul className="divide-y divide-line">{['seller', 'realtor', 'reviewer', 'lender', 'viewer'].map(r => { const m = messages.find(x => x.author_role === r); return <li key={r} className="py-2.5"><div className="flex items-center justify-between gap-2"><strong className="text-sm">{roleLabel[r]}</strong>{m && <a className="text-sm underline" href={`#/d/${deal.slug}/messages?thread=${m.conversation_id || ''}`}>Reply</a>}</div>{m ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{m.body}</p><p className="mt-1 text-xs text-ink-soft">{when(m.created_at)}</p></> : <Empty>No messages yet.</Empty>}</li>; })}</ul></Card>
+        )}
+        <Card>
+          <CardTitle>Recent files</CardTitle>
+          <FileList rows={visible.slice(0, 5)} />
+          <div className="mt-2 flex flex-wrap gap-2">{visible.slice(0, 5).filter(x => x.url && (x.kind === 'photo' || x.mime === 'application/pdf')).map(x => <Button key={x.id} kind="secondary" onClick={() => setFilePreview(x)}>Preview {x.file_name}</Button>)}</div>
+          {filePreview && <div className="mt-4 rounded-xl border border-line p-3"><div className="mb-2 flex items-center justify-between gap-3"><p className="truncate text-sm font-medium">{filePreview.file_name}</p><Button kind="secondary" onClick={() => setFilePreview(null)}>Close preview</Button></div>{filePreview.kind === 'photo' ? <img src={filePreview.url} alt={filePreview.note || filePreview.file_name} className="max-h-80 w-full object-contain" /> : <iframe title={`Preview ${filePreview.file_name}`} src={filePreview.url} className="h-96 w-full" />}</div>}
+          <a className="mt-3 inline-block text-sm underline" href={`${root}/files`}>All files and uploads</a>
+        </Card>
+        {role !== 'owner' && <WorkBoard deal={deal} me={me} role={role} preview={preview} kind="update" title="Latest updates" />}
+      </div>
+
+      {role === 'owner' && (
+        <div className="grid gap-5 lg:grid-cols-2">
+          <WorkBoard deal={deal} me={me} role="owner" kind="research" title="Research to share" />
+          <WorkBoard deal={deal} me={me} role="owner" kind="update" title="Deal updates" />
+        </div>
+      )}
+      <div className="max-h-[520px] overflow-y-auto rounded-3xl"><Activity deal={deal} title="Recent activity" /></div>
+    </div>
+  );
 }

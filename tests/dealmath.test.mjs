@@ -5,7 +5,7 @@ import { operating, evaluate, grade } from '../src/lib/dealmath.js';
 
 const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} not within ${tol} of ${b}`);
 const B = { units: 10, rent: 1000, vacancyPct: 5, taxes: 10000, insurance: 5000, utilities: 6000, admin: 3000, turns: 1000, mgmtPct: 10,
-  reservesPerUnit: 300, value: 500000, rehab: 20000, refiRate: 7, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2, refiFeesFlat: 3000, refiReserve: 10000 };
+  reservesPerUnit: 300, value: 500000, rehab: 20000, refiRate: 7, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2, refiFeesFlat: 3000, refiReserve: 10000, tenthUnitRepair: 0 };
 
 test('NOI, cash flow and refi follow the standard formulas', () => {
   const o = operating(B);
@@ -59,10 +59,30 @@ test('editing one input changes the result live', () => {
   assert.ok(evaluate('wrap', { note: 400000, rate: 7 }, B).keepMonthly < evaluate('wrap', { note: 400000, rate: 6 }, B).keepMonthly);
 });
 
-test('building facts are locked for everyone but the owner', async () => {
+test('bills are locked for everyone but the owner; units, rent and Airbnb are what-ifs', async () => {
   const { KNOWN_BASE } = await import('../src/lib/dealmath.js');
-  for (const k of ['units', 'rent', 'taxes', 'insurance']) assert.ok(KNOWN_BASE.includes(k), k);
-  for (const k of ['refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
+  for (const k of ['taxes', 'insurance']) assert.ok(KNOWN_BASE.includes(k), k);
+  for (const k of ['units', 'rent', 'strUnits', 'refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
+});
+
+test('a 10th unit adds its repair cost to the budget and to every offer', () => {
+  const nine = operating({ ...B, units: 9, tenthUnitRepair: 12000 });
+  const ten = operating({ ...B, units: 10, tenthUnitRepair: 12000 });
+  assert.equal(nine.b.rehab, 20000);
+  assert.equal(ten.b.rehab, 32000);
+  near(evaluate('wrap', { note: 400000 }, { ...B, tenthUnitRepair: 12000 }).allIn, 412000, 0.01);
+  near(evaluate('cash', { price: 100000, closingPct: 0 }, { ...B, tenthUnitRepair: 12000 }).allIn, 132000, 0.01);
+});
+
+test('Airbnb units replace long-term rent with nightly income after fees and costs', () => {
+  const s = { strNightly: 100, strOccPct: 50, strFeesPct: 10, strCleaningPerStay: 0, strNightsPerStay: 2, strCostsMo: 200 };
+  const zero = operating({ ...B, ...s, strUnits: 0 });
+  const one = operating({ ...B, ...s, strUnits: 1 });
+  near(one.str.gross, 1520, 0.01);
+  near(one.str.collected, 1368, 0.01);
+  near(one.egi - zero.egi, 1368 * 12 - 1000 * 12 * 0.95, 0.01);
+  near(one.fixed - zero.fixed, 2400, 0.01);
+  assert.equal(one.ltrUnits, 9);
 });
 
 test('plain-English lines use the live math', async () => {

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { useDealModel } from '../lib/useDealModel.js';
+import Switches, { SendWhatIf } from '../components/Switches.jsx';
 import { BASE_DEFAULTS, BASE_FIELDS, KNOWN_BASE, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
@@ -54,10 +56,10 @@ export function Results({ r }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Metric label="You keep / mo (whole building)" value={money(r.keepMonthly)} tone={grade('keep', r.keepMonthly)} sub={r.operating.b.units ? `${money(r.keepMonthly / r.operating.b.units)} per unit` : ''} />
         <Metric label="Seller gets / mo" value={r.sellerMonthly === null ? 'At closing' : money(r.sellerMonthly)} sub={r.sellerMonthly === null ? '' : r.sellerNet !== null ? `${money(r.sellerNet)} after their loan` : 'Before their own loan payment'} />
-        <Metric label="DSCR" value={Number.isFinite(r.dscr) ? r.dscr.toFixed(2) + 'x' : 'No payment'} tone={grade('dscr', r.dscr)} sub="Target 1.20–1.25" />
-        <Metric label="Cash-on-cash" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)} sub={r.cashIn > 0 ? `${money(r.cashIn)} in` : 'Target 8–12%'} />
-        <Metric label="All-in vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)} sub={`${money(r.allIn)} of ${money(r.operating.b.value)}`} />
-        <Metric label="Break-even occupancy" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)} sub={`${breakEvenCount(r)} · Target 85% or less`} />
+        <Metric label="Rent covers the payment" value={Number.isFinite(r.dscr) ? r.dscr.toFixed(2) + 'x' : 'No payment'} tone={grade('dscr', r.dscr)} sub="Target 1.20x or more" />
+        <Metric label="Yearly return on cash in" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)} sub={r.cashIn > 0 ? `${money(r.cashIn)} in` : 'Target 8–12%'} />
+        <Metric label="Total cost vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)} sub={`${money(r.allIn)} of ${money(r.operating.b.value)}`} />
+        <Metric label="Rented units to break even" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)} sub={`${breakEvenCount(r)} · Target 85% or less`} />
       </div>
       {r.extra.length > 0 && (
         <ul className="divide-y divide-line rounded-2xl border border-line bg-white px-4">
@@ -74,97 +76,97 @@ function BuildingNumbers({ base, setBase, o, owner }) {
     <Card>
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
         <span className="font-display text-xl font-semibold">Building numbers</span>
-        <span className="text-sm text-ink-soft">NOI {money(o.noi)} · cash flow {money(o.cashFlow)}/yr · refi nets {money(o.refiNet)} {open ? '▴' : '▾'}</span>
+        <span className="text-sm text-ink-soft">Yearly profit before payments {money(o.noi)} · a refinance nets {money(o.refiNet)} {open ? '▴' : '▾'}</span>
       </button>
       {open && (
         <div className="mt-3">
           <p className="mb-2 text-xs text-ink-soft">{owner
             ? 'Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.'
-            : 'Locked numbers come from the property’s records. The rest are assumptions: try your own, nothing you change is saved.'}</p>
+            : 'Locked numbers are the building’s bills. The rest are assumptions: try your own, nothing you change is saved.'}</p>
           <div className="grid gap-x-8 md:grid-cols-2">
-            {BASE_FIELDS.map(([k, l, u]) => (
+            {BASE_FIELDS.filter(([k]) => !['units', 'tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                locked={k === 'units' || (!owner && KNOWN_BASE.includes(k))} onChange={(v) => setBase({ ...base, [k]: v, units: 9 })} />
+                locked={!owner && KNOWN_BASE.includes(k)} onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
           </div>
-          <p className="mt-2 text-xs text-ink-soft">Refi loan {money(o.refiLoan)}, limited by {o.refiLimitedBy}. Cap rate {pct(o.capRate, 1)}.</p>
+          <p className="mt-2 text-xs text-ink-soft">A refinance could lend {money(o.refiLoan)}, limited by {o.refiLimitedBy === 'DSCR' ? 'the rent' : 'the building’s value'}. Yearly return on the value (cap rate) {pct(o.capRate, 1)}.</p>
         </div>
       )}
     </Card>
   );
 }
 
-function Differ({ offers, evals, active, setActive }) {
-  const rows = [['owns', 'Who owns the building'], ['payoff', 'When the seller is paid off'], ['cash', 'Our cash up front'], ['risk', 'Main risk']];
+
+export const letterOf = (o, i) => (/^([A-Z])\s*:/.exec(o.name)?.[1]) || String.fromCharCode(65 + i);
+export const titleOf = (o) => o.name.replace(/^[A-Z]\s*:\s*/, '');
+
+const NUMBERS = [
+  ['You keep / month (whole building)', (e) => money(e.keepMonthly)],
+  ['Seller gets / month', (e) => (e.sellerMonthly === null ? 'Paid in full at closing' : money(e.sellerMonthly))],
+  ['Our cash in', (e) => money(e.cashIn)],
+  ['Rent covers the payment', (e) => (Number.isFinite(e.dscr) ? `${e.dscr.toFixed(2)}x` : 'No payment')],
+  ['Total cost vs value', (e) => `${money(e.allIn)} · ${pct(e.allInPct)}`],
+  ['Rented units to break even', (e) => breakEvenCount(e)],
+];
+
+// Same layout the seller sees: a letter, a plain name, one line, how it works, then the numbers.
+function OptionCard({ o, i, e }) {
+  const p = plain(o.structure, e);
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line bg-white">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead><tr>
-          <th className="w-40 px-3 py-2 text-left text-xs font-normal uppercase tracking-wider text-ink-soft">How they differ</th>
-          {offers.map((x) => (
-            <th key={x.id} onClick={() => setActive(x.id)} className={`cursor-pointer px-3 py-2 text-left font-medium ${x.id === active ? 'bg-warm-soft/70' : 'hover:bg-warm-soft/30'}`}>{x.name}</th>
-          ))}
-        </tr></thead>
-        <tbody className="divide-y divide-line">
-          {rows.map(([k, l]) => (
-            <tr key={k}>
-              <td className="px-3 py-2 text-xs text-ink-soft">{l}</td>
-              {offers.map((x) => <td key={x.id} className={`px-3 py-2 align-top ${x.id === active ? 'bg-warm-soft/40' : ''}`}>{plain(x.structure, evals[x.id])[k]}</td>)}
-            </tr>
-          ))}
-        </tbody>
+    <div className="rounded-3xl border-2 border-ink bg-white p-5">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-display text-lg text-white">{letterOf(o, i)}</span>
+      <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
+      <p className="mt-1 text-ink-soft">{p.glance}</p>
+      <ol className="mt-4 space-y-2">{p.lines.map((s, n) => <li key={n} className="flex gap-3 text-sm"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-warm-soft text-xs">{n + 1}</span>{s}</li>)}</ol>
+      <div className="mt-4 rounded-2xl bg-ink p-4 text-white">
+        <p className="text-xs uppercase tracking-[0.18em] text-warm">The numbers</p>
+        <ul className="mt-2 space-y-2">{NUMBERS.map(([l, f]) => <li key={l} className="flex justify-between gap-3 text-sm"><span>{l}</span><span className="text-right font-medium">{f(e)}</span></li>)}</ul>
+      </div>
+      <p className="mt-4 text-sm text-ink-soft"><span className="font-medium text-ink">Worth knowing: </span>{p.risk}.</p>
+    </div>
+  );
+}
+
+function OptionTable({ offers, evals }) {
+  const rows = [
+    ['At a glance', (o, e) => plain(o.structure, e).glance],
+    ['How it works', (o, e) => <ol className="list-decimal space-y-2 pl-4">{plain(o.structure, e).lines.map((s, n) => <li key={n}>{s}</li>)}</ol>],
+    ['The numbers', (o, e) => NUMBERS.map(([l, f]) => <p key={l} className="mb-2"><strong>{l}:</strong> {f(e)}</p>)],
+    ['Who owns the building', (o, e) => plain(o.structure, e).owns],
+    ['When the seller is paid off', (o, e) => plain(o.structure, e).payoff],
+    ['Worth knowing', (o, e) => plain(o.structure, e).risk],
+  ];
+  return (
+    <div className="comparison-scroll" tabIndex={0} aria-label="Options side by side; scroll sideways">
+      <table className="comparison-table">
+        <thead><tr><th>Compare</th>{offers.map((o, i) => <th key={o.id}>Option {letterOf(o, i)}<br />{titleOf(o)}</th>)}</tr></thead>
+        <tbody>{rows.map(([label, f]) => <tr key={label}><th>{label}</th>{offers.map((o) => <td key={o.id}>{f(o, evals[o.id])}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
 }
 
-// Owner: saves. Reviewer and lender: building facts are locked; terms and assumptions are a what-if that never saves.
-export default function Offers({ deal, canSave, onlyShared }) {
+// Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to LaVante.
+export default function Offers({ deal, canSave, onlyShared, me, role, preview }) {
   const owner = !!canSave;
-  const [offers, setOffers] = useState(null);
-  const [base, setBaseState] = useState({});
-  const original = useRef(null);
+  const model = useDealModel(deal, { owner, onlyShared });
+  const { offers, setOffers, base, setBase, later, saved } = model;
   const [active, setActive] = useState(null);
   const [view, setView] = useState('table');
-  const [saved, setSaved] = useState('');
-  const timers = useRef({});
 
-  useEffect(() => {
-    Promise.all([
-      supabase.from('commercial_offers').select('*').eq('deal_id', deal.id).order('sort'),
-      supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
-    ]).then(([a, b]) => {
-      const list = (a.data || []).filter((x) => !onlyShared || x['share_' + onlyShared]);
-      setOffers(list);
-      const loadedBase = { ...b.data?.base, units: 9 };
-      setBaseState(loadedBase);
-      original.current = { list, base: loadedBase };
-      if (list.length) setActive(list[0].id);
-    });
-  }, [deal.id]);
-
-  const later = (key, fn) => {
-    if (!canSave) return;
-    clearTimeout(timers.current[key]);
-    setSaved('Saving…');
-    timers.current[key] = setTimeout(async () => { const { error } = await fn(); setSaved(error ? 'Not saved. Check your connection.' : 'Saved'); }, 600);
-  };
-  const reset = () => { setOffers(original.current.list); setBaseState(original.current.base); };
-  const touched = !owner && original.current && (offers !== original.current.list || base !== original.current.base);
-  const setBase = (b) => { setBaseState(b); later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: b, updated_at: new Date().toISOString() })); };
   const patch = (id, p) => {
     setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...p } : o)));
     later(id, () => supabase.from('commercial_offers').update({ ...p, updated_at: new Date().toISOString() }).eq('id', id));
   };
   const add = async (structure, from) => {
     const row = { deal_id: deal.id, structure, name: from ? from.name + ' (copy)' : STRUCTURES[structure].label, inputs: from ? from.inputs : {}, sort: (offers?.length || 0) + 1 };
-    if (!canSave) { const local = { ...row, id: crypto.randomUUID() }; setOffers([...offers, local]); return setActive(local.id); }
+    if (!owner) { const local = { ...row, id: crypto.randomUUID() }; setOffers([...offers, local]); return setActive(local.id); }
     const { data } = await supabase.from('commercial_offers').insert(row).select().single();
     if (data) { setOffers([...offers, data]); setActive(data.id); }
   };
   const remove = async (o) => {
     if (!window.confirm(`Delete “${o.name}”?`)) return;
-    if (canSave) await supabase.from('commercial_offers').delete().eq('id', o.id);
+    if (owner) await supabase.from('commercial_offers').delete().eq('id', o.id);
     const rest = offers.filter((x) => x.id !== o.id);
     setOffers(rest);
     setActive(rest[0]?.id || null);
@@ -172,108 +174,84 @@ export default function Offers({ deal, canSave, onlyShared }) {
 
   const evals = useMemo(() => Object.fromEntries((offers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [offers, base]);
   if (offers === null) return <Empty>Loading…</Empty>;
-  const cur = offers.find((o) => o.id === active);
+  const cur = offers.find((o) => o.id === active) || offers[0];
   const r = cur && evals[cur.id];
   const o = evaluate('cash', {}, base).operating;
+  const showEdit = view === 'edit';
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-2" aria-label="Offer layout"><Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')}>Compare options</Button><Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')}>Cards</Button>{owner && <Button kind={view === 'edit' ? 'primary' : 'secondary'} onClick={() => setView('edit')}>Edit terms</Button>}</div>
-      {offers.length > 0 && view === 'table' && <div className="comparison-scroll" tabIndex={0} aria-label="Offer comparison; scroll horizontally"><table className="comparison-table"><thead><tr><th>Compare</th>{offers.map(x => <th key={x.id}>{x.name}</th>)}</tr></thead><tbody>{[
-        ['Structure', (x, e) => STRUCTURES[x.structure].label],
-        ['How it works', (x, e) => plain(x.structure, e).lines.join(' ')],
-        ['You keep / month', (x, e) => money(e.keepMonthly)],
-        ['Seller gets / month', (x, e) => e.sellerMonthly === null ? 'At closing' : money(e.sellerMonthly)],
-        ['Cash in', (x, e) => money(e.cashIn)],
-        ['DSCR', (x, e) => Number.isFinite(e.dscr) ? `${e.dscr.toFixed(2)}x` : 'No payment'],
-        ['All-in / value', (x, e) => `${money(e.allIn)} · ${pct(e.allInPct)}`],
-        ['Break-even occupancy', (x, e) => `${pct(e.breakEven)} · ${breakEvenCount(e)}`],
-        ['Main risk', (x, e) => plain(x.structure, e).risk],
-      ].map(([label, value]) => <tr key={label}><th>{label}</th>{offers.map(x => <td key={x.id}>{value(x, evals[x.id])}</td>)}</tr>)}</tbody></table></div>}
-      {view === 'cards' && <div className="space-y-5">{offers.map(x => <Card key={x.id}><CardTitle>{x.name}</CardTitle><div className="mb-4 space-y-2 text-sm">{plain(x.structure, evals[x.id]).lines.map((line, i) => <p key={i}>{line}</p>)}<p><strong>Main risk:</strong> {plain(x.structure, evals[x.id]).risk}</p></div><Results r={evals[x.id]} />{owner && <Button kind="secondary" className="mt-4" onClick={() => { setActive(x.id); setView('edit'); }}>Edit this option</Button>}</Card>)}</div>}
-      <div className="flex flex-wrap items-center gap-2">
-        {offers.map((x) => (
-          <button key={x.id} onClick={() => setActive(x.id)}
-            className={`rounded-full border px-4 py-1.5 text-sm ${active === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
-            {x.name} <span className={active === x.id ? 'text-white/70' : 'text-ink-soft'}>· {money(evals[x.id].keepMonthly)}/mo</span>
-          </button>
-        ))}
-        {owner && (
-          <select value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
-            <option value="">+ Add an offer</option>
-            {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-          </select>
-        )}
-        <span className="ml-auto flex items-center gap-2 text-xs text-ink-soft">
-          {owner ? saved : 'Shared terms for review. Send questions through Messages.'}
-          {touched && <button onClick={reset} className="rounded-full border border-line bg-white px-3 py-1 text-ink hover:border-ink">Reset</button>}
-        </span>
+      {model.error && <p role="alert" className="text-sm text-red-700">{model.error}</p>}
+      <Switches base={base} setBase={setBase} owner={owner} />
+      {!owner && <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />}
+      <div className="flex flex-wrap items-center gap-2" aria-label="Offer layout">
+        <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>
+        <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Card view</Button>
+        <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
+        <span className="ml-auto text-xs text-ink-soft">{owner ? saved : 'Shared for review. Questions go through Messages.'}</span>
       </div>
+      {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card>}
+      {offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
+      {offers.length > 0 && view === 'cards' && <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4">{offers.map((x, i) => <OptionCard key={x.id} o={x} i={i} e={evals[x.id]} />)}</div>}
 
-      {!cur ? <Card><Empty>{canSave ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card> : view === 'edit' && owner ? (
-        <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
-          <Card>
-            {owner
-              ? <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
-                  className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
-              : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
-            <div className="mb-3 space-y-1.5 rounded-xl bg-warm-soft/60 px-3 py-2.5 text-sm">
-              {plain(cur.structure, r).lines.map((t, i) => <p key={i}>{t}</p>)}
-              <p className="text-ink-soft"><span className="font-medium text-ink">Main risk:</span> {plain(cur.structure, r).risk}.</p>
-            </div>
-            <p className="mb-2 px-1 text-xs text-ink-soft">Change one number and watch the results move.</p>
-            {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
-              const d = STRUCTURES[cur.structure].defaults[k];
-              const v = cur.inputs?.[k];
-              return <NumberRow key={k} label={l} unit={u} value={v ?? d} changed={v !== undefined && v !== d}
-                onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
-            })}
-            {owner ? (
-              <>
-                <textarea value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
-                  className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
-                  <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
-                </div>
-              </>
-            ) : cur.note ? <p className="mt-3 whitespace-pre-line rounded-xl bg-warm-soft/60 px-3 py-2 text-sm">{cur.note}</p> : null}
-            {canSave && (
-              <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
-                <p className="font-medium">Who else can see this offer</p>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
-                <p className="text-xs text-ink-soft">The seller never sees this page. What the seller reads is under Seller page.</p>
-              </div>
-            )}
-          </Card>
-          <div className="space-y-5">
-            <Results r={r} />
-            <Card>
-              <CardTitle>Side by side</CardTitle>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-xs uppercase tracking-wider text-ink-soft">
-                    <th className="py-2 pr-3">Offer</th><th className="pr-3">You keep</th><th className="pr-3">Seller gets</th><th className="pr-3">DSCR</th><th className="pr-3">All-in</th><th>Break-even</th>
-                  </tr></thead>
-                  <tbody className="divide-y divide-line">
-                    {offers.map((x) => { const e = evals[x.id]; return (
-                      <tr key={x.id} onClick={() => setActive(x.id)} className={`cursor-pointer ${x.id === active ? 'bg-warm-soft/60' : 'hover:bg-warm-soft/30'}`}>
-                        <td className="py-2 pr-3 font-medium">{x.name}</td>
-                        <td className="pr-3">{money(e.keepMonthly)}</td>
-                        <td className="pr-3">{money(e.sellerMonthly)}</td>
-                        <td className="pr-3"><Badge tone={grade('dscr', e.dscr)}>{Number.isFinite(e.dscr) ? e.dscr.toFixed(2) : '—'}</Badge></td>
-                        <td className="pr-3"><Badge tone={grade('allInPct', e.allInPct)}>{pct(e.allInPct)}</Badge></td>
-                        <td><Badge tone={grade('breakEven', e.breakEven)}>{pct(e.breakEven)} · {breakEvenCount(e)}</Badge></td>
-                      </tr>); })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-3 text-xs text-ink-soft">Tests: DSCR 1.20–1.25 or better, break-even occupancy 85% or less, cash-on-cash 8–12%, all-in 75% of value or less. The seller’s loan terms are unconfirmed, and nothing here is a lender quote.</p>
-            </Card>
+      {showEdit && (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {offers.map((x) => (
+              <button key={x.id} onClick={() => setActive(x.id)} aria-pressed={cur?.id === x.id}
+                className={`rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
+                {x.name} <span className={cur?.id === x.id ? 'text-white/70' : 'text-ink-soft'}>· {money(evals[x.id].keepMonthly)}/mo</span>
+              </button>
+            ))}
+            <select aria-label="Add an option" value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
+              <option value="">{owner ? '+ Add an offer' : '+ Try another kind of offer'}</option>
+              {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+            </select>
           </div>
-        </div>
-      ) : null}
+          {cur && (
+            <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
+              <Card>
+                {owner
+                  ? <input aria-label="Offer name" value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
+                      className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
+                  : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
+                <div className="mb-3 space-y-1.5 rounded-xl bg-warm-soft/60 px-3 py-2.5 text-sm">
+                  {plain(cur.structure, r).lines.map((t, i) => <p key={i}>{t}</p>)}
+                  <p className="text-ink-soft"><span className="font-medium text-ink">Worth knowing:</span> {plain(cur.structure, r).risk}.</p>
+                </div>
+                <p className="mb-2 px-1 text-xs text-ink-soft">{owner ? 'Change one number and watch the results move.' : 'Try a number and watch the results move. Nothing is saved.'}</p>
+                {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
+                  const d = STRUCTURES[cur.structure].defaults[k];
+                  const v = cur.inputs?.[k];
+                  return <NumberRow key={k} label={l} unit={u} value={v ?? d} changed={v !== undefined && v !== d}
+                    onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
+                })}
+                {owner ? (
+                  <>
+                    <textarea aria-label="Notes on this offer" value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
+                      className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
+                      <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
+                    </div>
+                    <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
+                      <p className="font-medium">Who else can see this offer</p>
+                      {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
+                      <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
+                      <p className="text-xs text-ink-soft">The seller never sees this page. What the seller reads is under Seller page.</p>
+                    </div>
+                  </>
+                ) : cur.note ? <p className="mt-3 whitespace-pre-line rounded-xl bg-warm-soft/60 px-3 py-2 text-sm">{cur.note}</p> : null}
+              </Card>
+              <div className="space-y-5">
+                <Results r={r} />
+                <p className="text-xs text-ink-soft">Tests: rent covers the payment 1.20x or more, 85% or fewer units rented to break even, 8–12% yearly return on cash in, total cost 75% of value or less. The seller’s loan terms are unconfirmed, and nothing here is a lender quote.</p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
       <BuildingNumbers base={base} setBase={setBase} o={o} owner={owner} />
     </div>
   );

@@ -9,44 +9,48 @@ export function plain(structure, r) {
   if (structure === 'master_lease') {
     const buyAt = x.optionPrice + x.sellerAdvances;
     return {
+      glance: 'We run the whole building now and buy it later at a price locked in today.',
       owns: 'Seller, until we buy',
       payoff: `When we buy, ${months(r.extra[1][1])}`,
       cash: cashUp,
-      risk: 'Seller still owns it and owes their loan until we buy',
+      risk: 'The seller keeps the building and their loan until we buy',
       lines: [
         'We lease the whole building and run it. The seller keeps the deed and their loan, and we hold a locked price to buy it later.',
-        `The seller gets ${money(x.payment)}/mo once it’s full${x.sellerAdvances ? `, fronts ${money(x.sellerAdvances)} for rent-ready work and lease-up, and gets that back in the price` : ''}. We buy for ${money(buyAt)}, ${months(r.extra[1][1])}, once a refi can cover it.`,
+        `The seller gets ${money(x.payment)}/mo once it’s full${x.sellerAdvances ? `, fronts ${money(x.sellerAdvances)} for rent-ready work and lease-up, and gets that back in the price` : ''}. We buy for ${money(buyAt)}, ${months(r.extra[1][1])}, once a bank refinance can cover it.`,
       ],
     };
   }
   if (structure === 'wrap') {
     return {
-      owns: 'Us, from closing',
-      payoff: 'When we refi or sell',
+      glance: 'We buy now and pay the seller every month. Their loan stays in place.',
+      owns: 'We do, from closing',
+      payoff: 'When we refinance or sell',
       cash: cashUp,
-      risk: 'Seller’s lender could call their loan due when the deed moves',
+      risk: 'The seller’s bank could ask for its loan back when the building changes hands',
       lines: [
-        'We buy the building now. The seller finances it with a new note that wraps around their existing loan, which stays in place.',
-        `We pay the seller ${money(r.sellerMonthly)}/mo and they keep paying their own loan from it. The note is paid off when we refi or sell, and no date is set yet.`,
+        'We buy the building now and pay the seller every month instead of paying a bank. The seller’s own loan stays where it is.',
+        `We pay the seller ${money(r.sellerMonthly)}/mo and they keep paying their own loan from it. We pay the rest in full when we refinance or sell, and no date is set yet.`,
       ],
     };
   }
   if (structure === 'partnership') {
     const gap = r.extra[1][1];
     return {
-      owns: 'Both of us in an LLC, then us',
+      glance: 'We own it together for a short time, then we buy the seller out.',
+      owns: 'Both of us in one company, then us',
       payoff: `At the buyout, about ${x.monthsToBuyout} months in`,
       cash: cashUp,
-      risk: gap > 0 ? `The refi comes up ${money(gap)} short of the buyout` : 'The refi has to cover the buyout',
+      risk: gap > 0 ? `The bank refinance comes up ${money(gap)} short of the buyout` : 'The bank refinance has to cover the buyout',
       lines: [
-        'The seller and we own it together in an LLC for a short time while we fill and fix it.',
-        `The seller gets ${money(x.stepUp)}/mo once it’s full, then ${money(x.buyout + x.sellerAdvances)} when we buy them out with a refi, about ${x.monthsToBuyout} months in. If they owe more than that on their loan, they’d cover the difference.`,
+        'The seller and we own it together in one company for a short time while we fix it and fill it.',
+        `The seller gets ${money(x.stepUp)}/mo once it’s full, then ${money(x.buyout + x.sellerAdvances)} when we buy them out with a bank refinance, about ${x.monthsToBuyout} months in. If they owe more than that on their loan, they’d cover the difference.`,
       ],
     };
   }
   if (structure === 'cash') {
     return {
-      owns: 'Us, from closing',
+      glance: 'A normal sale. The seller is paid in full at closing.',
+      owns: 'We do, from closing',
       payoff: 'At closing',
       cash: cashUp,
       risk: r.dscr < 1 ? 'Rent doesn’t cover the bank payment at this price' : r.dscr < 1.2 ? 'Rent barely covers the bank payment' : 'Needs a bank loan and cash down',
@@ -56,5 +60,5 @@ export function plain(structure, r) {
       ],
     };
   }
-  return { owns: '—', payoff: '—', cash: cashUp, risk: '—', lines: [] };
+  return { glance: '—', owns: '—', payoff: '—', cash: cashUp, risk: '—', lines: [] };
 }
