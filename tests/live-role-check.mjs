@@ -130,7 +130,7 @@ try {
   const owner = await pageFor('owner', 1440);
   await expect(owner.getByRole('heading', { name: 'Deal at a glance', exact: true })).toBeVisible();
   await expect(owner.getByRole('heading', { name: 'Latest messages by role', exact: true })).toBeVisible();
-  if (process.env.COMMERCIAL_QA_ARTIFACT_DIR) await owner.screenshot({ path: join(process.env.COMMERCIAL_QA_ARTIFACT_DIR, 'owner-dashboard.png'), fullPage: true });
+  if (process.env.COMMERCIAL_QA_ARTIFACT_DIR) await owner.screenshot({ path: join(process.env.COMMERCIAL_QA_ARTIFACT_DIR, 'owner-dashboard.png'), fullPage: true, mask: [owner.getByRole('heading', { name: 'Phone alerts', exact: true }).locator('xpath=ancestor::section')] });
   await expect(owner.getByText('QA needs inspection', { exact: false })).toBeVisible();
   await owner.getByRole('button', { name: 'Preview qa-photo.png', exact: true }).click();
   await expect(owner.getByRole('button', { name: 'Close preview', exact: true })).toBeVisible();
