@@ -6,8 +6,7 @@ import Messages from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Hero, photosOf } from '../components/Photos.jsx';
 import Offers from './Offers.jsx';
-import { WorkBoard } from '../components/DealWorkspace.jsx';
-import LenderTerms from './LenderTerms.jsx';
+import { seenBy } from '../lib/visibility.js';
 
 function Facts({ deal, numbers }) {
   const [base, setBase] = useState(null);
@@ -38,11 +37,11 @@ function Facts({ deal, numbers }) {
   );
 }
 
-// Reviewer, lender and viewer. Each sees only what the owner shared with that role.
+// Reviewer and viewer. Each sees only what the owner shared with that role.
 export default function Reviewer({ deal, me, role, preview, tab }) {
   const [rows, load] = useUploads(deal);
   const viewer = role === 'viewer' || role === 'guest';
-  const shared = (rows || []).filter((r) => preview ? (r.audience || []).includes(role) : true);
+  const shared = preview ? seenBy(role, rows) : rows || [];
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
@@ -53,7 +52,6 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {active === 'overview' && (
         <>
-          {role === 'lender' && <LenderTerms deal={deal} me={me} preview={preview} />}
           {photos.length > 0 && <Hero photos={photos} />}
           <Facts deal={deal} numbers={!viewer} />
           {!viewer && (
@@ -65,7 +63,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>
-              {viewer ? <Empty>Ask the owner for purchase information. Internal documents and research are private.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
+              {viewer ? <Empty>Ask LaVante for purchase information.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
             </Card>
             {!viewer && (
               <Card>
@@ -75,7 +73,6 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
               </Card>
             )}
           </div>
-          {!viewer && <div className="grid gap-5 lg:grid-cols-2"><WorkBoard deal={deal} role={role} me={me} preview={preview} kind="research" title="Shared research" /><WorkBoard deal={deal} role={role} me={me} preview={preview} /></div>}
         </>
       )}
       {active === 'messages' && <Messages deal={deal} me={me} role={role} preview={preview} />}

@@ -69,3 +69,17 @@ test('offers are readable only by the owner, or a reviewer/lender it was shared 
   const pols = [...v2.matchAll(/create policy \w+ on public\.commercial_offers[\s\S]*?;/g)].map((m) => m[0]).join('\n');
   assert.doesNotMatch(pols, /'seller'|'realtor'|'viewer'/);
 });
+
+test('lender page shows the plan read-only: no saving, no editing terms or repair costs', () => {
+  const src = readFileSync(new URL('../src/views/Lender.jsx', import.meta.url), 'utf8');
+  for (const t of ['owner_notes', 'deal_private', 'canSave', 'setBase', 'tenthUnitRepair', 'Try different terms', '.update(', '.insert(']) assert.ok(!src.includes(t), t);
+});
+
+test('messages are fixed by role: nobody picks people by hand, and research boards are gone', () => {
+  const msg = readFileSync(new URL('../src/components/Messages.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(msg, /Who is this conversation with|setPicking/);
+  for (const f of ['views/Dashboard.jsx', 'views/Realtor.jsx', 'views/Reviewer.jsx']) {
+    const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /kind="research"|kind="update"|'research'/, f);
+  }
+});

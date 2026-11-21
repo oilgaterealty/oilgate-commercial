@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BASE_DEFAULTS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
 import { Button } from './Shell.jsx';
 
@@ -79,13 +79,13 @@ export default function Switches({ base, setBase, owner }) {
   );
 }
 
-const LABEL = { units: 'Units', tenthUnitRepair: 'Extra repair for the 10th unit', rent: 'Rent per unit / month', strUnits: 'Units as Airbnb' };
+const LABEL = { ...Object.fromEntries([...BASE_FIELDS, ...STR_FIELDS].map(([k, l]) => [k, l])), units: 'Units', tenthUnitRepair: 'Extra repair for the 10th unit', rent: 'Rent per unit / month', strUnits: 'Units as Airbnb' };
 
 // A plain message to LaVante describing what someone changed and what it does to each offer.
 export function whatIfMessage(original, base, offers) {
   const lines = ['What-if from the deal page (nothing was saved):'];
   for (const k of Object.keys({ ...original.base, ...base })) {
-    if (k === 'strSource' || original.base[k] === base[k]) continue;
+    if (['strSource', 'planOffer', 'askPrice'].includes(k) || original.base[k] === base[k]) continue;
     lines.push(`- ${LABEL[k] || k}: ${original.base[k] ?? 'blank'} → ${base[k]}`);
   }
   for (const o of offers) {
@@ -108,23 +108,29 @@ export function whatIfMessage(original, base, offers) {
 export function SendWhatIf({ deal, me, role, preview, model }) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [show, setShow] = useState(false);
   if (!model.touched) return null;
+  const text = () => whatIfMessage(model.original, model.base, model.offers);
   const send = async () => {
-    if (preview || busy) return;
+    if (busy) return;
+    if (preview) { setShow(true); setStatus('Preview: this is exactly what lands in your Messages when a real sign-in taps Send.'); return; }
     setBusy(true);
     try {
-      const error = await sendToOwner(deal, me, role, whatIfMessage(model.original, model.base, model.offers), 'What-if');
-      setStatus(error ? 'Not sent. Try again.' : 'Sent to LaVante. Find it in Messages.');
+      const error = await sendToOwner(deal, me, role, text(), 'What-if');
+      setStatus(error ? 'Not sent. Try again.' : 'Sent to LaVante. It’s in Messages.');
     } catch { setStatus('Not sent. Try again.'); }
     finally { setBusy(false); }
   };
+  // Pinned to the bottom of the screen so it's there wherever the numbers were changed.
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-warm bg-warm-soft/60 px-4 py-2 text-sm">
-      <span className="font-medium">You’re trying your own numbers.</span>
-      <Button onClick={send} disabled={preview || busy}>Send to LaVante</Button>
-      <Button kind="secondary" onClick={() => { model.reset(); setStatus(''); }}>Reset</Button>
-      {preview && <span className="text-xs text-ink-soft">Preview: sending is off.</span>}
-      <span role="status" className="text-ink-soft">{status}</span>
+    <div className="fixed inset-x-0 bottom-3 z-30 mx-auto w-[min(720px,calc(100%-24px))] rounded-2xl border border-warm bg-white px-4 py-3 text-sm shadow-lg">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">You’re trying your own numbers.</span>
+        <Button onClick={send} disabled={busy}>{busy ? 'Sending…' : 'Send to LaVante'}</Button>
+        <Button kind="secondary" onClick={() => { model.reset(); setStatus(''); setShow(false); }}>Reset</Button>
+        <span role="status" className="text-ink-soft">{status}</span>
+      </div>
+      {show && <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-paper p-3 font-sans text-xs">{text()}</pre>}
     </div>
   );
 }

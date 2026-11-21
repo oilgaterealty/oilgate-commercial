@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase.js';
+import { useState } from 'react';
 import { evaluate, money, pct } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { Card, CardTitle, Empty, Button } from '../components/Shell.jsx';
 import { useUploads, FileList } from '../components/Files.jsx';
 import { photosOf } from '../components/Photos.jsx';
 import { WorkBoard } from '../components/DealWorkspace.jsx';
+import { InboxSummary } from '../components/Messages.jsx';
+import { seenBy } from '../lib/visibility.js';
 import Activity from '../components/Activity.jsx';
 import Switches, { SendWhatIf } from '../components/Switches.jsx';
 import { SellerPulse } from '../components/Pulse.jsx';
-import { when, roleLabel } from '../lib/format.js';
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
 
@@ -64,15 +64,8 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
   const [rows] = useUploads(deal);
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
   const { offers, base, setBase } = model;
-  const [messages, setMessages] = useState([]);
   const [filePreview, setFilePreview] = useState(null);
-  useEffect(() => {
-    if (role !== 'owner') return;
-    Promise.all(['seller', 'realtor', 'reviewer', 'lender', 'viewer'].map(r => supabase.from('commercial_messages').select('*').eq('deal_id', deal.id).eq('author_role', r).order('created_at', { ascending: false }).limit(1)))
-      .then((m) => setMessages(m.flatMap(x => x.data || [])));
-  }, [deal.id, role]);
-
-  const visible = preview ? (rows || []).filter((r) => (r.audience || []).includes(role)) : rows || [];
+  const visible = preview ? seenBy(role, rows) : rows || [];
   const photos = photosOf(visible);
   const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, base) }));
   const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);
@@ -105,13 +98,11 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
         <aside className="space-y-5">
           <PhotoTile photos={photos} href={`${root}/photos`} />
           <SellerPulse deal={deal} />
+          <InboxSummary deal={deal} me={me} role={role} preview={preview} />
         </aside>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        {role === 'owner' && (
-          <Card><CardTitle>Latest messages by role</CardTitle><ul className="divide-y divide-line">{['seller', 'realtor', 'reviewer', 'lender', 'viewer'].map(r => { const m = messages.find(x => x.author_role === r); return <li key={r} className="py-2.5"><div className="flex items-center justify-between gap-2"><strong className="text-sm">{roleLabel[r]}</strong>{m && <a className="text-sm underline" href={`#/d/${deal.slug}/messages?thread=${m.conversation_id || ''}`}>Reply</a>}</div>{m ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{m.body}</p><p className="mt-1 text-xs text-ink-soft">{when(m.created_at)}</p></> : <Empty>No messages yet.</Empty>}</li>; })}</ul></Card>
-        )}
         <Card>
           <CardTitle>Recent files</CardTitle>
           <FileList rows={visible.slice(0, 5)} />
@@ -119,16 +110,8 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
           {filePreview && <div className="mt-4 rounded-xl border border-line p-3"><div className="mb-2 flex items-center justify-between gap-3"><p className="truncate text-sm font-medium">{filePreview.file_name}</p><Button kind="secondary" onClick={() => setFilePreview(null)}>Close preview</Button></div>{filePreview.kind === 'photo' ? <img src={filePreview.url} alt={filePreview.note || filePreview.file_name} className="max-h-80 w-full object-contain" /> : <iframe title={`Preview ${filePreview.file_name}`} src={filePreview.url} className="h-96 w-full" />}</div>}
           <a className="mt-3 inline-block text-sm underline" href={`${root}/files`}>All files and uploads</a>
         </Card>
-        {role !== 'owner' && <WorkBoard deal={deal} me={me} role={role} preview={preview} kind="update" title="Latest updates" />}
+        <div className="max-h-[520px] overflow-y-auto rounded-3xl"><Activity deal={deal} title="Recent activity" /></div>
       </div>
-
-      {role === 'owner' && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <WorkBoard deal={deal} me={me} role="owner" kind="research" title="Research to share" />
-          <WorkBoard deal={deal} me={me} role="owner" kind="update" title="Deal updates" />
-        </div>
-      )}
-      <div className="max-h-[520px] overflow-y-auto rounded-3xl"><Activity deal={deal} title="Recent activity" /></div>
     </div>
   );
 }

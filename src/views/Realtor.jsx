@@ -1,16 +1,15 @@
-import { Card, CardTitle, Tabs } from '../components/Shell.jsx';
+import { Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
 import Activity from '../components/Activity.jsx';
-import { WorkBoard } from '../components/DealWorkspace.jsx';
 import { SellerPulse, AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import Offers from './Offers.jsx';
 
 export { SellerPulse, AlertsCard };
 
-const TABS = [['overview', 'Overview'], ['offers', 'Offers'], ['photos', 'Photos'], ['messages', 'Messages'], ['files', 'Files'], ['research', 'Research'], ['seller', 'Seller activity']];
+const TABS = [['overview', 'Overview'], ['offers', 'Offers'], ['photos', 'Photos'], ['messages', 'Messages'], ['files', 'Files'], ['seller', 'Seller activity']];
 
 // Close to LaVante's page, minus his powers: no saving numbers, no invites, no settings.
 export default function Realtor({ deal, me, member, preview, tab }) {
@@ -20,7 +19,6 @@ export default function Realtor({ deal, me, member, preview, tab }) {
       <Tabs tabs={TABS} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
       {active === 'overview' && <Dashboard deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'offers' && <Offers deal={deal} me={me} role="realtor" preview={preview} onlyShared={preview ? 'realtor' : undefined} />}
-      {active === 'research' && <div className="space-y-5"><WorkBoard deal={deal} role="realtor" me={me} preview={preview} kind="research" title="Relevant research" /><Files deal={deal} role="realtor" me={me} title="Research and due diligence documents" only="document" readOnly preview={preview} /></div>}
       {active === 'messages' && <Messages deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'photos' && <Photos deal={deal} role="realtor" me={me} preview={preview} />}
       {active === 'files' && <Files deal={deal} role="realtor" me={me} title="Photos and documents" canShare allowShare preview={preview} />}

@@ -6,6 +6,7 @@ import Owner from './Owner.jsx';
 import Realtor from './Realtor.jsx';
 import Seller from './Seller.jsx';
 import Reviewer from './Reviewer.jsx';
+import Lender from './Lender.jsx';
 
 const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'viewer'];
 
@@ -13,7 +14,8 @@ function Page({ role, ...p }) {
   if (role === 'owner') return <Owner {...p} />;
   if (role === 'realtor') return <Realtor {...p} />;
   if (role === 'seller') return <Seller {...p} />;
-  return <Reviewer {...p} role={role} />; // reviewer, lender, viewer, guest
+  if (role === 'lender') return <Lender {...p} />;
+  return <Reviewer {...p} role={role} />; // reviewer, viewer, guest
 }
 
 export default function DealRoom({ slug, tab, sub, session }) {
@@ -45,7 +47,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
 
   // Full-screen "see as" for the owner: the exact page that role gets, with nothing sendable.
   if (viewing && state.role === 'owner' && PREVIEWABLE.includes(sub)) {
-    const innerTab = window.location.hash.split('/')[5] || '';
+    const innerTab = (window.location.hash.split('/')[5] || '').split('?')[0];
     return (
       <div className="min-h-screen">
         <div className="sticky top-0 z-40 flex items-center justify-center gap-3 bg-ink px-4 py-1.5 text-xs text-white">

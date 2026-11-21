@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import Switches, { SendWhatIf } from '../components/Switches.jsx';
-import { BASE_DEFAULTS, BASE_FIELDS, KNOWN_BASE, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
@@ -71,7 +71,7 @@ export function Results({ r }) {
 }
 
 function BuildingNumbers({ base, setBase, o, owner }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!owner);
   return (
     <Card>
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between text-left">
@@ -82,11 +82,11 @@ function BuildingNumbers({ base, setBase, o, owner }) {
         <div className="mt-3">
           <p className="mb-2 text-xs text-ink-soft">{owner
             ? 'Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.'
-            : 'Locked numbers are the building’s bills. The rest are assumptions: try your own, nothing you change is saved.'}</p>
+            : 'These are LaVante’s numbers for the building. Try your own on any of them; nothing you change is saved, and Send to LaVante shows him what you changed.'}</p>
           <div className="grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.filter(([k]) => !['units', 'tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                locked={!owner && KNOWN_BASE.includes(k)} onChange={(v) => setBase({ ...base, [k]: v })} />
+                onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
           </div>
           <p className="mt-2 text-xs text-ink-soft">A refinance could lend {money(o.refiLoan)}, limited by {o.refiLimitedBy === 'DSCR' ? 'the rent' : 'the building’s value'}. Yearly return on the value (cap rate) {pct(o.capRate, 1)}.</p>
@@ -110,7 +110,7 @@ const NUMBERS = [
 ];
 
 // Same layout the seller sees: a letter, a plain name, one line, how it works, then the numbers.
-function OptionCard({ o, i, e }) {
+export function OptionCard({ o, i, e }) {
   const p = plain(o.structure, e);
   return (
     <div className="rounded-3xl border-2 border-ink bg-white p-5">
@@ -127,7 +127,7 @@ function OptionCard({ o, i, e }) {
   );
 }
 
-function OptionTable({ offers, evals }) {
+export function OptionTable({ offers, evals }) {
   const rows = [
     ['At a glance', (o, e) => plain(o.structure, e).glance],
     ['How it works', (o, e) => <ol className="list-decimal space-y-2 pl-4">{plain(o.structure, e).lines.map((s, n) => <li key={n}>{s}</li>)}</ol>],
@@ -233,6 +233,9 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
                       <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
+                      {base.planOffer === cur.id
+                        ? <span className="self-center text-sm font-medium text-good">Lenders see this as the plan</span>
+                        : <Button kind="secondary" onClick={() => setBase({ ...base, planOffer: cur.id })}>Show lenders this as the plan</Button>}
                     </div>
                     <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
                       <p className="font-medium">Who else can see this offer</p>
