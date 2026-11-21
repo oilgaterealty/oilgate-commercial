@@ -6,6 +6,10 @@ import { useUploads, Uploader, ShareChips } from './Files.jsx';
 const IMAGES = 'image/jpeg,image/png,image/webp,image/heic';
 export const photosOf = (rows) => (rows || []).filter((r) => r.kind === 'photo' && r.url).sort((a, b) => (b.featured - a.featured));
 
+export function PhotoStrip({ photos }) {
+  return <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Property photos">{photos.length ? photos.map(p => <a key={p.id} href={p.url} target="_blank" rel="noreferrer" className="shrink-0"><img src={p.url} alt={p.note || 'Open property photo'} className="h-20 w-28 rounded-xl object-cover" /></a>) : <Empty>Photos will appear after the walkthrough.</Empty>}</div>;
+}
+
 // Big photo up top. Arrows, swipe-free thumbnails, full screen on tap.
 export function Hero({ photos, empty = 'Photos are coming after our walkthrough.' }) {
   const [i, setI] = useState(0);

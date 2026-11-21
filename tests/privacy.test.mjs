@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const sql = readFileSync(new URL('../supabase/migrations/0001_commercial.sql', import.meta.url), 'utf8');
 
@@ -24,7 +25,7 @@ test('seller page code never reads owner-only tables', () => {
 
 test('no Drive folder id or secrets committed in source', () => {
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
-  const root = new URL('..', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('..', import.meta.url));
   for (const f of [...walk(`${root}src`), ...walk(`${root}supabase`)]) {
     const s = readFileSync(f, 'utf8');
     assert.doesNotMatch(s, /drive\.google\.com\/drive\/folders\/[A-Za-z0-9_-]{10,}/, f);

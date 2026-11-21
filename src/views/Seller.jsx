@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Button, Empty } from '../components/Shell.jsx';
 import Messages, { sendToOwner } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
-import { Hero, photosOf } from '../components/Photos.jsx';
+import { PhotoStrip, photosOf } from '../components/Photos.jsx';
+import LoanPosition from '../components/LoanPosition.jsx';
 
 const LEVELS = [
   ['interested', 'I’d like to talk'],
@@ -27,7 +28,8 @@ function Column({ title, rows, tone }) {
   );
 }
 
-function Option({ o, open, onOpen, liked, onLike, onAsk, preview }) {
+function Option({ o, liked, onLike, onAsk, preview }) {
+  const open = true;
   const [q, setQ] = useState('');
   const [asking, setAsking] = useState(false);
   const [sent, setSent] = useState('');
@@ -40,7 +42,7 @@ function Option({ o, open, onOpen, liked, onLike, onAsk, preview }) {
   };
   return (
     <div className={`rounded-3xl border-2 p-5 transition ${open ? 'border-ink bg-white' : 'border-line bg-white hover:border-ink-soft'} ${liked ? 'ring-2 ring-warm' : ''}`}>
-      <button onClick={onOpen} className="w-full text-left">
+      <div className="w-full text-left">
         <div className="flex items-start justify-between gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink font-display text-lg text-white">{o.key}</span>
           {liked && <span className="rounded-full bg-warm-soft px-2.5 py-1 text-xs font-medium">Your pick</span>}
@@ -48,7 +50,7 @@ function Option({ o, open, onOpen, liked, onLike, onAsk, preview }) {
         <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{o.title}</h3>
         <p className="mt-1 text-ink-soft">{o.tagline}</p>
         {!open && <p className="mt-3 text-sm font-medium underline-offset-4 hover:underline">See how it works ›</p>}
-      </button>
+      </div>
       {open && (
         <div className="mt-4 space-y-4">
           {o.steps?.length > 0 && (
@@ -84,12 +86,28 @@ function Option({ o, open, onOpen, liked, onLike, onAsk, preview }) {
   );
 }
 
+function OptionActions({ o, liked, onLike, preview, onAsk }) {
+  const [asking, setAsking] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const send = async e => {
+    e.preventDefault(); if (preview || busy || !question.trim()) return;
+    setBusy(true);
+    try { const error = await onAsk(question.trim()); setStatus(error ? 'Could not send. Please try again.' : 'Sent to the owner and realtor.'); if (!error) { setQuestion(''); setAsking(false); } }
+    catch { setStatus('Could not send. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  return <div className="space-y-3"><Button disabled={preview} onClick={onLike}>{liked ? 'Your pick' : 'This one looks good'}</Button><Button kind="secondary" disabled={preview} onClick={() => setAsking(!asking)}>Ask about this option</Button>{asking && <form onSubmit={send} className="space-y-2"><textarea autoFocus aria-label={`Your question about option ${o.key}`} placeholder={`Your question about option ${o.key}`} value={question} onChange={e => setQuestion(e.target.value)} maxLength={4000} rows={3} className="w-full rounded-xl border border-line p-3" /><Button type="submit" disabled={busy || !question.trim()}>Send question</Button></form>}<p role="status" className="text-sm">{status}</p></div>;
+}
+
 export default function Seller({ deal, me, preview }) {
   const c = deal.seller_content || {};
   const [rows, load] = useUploads(deal);
   const [level, setLevel] = useState(null);
   const [fav, setFav] = useState(null);
-  const [open, setOpen] = useState((deal.seller_content?.options || [])[0]?.key ?? null);
+  const [view, setView] = useState('table');
+  const [saveError, setSaveError] = useState('');
   const photos = photosOf((rows || []).filter((r) => r.visibility === 'seller'));
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
   const options = c.options || [];
@@ -102,13 +120,14 @@ export default function Seller({ deal, me, preview }) {
 
   const save = async (l, f) => {
     if (preview) return;
-    setLevel(l); setFav(f);
-    await supabase.from('commercial_interest').upsert({ deal_id: deal.id, email: me.email, level: l, favorite_option: f, updated_at: new Date().toISOString() });
+    const { error } = await supabase.from('commercial_interest').upsert({ deal_id: deal.id, email: me.email, level: l, favorite_option: f, updated_at: new Date().toISOString() });
+    setSaveError(error ? 'Your interest did not save. Please try again.' : '');
+    if (!error) { setLevel(l); setFav(f); }
   };
 
   return (
     <div className="space-y-8">
-      <Hero photos={photos} />
+      <PhotoStrip photos={photos} />
 
       <div>
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>
@@ -119,18 +138,24 @@ export default function Seller({ deal, me, preview }) {
         <section>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <h2 className="font-display text-3xl font-semibold">{c.options_title || 'Three ways we could do this'}</h2>
-            <p className="text-sm text-ink-soft">Tap one to see how it works.</p>
+            <div className="flex gap-2" aria-label="Option layout"><Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Compare options</Button><Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Cards</Button></div>
           </div>
           {c.options_note && <p className="mb-4 max-w-3xl rounded-2xl bg-warm-soft px-4 py-3 text-sm">{c.options_note}</p>}
-          <div className="grid items-start gap-4 lg:grid-cols-3">
+          {view === 'table' && <div className="comparison-scroll" tabIndex={0} aria-label="Options comparison; scroll horizontally"><table className="comparison-table"><thead><tr><th>Compare</th>{options.map(o => <th key={o.key}>Option {o.key}<br />{o.title}</th>)}</tr></thead><tbody>
+            {['tagline', 'steps', 'you_get', 'ask', 'watch'].map((key, i) => <tr key={key}><th>{['At a glance', 'How it works', 'What you get', 'What we ask', 'Worth knowing'][i]}</th>{options.map(o => <td key={o.key}>{key === 'steps' ? <ol className="list-decimal space-y-2 pl-4">{o.steps?.map((s, n) => <li key={n}>{s}</li>)}</ol> : key === 'you_get' ? o.you_get?.map((r, n) => <p key={n} className="mb-2"><strong>{r.label}:</strong> {r.value}</p>) : o[key] || 'To discuss'}</td>)}</tr>)}
+            <tr><th>Your next step</th>{options.map(o => <td key={o.key}><OptionActions o={o} liked={fav === o.key} onLike={() => save(level || 'interested', o.key)} preview={preview} onAsk={q => sendToOwner(deal, me, 'seller', q, `Option ${o.key}`)} /></td>)}</tr>
+          </tbody></table></div>}
+          <div className={view === 'cards' ? 'grid items-start gap-4 lg:grid-cols-3' : 'hidden'}>
             {options.map((o) => (
-              <Option key={o.key} o={o} open={open === o.key} onOpen={() => setOpen(open === o.key ? null : o.key)}
+              <Option key={o.key} o={o}
                 liked={fav === o.key} onLike={() => save(level || 'interested', o.key)} preview={preview}
                 onAsk={(q) => sendToOwner(deal, me, 'seller', q, `Option ${o.key}`)} />
             ))}
           </div>
         </section>
       )}
+
+      <LoanPosition deal={deal} role="seller" preview={preview} />
 
       {(c.carry_now?.length || c.with_us?.length) && (
         <div className="grid gap-4 md:grid-cols-2">
@@ -141,6 +166,7 @@ export default function Seller({ deal, me, preview }) {
 
       <Card>
         <CardTitle>Where are you at?</CardTitle>
+        {saveError && <p role="alert" className="mb-3 text-sm text-red-700">{saveError}</p>}
         <div className="flex flex-wrap gap-2">
           {LEVELS.map(([k, label]) => (
             <button key={k} onClick={() => save(k, fav)} disabled={preview}

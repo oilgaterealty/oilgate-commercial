@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export function parseHash(hash) {
-  const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  const parts = hash.split('?')[0].replace(/^#\/?/, '').split('/').filter(Boolean);
   if (parts[0] === 'd' && parts[1]) return { name: 'deal', slug: parts[1].toLowerCase(), tab: parts[2] || '', sub: parts[3] || '' };
   return { name: 'home' };
 }

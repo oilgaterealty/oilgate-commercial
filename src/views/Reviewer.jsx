@@ -6,6 +6,8 @@ import Messages from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Hero, photosOf } from '../components/Photos.jsx';
 import Offers from './Offers.jsx';
+import { UnitNote, WorkBoard } from '../components/DealWorkspace.jsx';
+import LenderTerms from './LenderTerms.jsx';
 
 function Facts({ deal, numbers }) {
   const [base, setBase] = useState(null);
@@ -13,7 +15,7 @@ function Facts({ deal, numbers }) {
     if (!numbers) return;
     supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setBase(data?.base || {}));
   }, [deal.id]);
-  const o = base && operating(base);
+  const o = base && operating({ ...base, units: 9 });
   return (
     <Card>
       <CardTitle>The property</CardTitle>
@@ -30,6 +32,7 @@ function Facts({ deal, numbers }) {
         </>}
       </dl>
       {o && <p className="mt-3 text-xs text-ink-soft">Rents, taxes, insurance and repairs are unverified until the rent roll, bills and bids are in. The seller’s loan terms are unconfirmed. No lender has quoted.</p>}
+      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this nine-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol><p className="text-ink-soft">This general overview is informational. It is not an offer or a financing commitment.</p></div>}
     </Card>
   );
 }
@@ -49,6 +52,8 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {active === 'overview' && (
         <>
+          {!viewer && <UnitNote />}
+          {role === 'lender' && <LenderTerms deal={deal} me={me} preview={preview} />}
           {photos.length > 0 && <Hero photos={photos} />}
           <Facts deal={deal} numbers={!viewer} />
           {!viewer && (
@@ -60,7 +65,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>
-              {docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
+              {viewer ? <Empty>Ask the owner for purchase information. Internal documents and research are private.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
             </Card>
             {!viewer && (
               <Card>
@@ -70,6 +75,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
               </Card>
             )}
           </div>
+          {!viewer && <div className="grid gap-5 lg:grid-cols-2"><WorkBoard deal={deal} role={role} me={me} preview={preview} kind="research" title="Shared research" /><WorkBoard deal={deal} role={role} me={me} preview={preview} /></div>}
         </>
       )}
       {active === 'messages' && <Messages deal={deal} me={me} role={role} preview={preview} />}

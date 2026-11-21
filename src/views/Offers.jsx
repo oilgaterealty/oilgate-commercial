@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { BASE_DEFAULTS, BASE_FIELDS, KNOWN_BASE, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
+import { breakEvenCount } from '../lib/occupancy.js';
 
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
@@ -56,7 +57,7 @@ export function Results({ r }) {
         <Metric label="DSCR" value={Number.isFinite(r.dscr) ? r.dscr.toFixed(2) + 'x' : 'No payment'} tone={grade('dscr', r.dscr)} sub="Target 1.20–1.25" />
         <Metric label="Cash-on-cash" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)} sub={r.cashIn > 0 ? `${money(r.cashIn)} in` : 'Target 8–12%'} />
         <Metric label="All-in vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)} sub={`${money(r.allIn)} of ${money(r.operating.b.value)}`} />
-        <Metric label="Break-even occupancy" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)} sub="Target 85% or less" />
+        <Metric label="Break-even occupancy" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)} sub={`${breakEvenCount(r)} · Target 85% or less`} />
       </div>
       {r.extra.length > 0 && (
         <ul className="divide-y divide-line rounded-2xl border border-line bg-white px-4">
@@ -83,7 +84,7 @@ function BuildingNumbers({ base, setBase, o, owner }) {
           <div className="grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                locked={!owner && KNOWN_BASE.includes(k)} onChange={(v) => setBase({ ...base, [k]: v })} />
+                locked={k === 'units' || (!owner && KNOWN_BASE.includes(k))} onChange={(v) => setBase({ ...base, [k]: v, units: 9 })} />
             ))}
           </div>
           <p className="mt-2 text-xs text-ink-soft">Refi loan {money(o.refiLoan)}, limited by {o.refiLimitedBy}. Cap rate {pct(o.capRate, 1)}.</p>
@@ -124,6 +125,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
   const [base, setBaseState] = useState({});
   const original = useRef(null);
   const [active, setActive] = useState(null);
+  const [view, setView] = useState('table');
   const [saved, setSaved] = useState('');
   const timers = useRef({});
 
@@ -134,8 +136,9 @@ export default function Offers({ deal, canSave, onlyShared }) {
     ]).then(([a, b]) => {
       const list = (a.data || []).filter((x) => !onlyShared || x['share_' + onlyShared]);
       setOffers(list);
-      setBaseState(b.data?.base || {});
-      original.current = { list, base: b.data?.base || {} };
+      const loadedBase = { ...b.data?.base, units: 9 };
+      setBaseState(loadedBase);
+      original.current = { list, base: loadedBase };
       if (list.length) setActive(list[0].id);
     });
   }, [deal.id]);
@@ -175,7 +178,19 @@ export default function Offers({ deal, canSave, onlyShared }) {
 
   return (
     <div className="space-y-5">
-      {offers.length > 1 && <Differ offers={offers} evals={evals} active={active} setActive={setActive} />}
+      <div className="flex flex-wrap gap-2" aria-label="Offer layout"><Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')}>Compare options</Button><Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')}>Cards</Button>{owner && <Button kind={view === 'edit' ? 'primary' : 'secondary'} onClick={() => setView('edit')}>Edit terms</Button>}</div>
+      {offers.length > 0 && view === 'table' && <div className="comparison-scroll" tabIndex={0} aria-label="Offer comparison; scroll horizontally"><table className="comparison-table"><thead><tr><th>Compare</th>{offers.map(x => <th key={x.id}>{x.name}</th>)}</tr></thead><tbody>{[
+        ['Structure', (x, e) => STRUCTURES[x.structure].label],
+        ['How it works', (x, e) => plain(x.structure, e).lines.join(' ')],
+        ['You keep / month', (x, e) => money(e.keepMonthly)],
+        ['Seller gets / month', (x, e) => e.sellerMonthly === null ? 'At closing' : money(e.sellerMonthly)],
+        ['Cash in', (x, e) => money(e.cashIn)],
+        ['DSCR', (x, e) => Number.isFinite(e.dscr) ? `${e.dscr.toFixed(2)}x` : 'No payment'],
+        ['All-in / value', (x, e) => `${money(e.allIn)} · ${pct(e.allInPct)}`],
+        ['Break-even occupancy', (x, e) => `${pct(e.breakEven)} · ${breakEvenCount(e)}`],
+        ['Main risk', (x, e) => plain(x.structure, e).risk],
+      ].map(([label, value]) => <tr key={label}><th>{label}</th>{offers.map(x => <td key={x.id}>{value(x, evals[x.id])}</td>)}</tr>)}</tbody></table></div>}
+      {view === 'cards' && <div className="space-y-5">{offers.map(x => <Card key={x.id}><CardTitle>{x.name}</CardTitle><div className="mb-4 space-y-2 text-sm">{plain(x.structure, evals[x.id]).lines.map((line, i) => <p key={i}>{line}</p>)}<p><strong>Main risk:</strong> {plain(x.structure, evals[x.id]).risk}</p></div><Results r={evals[x.id]} />{owner && <Button kind="secondary" className="mt-4" onClick={() => { setActive(x.id); setView('edit'); }}>Edit this option</Button>}</Card>)}</div>}
       <div className="flex flex-wrap items-center gap-2">
         {offers.map((x) => (
           <button key={x.id} onClick={() => setActive(x.id)}
@@ -190,12 +205,12 @@ export default function Offers({ deal, canSave, onlyShared }) {
           </select>
         )}
         <span className="ml-auto flex items-center gap-2 text-xs text-ink-soft">
-          {owner ? saved : 'Try your own terms. Nothing you change is saved.'}
+          {owner ? saved : 'Shared terms for review. Send questions through Messages.'}
           {touched && <button onClick={reset} className="rounded-full border border-line bg-white px-3 py-1 text-ink hover:border-ink">Reset</button>}
         </span>
       </div>
 
-      {!cur ? <Card><Empty>{canSave ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card> : (
+      {!cur ? <Card><Empty>{canSave ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card> : view === 'edit' && owner ? (
         <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
           <Card>
             {owner
@@ -249,7 +264,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
                         <td className="pr-3">{money(e.sellerMonthly)}</td>
                         <td className="pr-3"><Badge tone={grade('dscr', e.dscr)}>{Number.isFinite(e.dscr) ? e.dscr.toFixed(2) : '—'}</Badge></td>
                         <td className="pr-3"><Badge tone={grade('allInPct', e.allInPct)}>{pct(e.allInPct)}</Badge></td>
-                        <td><Badge tone={grade('breakEven', e.breakEven)}>{pct(e.breakEven)}</Badge></td>
+                        <td><Badge tone={grade('breakEven', e.breakEven)}>{pct(e.breakEven)} · {breakEvenCount(e)}</Badge></td>
                       </tr>); })}
                   </tbody>
                 </table>
@@ -258,7 +273,7 @@ export default function Offers({ deal, canSave, onlyShared }) {
             </Card>
           </div>
         </div>
-      )}
+      ) : null}
       <BuildingNumbers base={base} setBase={setBase} o={o} owner={owner} />
     </div>
   );

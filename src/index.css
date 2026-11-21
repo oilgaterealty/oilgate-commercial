@@ -15,3 +15,15 @@
 
 html, body { background: var(--color-paper); color: var(--color-ink); }
 body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+main, section, .grid > *, .flex > * { min-width: 0; }
+button, input, textarea, select { font: inherit; }
+button, a, input, textarea, select { touch-action: manipulation; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--color-warm); outline-offset: 3px; }
+textarea, input { font-size: max(16px, 1em); }
+.comparison-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--color-line); border-radius: 16px; background: white; }
+.comparison-table { width: 100%; min-width: 780px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+.comparison-table th, .comparison-table td { vertical-align: top; text-align: left; padding: 16px; border-bottom: 1px solid var(--color-line); min-width: 210px; }
+.comparison-table th:first-child { position: sticky; left: 0; z-index: 1; min-width: 120px; width: 140px; background: var(--color-paper); border-right: 1px solid var(--color-line); }
+.comparison-table thead th { background: var(--color-warm-soft); font-weight: 600; }
+@media (max-width: 640px) { .comparison-table th, .comparison-table td { padding: 12px; } .comparison-table th:first-child { min-width: 100px; width: 100px; } }

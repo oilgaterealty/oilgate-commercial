@@ -8,6 +8,8 @@ import Photos from '../components/Photos.jsx';
 import Activity from '../components/Activity.jsx';
 import Offers from './Offers.jsx';
 import { SellerPulse, AlertsCard } from './Realtor.jsx';
+import Dashboard from './Dashboard.jsx';
+import LoanPosition from '../components/LoanPosition.jsx';
 
 const TABS = [
   ['overview', 'Overview'],
@@ -219,15 +221,15 @@ export default function Owner({ deal: initial, me, tab }) {
 
       {active === 'overview' && (
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <Activity deal={deal} title="Everything that’s happened" />
-          <div className="space-y-6"><SellerPulse deal={deal} /><OwnerAlerts /></div>
+          <Dashboard deal={deal} me={me} />
+          <aside className="space-y-6"><div className="max-h-[560px] overflow-y-auto"><Activity deal={deal} title="Recent activity" /></div><OwnerAlerts /></aside>
         </div>
       )}
       {active === 'offers' && <Offers deal={deal} canSave />}
       {active === 'photos' && <Photos deal={deal} role="owner" me={me} />}
       {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
-      {active === 'seller-page' && <SellerEditor deal={deal} onSaved={setDeal} />}
+      {active === 'seller-page' && <div className="space-y-5"><LoanPosition deal={deal} role="owner" /><SellerEditor deal={deal} onSaved={setDeal} /></div>}
       {active === 'settings' && <div className="space-y-6"><People deal={deal} /><Settings deal={deal} onSaved={setDeal} /><Notes deal={deal} me={me} /></div>}
     </div>
   );

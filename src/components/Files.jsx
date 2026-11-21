@@ -32,27 +32,35 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
   const [busy, setBusy] = useState('');
   const [share, setShare] = useState(false);
   const [note, setNote] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const pick = async (e) => {
+    if (preview || uploading) return;
     const files = [...e.target.files];
     e.target.value = '';
+    setUploading(true);
+    const failures = [];
+    let saved = 0;
+    try {
     for (const f of files) {
-      if (f.size > MAX) { setBusy(`${f.name} is over 20 MB.`); continue; }
+      if (f.size > MAX || f.size === 0) { failures.push(`${f.name}: choose a nonempty file under 20 MB.`); continue; }
       setBusy(`Uploading ${f.name}…`);
       const safe = f.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-120);
       const path = `${deal.id}/${crypto.randomUUID()}-${safe}`;
       const up = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || 'application/octet-stream' });
-      if (up.error) { setBusy(`${f.name} didn’t upload. Try again.`); continue; }
+      if (up.error) { failures.push(`${f.name}: upload failed. Check your connection and retry.`); continue; }
       const { error } = await supabase.from('commercial_uploads').insert({
         deal_id: deal.id, storage_path: path, file_name: f.name.slice(0, 200), mime: f.type || 'application/octet-stream',
         size_bytes: f.size, kind: f.type.startsWith('image/') ? 'photo' : 'document',
         visibility: allowShare && share ? 'seller' : 'team', note: note.slice(0, 500), uploaded_by_email: me.email, uploaded_by_role: role,
       });
-      if (error) { setBusy(`${f.name} didn’t save. Try again.`); continue; }
-      setBusy('');
+      if (error) { failures.push(`${f.name}: file record could not save. Please retry.`); continue; }
+      saved++;
     }
-    setNote('');
-    onDone?.();
+    if (!failures.length) setNote('');
+    await onDone?.();
+    } catch { failures.push('Connection interrupted. Please retry unsaved files.'); }
+    finally { setUploading(false); setBusy([saved ? `${saved} file${saved === 1 ? '' : 's'} uploaded.` : '', ...failures].filter(Boolean).join(' ')); }
   };
 
   return (
@@ -61,7 +69,7 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
         className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink" />
       <div className="flex flex-wrap items-center gap-3">
         <label className="cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink-soft">
-          {label}<input type="file" multiple accept={accept} className="hidden" disabled={preview} onChange={pick} />
+          {uploading ? 'Uploading…' : label}<input aria-label={label} type="file" multiple accept={accept} className="sr-only" disabled={preview || uploading} onChange={pick} />
         </label>
         {allowShare && (
           <label className="flex items-center gap-2 text-sm text-ink-soft">
@@ -69,7 +77,8 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
           </label>
         )}
       </div>
-      {busy && <p className="text-sm text-ink-soft">{busy}</p>}
+      {preview && <p className="text-sm">Read-only preview. Member sign-in is required to upload.</p>}
+      {busy && <p role="status" className="text-sm text-ink-soft">{busy}</p>}
       {hint && <p className="text-xs text-ink-soft">{hint}</p>}
     </div>
   );
