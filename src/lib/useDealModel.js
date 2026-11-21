@@ -36,6 +36,7 @@ export function useDealModel(deal, { owner, onlyShared } = {}) {
     later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: b, updated_at: new Date().toISOString() }));
   };
   const reset = () => { setOffers(original.current.list); setBaseState(original.current.base); };
-  const touched = !owner && !!original.current && (offers !== original.current.list || base !== original.current.base);
+  const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
+  const touched = !owner && !!original.current && (!same(offers, original.current.list) || !same(base, original.current.base));
   return { offers, setOffers, base, setBase, later, saved, error, reset, touched, original: original.current };
 }
