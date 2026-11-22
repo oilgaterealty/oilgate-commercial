@@ -1,3 +1,4 @@
+import { DictatedField } from './Dictation.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
@@ -172,7 +173,7 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
         <div ref={end} />
       </div>
       <form onSubmit={send} className="mt-4 flex gap-2">
-        <textarea disabled={busy || preview || noOne} rows={2} maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} placeholder={preview ? 'Sending works on a real sign-in' : 'Write a message'}
+        <DictatedField as="textarea" disabled={busy || preview || noOne} rows={2} maxLength={4000} value={body} onChange={(e) => setBody(e.target.value)} placeholder={preview ? 'Sending works on a real sign-in' : 'Write a message'}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send(e); }}
           className="min-h-[44px] flex-1 resize-y rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink disabled:bg-paper" />
         <Button type="submit" disabled={busy || preview || noOne || !body.trim()}>Send</Button>

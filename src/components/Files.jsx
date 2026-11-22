@@ -1,3 +1,4 @@
+import { DictatedField } from './Dictation.jsx';
 import { useEffect, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { when, bytes, roleLabel } from '../lib/format.js';
@@ -65,7 +66,7 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
 
   return (
     <div className={`space-y-3 rounded-xl border border-dashed border-line bg-paper p-4 ${preview ? 'pointer-events-none opacity-70' : ''}`}>
-      <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Add a note (optional)"
+      <DictatedField value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Add a note (optional)"
         className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink" />
       <div className="flex flex-wrap items-center gap-3">
         <label className="cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink-soft">

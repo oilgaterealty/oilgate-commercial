@@ -1,3 +1,4 @@
+import { DictatedField } from '../components/Dictation.jsx';
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
@@ -29,7 +30,7 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
         <button type="button" onClick={() => bump(-1)} className="h-8 w-8 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           {unit === '$' && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>}
-          <input type="number" inputMode="decimal" value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
+          <DictatedField type="number" inputMode="decimal" value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
             className={`h-8 w-28 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
         </span>
         <span className="w-4 text-xs text-ink-soft">{unit === '%' ? '%' : unit === 'x' ? 'x' : ''}</span>
@@ -212,7 +213,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
             <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
               <Card>
                 {owner
-                  ? <input aria-label="Offer name" value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
+                  ? <DictatedField aria-label="Offer name" value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
                       className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
                   : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
                 <div className="mb-3 space-y-1.5 rounded-xl bg-warm-soft/60 px-3 py-2.5 text-sm">
@@ -228,7 +229,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                 })}
                 {owner ? (
                   <>
-                    <textarea aria-label="Notes on this offer" value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
+                    <DictatedField as="textarea" aria-label="Notes on this offer" value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
                       className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js';
+import { DictatedField } from './Dictation.jsx';
 
 // One top row: the page's own heading on the left, who is signed in on the right. No brand bar.
 export default function Shell({ children, session, head, role, wide }) {
@@ -65,7 +66,7 @@ export const Button = ({ kind = 'primary', className = '', ...p }) => (
   />
 );
 export const Field = (p) => (
-  <input {...p} className={`w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink ${p.className || ''}`} />
+  <DictatedField {...p} className={`w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink ${p.className || ''}`} />
 );
 export const Empty = ({ children }) => <p className="text-sm text-ink-soft">{children}</p>;
 

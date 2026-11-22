@@ -1,3 +1,4 @@
+import { DictatedField } from '../components/Dictation.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Button, Empty } from '../components/Shell.jsx';
@@ -74,7 +75,7 @@ function Option({ o, liked, onLike, onAsk, preview }) {
           </div>
           {asking && (
             <form onSubmit={ask} className="space-y-2">
-              <textarea rows={3} value={q} onChange={(e) => setQ(e.target.value)} maxLength={4000} placeholder={`Your question about option ${o.key}`}
+              <DictatedField as="textarea" rows={3} value={q} onChange={(e) => setQ(e.target.value)} maxLength={4000} placeholder={`Your question about option ${o.key}`}
                 className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
               <Button type="submit" disabled={!q.trim()}>Send question</Button>
             </form>
@@ -98,7 +99,7 @@ function OptionActions({ o, liked, onLike, preview, onAsk }) {
     catch { setStatus('Could not send. Please try again.'); }
     finally { setBusy(false); }
   };
-  return <div className="space-y-3"><Button disabled={preview} onClick={onLike}>{liked ? 'Your pick' : 'This one looks good'}</Button><Button kind="secondary" disabled={preview} onClick={() => setAsking(!asking)}>Ask about this option</Button>{asking && <form onSubmit={send} className="space-y-2"><textarea autoFocus aria-label={`Your question about option ${o.key}`} placeholder={`Your question about option ${o.key}`} value={question} onChange={e => setQuestion(e.target.value)} maxLength={4000} rows={3} className="w-full rounded-xl border border-line p-3" /><Button type="submit" disabled={busy || !question.trim()}>Send question</Button></form>}<p role="status" className="text-sm">{status}</p></div>;
+  return <div className="space-y-3"><Button disabled={preview} onClick={onLike}>{liked ? 'Your pick' : 'This one looks good'}</Button><Button kind="secondary" disabled={preview} onClick={() => setAsking(!asking)}>Ask about this option</Button>{asking && <form onSubmit={send} className="space-y-2"><DictatedField as="textarea" autoFocus aria-label={`Your question about option ${o.key}`} placeholder={`Your question about option ${o.key}`} value={question} onChange={e => setQuestion(e.target.value)} maxLength={4000} rows={3} className="w-full rounded-xl border border-line p-3" /><Button type="submit" disabled={busy || !question.trim()}>Send question</Button></form>}<p role="status" className="text-sm">{status}</p></div>;
 }
 
 export default function Seller({ deal, me, preview }) {

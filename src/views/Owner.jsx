@@ -1,3 +1,6 @@
+import { DictatedField } from '../components/Dictation.jsx';
+import LeaseUp from './LeaseUpRoute.jsx';
+import { leaseAccess } from '../lib/leaseUp.js';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
@@ -121,23 +124,23 @@ function SellerEditor({ deal, onSaved }) {
       <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only what’s on this card, plus photos you mark for the seller. Keep every line true. Your offers math never shows here. <a className="underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a></p>
       <div className="space-y-4">
         <Field value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
-        <textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
+        <DictatedField as="textarea" className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
         <div className="space-y-3 rounded-2xl border border-line p-4">
           <p className="text-sm font-medium">The options the seller can pick from</p>
           <Field value={c.options_title || ''} placeholder="Section title, e.g. Three ways we could do this" onChange={(e) => setC({ ...c, options_title: e.target.value })} />
-          <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={c.options_note || ''} placeholder="Note shown above the options" onChange={(e) => setC({ ...c, options_note: e.target.value })} />
+          <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={c.options_note || ''} placeholder="Note shown above the options" onChange={(e) => setC({ ...c, options_note: e.target.value })} />
           <div className="grid gap-4 lg:grid-cols-3">
             {(c.options || []).map((o, i) => {
               const set = (p) => setC({ ...c, options: c.options.map((x, j) => (j === i ? { ...x, ...p } : x)) });
               return (
                 <div key={i} className="space-y-2 rounded-xl bg-paper p-3">
-                  <div className="flex gap-2"><Field className="!w-14" value={o.key} onChange={(e) => set({ key: e.target.value.slice(0, 3) })} /><Field value={o.title} placeholder="Title" onChange={(e) => set({ title: e.target.value })} /></div>
+                  <div className="flex gap-2"><Field aria-label="Option letter" className="!w-14" value={o.key} onChange={(e) => set({ key: e.target.value.slice(0, 3) })} /><Field value={o.title} placeholder="Title" onChange={(e) => set({ title: e.target.value })} /></div>
                   <Field value={o.tagline || ''} placeholder="One line" onChange={(e) => set({ tagline: e.target.value })} />
-                  <textarea className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.steps || []).join('\n')} placeholder="How it works, one step per line" onChange={(e) => set({ steps: e.target.value.split('\n') })} />
-                  <textarea className="min-h-20 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.you_get || []).map((r) => `${r.label} | ${r.value}`).join('\n')} placeholder="What they get: label | value, one per line"
+                  <DictatedField as="textarea" className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.steps || []).join('\n')} placeholder="How it works, one step per line" onChange={(e) => set({ steps: e.target.value.split('\n') })} />
+                  <DictatedField as="textarea" className="min-h-20 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.you_get || []).map((r) => `${r.label} | ${r.value}`).join('\n')} placeholder="What they get: label | value, one per line"
                     onChange={(e) => set({ you_get: e.target.value.split('\n').map((l) => { const [label, ...v] = l.split('|'); return { label: (label || '').trim(), value: v.join('|').trim() }; }) })} />
-                  <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.ask || ''} placeholder="What we’d ask of them" onChange={(e) => set({ ask: e.target.value })} />
-                  <textarea className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.watch || ''} placeholder="Worth knowing" onChange={(e) => set({ watch: e.target.value })} />
+                  <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.ask || ''} placeholder="What we’d ask of them" onChange={(e) => set({ ask: e.target.value })} />
+                  <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.watch || ''} placeholder="Worth knowing" onChange={(e) => set({ watch: e.target.value })} />
                   <Button kind="secondary" onClick={() => setC({ ...c, options: c.options.filter((_, j) => j !== i) })}>Remove option</Button>
                 </div>
               );
@@ -207,17 +210,19 @@ function OwnerAlerts() {
 
 export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
-  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
+  const tabs = leaseAccess('owner', deal.slug).pipeline ? [...TABS, ['lease-up', 'Lease-up']] : TABS;
+  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Tabs tabs={TABS} active={active} base={`#/d/${deal.slug}`} />
+        <Tabs tabs={tabs} active={active} base={`#/d/${deal.slug}`} />
         <div className="mb-5 flex flex-wrap items-center gap-1 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>
           {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
         </div>
       </div>
 
+      {active === 'lease-up' && <LeaseUp key={deal.id} deal={deal} me={me} role="owner" />}
       {active === 'overview' && (
         <Dashboard deal={deal} me={me} role="owner" />
       )}

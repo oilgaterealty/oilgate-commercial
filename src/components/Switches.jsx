@@ -1,3 +1,4 @@
+import { DictatedField } from './Dictation.jsx';
 import { useState } from 'react';
 import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
@@ -28,7 +29,7 @@ function Money({ label, value, onChange, step = 25, suffix }) {
         <button type="button" aria-label={`Lower ${label}`} onClick={() => onChange(Math.max(0, (+value || 0) - step))} className="h-8 w-8 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>
-          <input type="number" inputMode="decimal" min={0} step={step} value={value} aria-label={label} onChange={(e) => onChange(num(e.target.value))}
+          <DictatedField type="number" inputMode="decimal" min={0} step={step} value={value} aria-label={label} onChange={(e) => onChange(num(e.target.value))}
             className="h-8 w-24 rounded-lg border border-line bg-white pl-5 pr-2 text-right text-sm outline-none focus:border-ink" />
         </span>
         <button type="button" aria-label={`Raise ${label}`} onClick={() => onChange((+value || 0) + step)} className="h-8 w-8 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">+</button>
@@ -66,7 +67,7 @@ export default function Switches({ base, setBase, owner }) {
             <div className="mt-2 grid gap-3 sm:grid-cols-3">
               {STR_FIELDS.map(([k, l, u]) => (
                 <label key={k} className="text-xs text-ink-soft">{l}
-                  <input type="number" min={0} step={u === '%' ? 1 : u === 'n' ? 0.5 : 5} value={val(base, k)} onChange={(e) => set({ [k]: num(e.target.value) })}
+                  <DictatedField type="number" aria-label={l} min={0} step={u === '%' ? 1 : u === 'n' ? 0.5 : 5} value={val(base, k)} onChange={(e) => set({ [k]: num(e.target.value) })}
                     className="mt-1 block h-8 w-full rounded-lg border border-line bg-white px-2 text-right text-sm text-ink outline-none focus:border-ink" />
                 </label>
               ))}

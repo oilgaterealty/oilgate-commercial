@@ -1,3 +1,4 @@
+import { DictatedField } from './Dictation.jsx';
 import { roleLabel } from '../lib/format.js';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
@@ -50,7 +51,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
       <div className="min-w-0"><p className={`whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><p className="mt-1 text-xs text-ink-soft">{r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}{role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}</p></div>
     </li>)}</ul>}
     {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">
-      <textarea aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />
+      <DictatedField as="textarea" aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />
       <div className="flex flex-wrap gap-2">{role === 'owner' && <select aria-label={kind === 'task' ? 'Who it is for' : 'Share with'} value={audience} onChange={e => setAudience(e.target.value)} className="rounded-xl border border-line px-3 py-2">{FOR.filter(([k]) => kind === 'task' || k !== 'shared').map(([k, l]) => <option key={k} value={k}>{kind === 'task' ? `For ${l}` : k === 'owner' ? 'Only me' : `Share with ${l.toLowerCase()}`}</option>)}</select>}<Button type="submit" disabled={!body.trim()}>Add {kind}</Button></div>
       <p className="text-xs text-ink-soft">{role === 'owner' ? 'Only the people you pick and you can read this.' : 'Shared with LaVante. Other roles can’t see your entries.'}</p>
     </form>}

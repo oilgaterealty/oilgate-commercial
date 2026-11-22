@@ -1,3 +1,5 @@
+import LeaseUp from './LeaseUpRoute.jsx';
+import { leaseAccess } from '../lib/leaseUp.js';
 import { Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -13,10 +15,12 @@ const TABS = [['overview', 'Overview'], ['offers', 'Offers'], ['photos', 'Photos
 
 // Close to LaVante's page, minus his powers: no saving numbers, no invites, no settings.
 export default function Realtor({ deal, me, member, preview, tab }) {
-  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
+  const tabs = leaseAccess('realtor', deal.slug).pipeline ? [...TABS, ['lease-up', 'Lease-up']] : TABS;
+  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>
-      <Tabs tabs={TABS} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
+      <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
+      {active === 'lease-up' && <LeaseUp key={deal.id} deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'overview' && <Dashboard deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'offers' && <Offers deal={deal} me={me} role="realtor" preview={preview} onlyShared={preview ? 'realtor' : undefined} />}
       {active === 'messages' && <Messages deal={deal} me={me} role="realtor" preview={preview} />}

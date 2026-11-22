@@ -34,7 +34,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
     })();
   }, [slug, session.user.email, viewing]);
 
-  const me = { email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' ? 'LaVante' : '') };
+  const me = { uid: session.user.id, email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' ? 'LaVante' : '') };
 
   if (state.loading) return <Shell session={session}><Empty>Loading…</Empty></Shell>;
   if (!state.deal || !state.role) {

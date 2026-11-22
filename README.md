@@ -46,7 +46,7 @@ That's it: same pages, no code changes.
 
 ## Setup
 
-1. Use the designated Supabase project and apply the SQL files in `supabase/migrations` in numeric order (0001 through 0007). On an existing deployment, apply only missing migrations; 0004 adds the workspace and private loan table, 0005 seeds the Charlotte realtor due-diligence desk, 0006 adds scoped task completion, and 0007 restricts viewer documents while sharing the existing listing photos. Verify RLS and the routing triggers after applying. These files do not delete existing history.
+1. Use the designated Supabase project and apply the SQL files in `supabase/migrations` in numeric order (0001 through 0009). On an existing deployment, apply only missing migrations; 0004 adds the workspace and private loan table, 0005 seeds the Charlotte realtor due-diligence desk, 0006 adds scoped task completion, 0007 restricts viewer documents while sharing the existing listing photos, 0008 adds v3 roles and tasks, and 0009 adds Charlotte lease-up data and its role-scoped media paths. Verify RLS and the routing triggers after applying. These files do not delete existing history.
 2. In SQL, add the owner: `insert into commercial_owners(email) values ('you@example.com');`
    and set the first deal's Drive folder:
    `insert into commercial_deal_private(deal_id, drive_folder_id) select id, '<folder id>' from commercial_deals where slug='charlotte';`
@@ -89,3 +89,7 @@ after publication to repeat the same checks against the deployed bundle.
 Owner **See as** pages are visibly read-only previews. Invite actual members in
 Settings to enable role messaging and uploads; previews never impersonate a member
 or send as one. Unconfirmed loan details remain blank until the owner enters them.
+
+### Charlotte lease-up
+
+Migration 0009 adds private tenant, walkthrough, realtor media, valuation and owner-only sections. It does not change the auth configuration or existing records. Dictation downloads Whisper on first use and transcribes on-device; only explicitly saved walkthrough recordings and data are uploaded to the existing private Supabase project. The owner’s units switch controls access to a tenth walkthrough and tenant assignment. The comp calculator does not change the underlying underwriting model.
