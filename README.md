@@ -46,7 +46,7 @@ That's it: same pages, no code changes.
 
 ## Setup
 
-1. Use the designated Supabase project and apply the SQL files in `supabase/migrations` in numeric order (0001 through 0009). On an existing deployment, apply only missing migrations; 0004 adds the workspace and private loan table, 0005 seeds the Charlotte realtor due-diligence desk, 0006 adds scoped task completion, 0007 restricts viewer documents while sharing the existing listing photos, 0008 adds v3 roles and tasks, and 0009 adds Charlotte lease-up data and its role-scoped media paths. Verify RLS and the routing triggers after applying. These files do not delete existing history.
+1. Use the designated Supabase project and apply the SQL files in `supabase/migrations` in numeric order (0001 through 0009). On an existing deployment, apply only missing migrations; 0004 adds the workspace and private loan table, 0005 seeds the Charlotte realtor due-diligence desk, 0006 adds scoped task completion, 0007 restricts viewer documents while sharing the existing listing photos, 0008 adds v3 roles and tasks, and 0009 adds v5 lease-up CRM tables (walkthrough photos/voice notes, tenant pipeline, owner-only strategy ideas, comps/ARV) and role-scoped storage policies. Verify RLS and the routing triggers after applying. These files do not delete existing history.
 2. In SQL, add the owner: `insert into commercial_owners(email) values ('you@example.com');`
    and set the first deal's Drive folder:
    `insert into commercial_deal_private(deal_id, drive_folder_id) select id, '<folder id>' from commercial_deals where slug='charlotte';`
