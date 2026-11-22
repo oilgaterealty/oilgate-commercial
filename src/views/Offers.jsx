@@ -30,7 +30,7 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
         <button type="button" onClick={() => bump(-1)} className="h-8 w-8 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           {unit === '$' && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>}
-          <DictatedField type="number" inputMode="decimal" value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
+          <input type="number" inputMode="decimal" value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
             className={`h-8 w-28 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
         </span>
         <span className="w-4 text-xs text-ink-soft">{unit === '%' ? '%' : unit === 'x' ? 'x' : ''}</span>

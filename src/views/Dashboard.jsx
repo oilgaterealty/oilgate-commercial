@@ -1,4 +1,3 @@
-import { DictatedField } from '../components/Dictation.jsx';
 import { useState } from 'react';
 import { evaluate, money, pct } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
@@ -33,7 +32,7 @@ function CurrentOffer({ base, setBase, owner }) {
       <label htmlFor="ask" className="text-xs text-warm">Current offer (seller’s number)</label>
       <div className="relative mt-1">
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-xl text-white/60">$</span>
-        <DictatedField id="ask" type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, askPrice: e.target.value === '' ? '' : +e.target.value })}
+        <input id="ask" type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, askPrice: e.target.value === '' ? '' : +e.target.value })}
           className="w-full rounded-lg border border-white/20 bg-white/10 py-1 pl-6 pr-2 font-display text-xl font-semibold text-white outline-none focus:border-warm" />
       </div>
       <p className="mt-0.5 text-xs text-white/70">Being discussed, not signed. Only you can change it.</p>
