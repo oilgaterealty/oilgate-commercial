@@ -83,3 +83,67 @@ test('messages are fixed by role: nobody picks people by hand, and research boar
     assert.doesNotMatch(s, /kind="research"|kind="update"|'research'/, f);
   }
 });
+
+test('v5 strategy is owner-only: RLS, UI and zero seeded strategy text in repo', () => {
+  const v5 = readFileSync(new URL('../supabase/migrations/0009_v5_leaseup.sql', import.meta.url), 'utf8');
+  const pols = [...v5.matchAll(/create policy [^;]+ on public\.commercial_strategy_ideas[\s\S]*?;/gi)].map((m) => m[0]);
+  assert.equal(pols.length, 1);
+  assert.match(pols[0], /commercial_member_role\(deal_id\) = 'owner'/);
+  assert.doesNotMatch(pols[0], /'realtor'|'reviewer'|'lender'|'seller'|'viewer'/);
+  assert.doesNotMatch(v5, /insert\s+into\s+public\.commercial_strategy_ideas/i);
+  for (const f of ['views/Realtor.jsx', 'views/Reviewer.jsx', 'views/Lender.jsx', 'views/Seller.jsx']) {
+    const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /StrategyIdeas|commercial_strategy_ideas|'strategy'/, f);
+  }
+  // Strategy content must live only as DB rows, never hardcoded in the public repo.
+  const stratView = readFileSync(new URL('../src/views/StrategyIdeas.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(stratView, /DEFAULT_IDEAS|SEED_IDEAS|STARTER_CARDS/i);
+});
+
+test('v5 tenant leads and walkthrough are readable by owner and realtor only', () => {
+  const v5 = readFileSync(new URL('../supabase/migrations/0009_v5_leaseup.sql', import.meta.url), 'utf8');
+  for (const table of ['commercial_tenant_leads', 'commercial_walkthrough_photos', 'commercial_walkthrough_notes']) {
+    const pols = [...v5.matchAll(new RegExp(`create policy [^;]+ on public\\.${table}[\\s\\S]*?;`, 'gi'))].map((m) => m[0]).join('\n');
+    assert.match(pols, /'owner'/, table);
+    assert.match(pols, /'realtor'/, table);
+    assert.doesNotMatch(pols, /'seller'|'reviewer'|'lender'|'viewer'/, table);
+  }
+  const storageFn = v5.match(/create or replace function public\.commercial_v5_storage_access[\s\S]*?\$\$;/i)?.[0] || '';
+  assert.match(storageFn, /when 'owner'/);
+  assert.match(storageFn, /when 'realtor'/);
+  assert.doesNotMatch(storageFn, /'seller'|'reviewer'|'lender'|'viewer'/);
+  for (const f of ['views/Reviewer.jsx', 'views/Lender.jsx', 'views/Seller.jsx']) {
+    const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /Walkthrough|Tenants|commercial_tenant_leads|commercial_walkthrough_/, f);
+  }
+});
+
+test('v5 comps tab and tables are hidden from lender, seller and viewer', () => {
+  const v5 = readFileSync(new URL('../supabase/migrations/0009_v5_leaseup.sql', import.meta.url), 'utf8');
+  for (const table of ['commercial_comps', 'commercial_comp_settings']) {
+    const pols = [...v5.matchAll(new RegExp(`create policy [^;]+ on public\\.${table}[\\s\\S]*?;`, 'gi'))].map((m) => m[0]).join('\n');
+    assert.match(pols, /'owner'/, table);
+    assert.match(pols, /'realtor'/, table);
+    assert.match(pols, /'reviewer'/, table);
+    assert.doesNotMatch(pols, /'lender'|'seller'|'viewer'/, table);
+  }
+  for (const f of ['views/Lender.jsx', 'views/Seller.jsx']) {
+    const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
+  }
+  const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
+  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\]\] : \[\['overview', 'Overview'\], \['comps', 'Comps'\], \['messages', 'Messages'\]\]/);
+  assert.match(rev, /!viewer && active === 'comps'/);
+});
+
+test('v5 migration only creates commercial_ objects and storage.objects policies', () => {
+  const v5 = readFileSync(new URL('../supabase/migrations/0009_v5_leaseup.sql', import.meta.url), 'utf8');
+  for (const m of v5.matchAll(/create (?:or replace )?(?:table|function|trigger|unique index|index) (?:public\.)?(\w+)/gi)) {
+    assert.match(m[1], /^commercial_/, m[1]);
+  }
+  for (const m of v5.matchAll(/create policy (\w+) on (?:public|storage)\.(\w+)/gi)) {
+    assert.match(m[1], /^commercial_/, m[1]);
+    assert.match(m[2], /^(commercial_|objects$)/, m[2]);
+  }
+  assert.doesNotMatch(v5, /\b(drop table|drop function|truncate|alter table (?!public\.commercial_))\b/i);
+});

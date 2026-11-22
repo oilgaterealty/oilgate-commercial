@@ -1,5 +1,4 @@
-import LeaseUp from './LeaseUpRoute.jsx';
-import { leaseAccess } from '../lib/leaseUp.js';
+import Comps from './Comps.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { operating, money, pct } from '../lib/dealmath.js';
@@ -47,13 +46,12 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
-  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['messages', 'Messages']];
-  if (leaseAccess(role, deal.slug).pipeline) tabs.push(['lease-up', 'Lease-up']);
+  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['comps', 'Comps'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div className="space-y-5">
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
-      {active === 'lease-up' && <LeaseUp key={deal.id} deal={deal} me={me} role={role} preview={preview} />}
+      {!viewer && active === 'comps' && <Comps deal={deal} me={me} role={role} preview={preview} />}
       {active === 'overview' && (
         <>
           {photos.length > 0 && <Hero photos={photos} />}

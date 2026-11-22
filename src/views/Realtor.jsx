@@ -1,5 +1,6 @@
-import LeaseUp from './LeaseUpRoute.jsx';
-import { leaseAccess } from '../lib/leaseUp.js';
+import Walkthrough from './Walkthrough.jsx';
+import Tenants from './Tenants.jsx';
+import Comps from './Comps.jsx';
 import { Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -11,18 +12,29 @@ import Offers from './Offers.jsx';
 
 export { SellerPulse, AlertsCard };
 
-const TABS = [['overview', 'Overview'], ['offers', 'Offers'], ['photos', 'Photos'], ['messages', 'Messages'], ['files', 'Files'], ['seller', 'Seller activity']];
+const TABS = [
+  ['overview', 'Overview'],
+  ['offers', 'Offers'],
+  ['walkthrough', 'Walkthrough'],
+  ['tenants', 'Tenants'],
+  ['comps', 'Comps'],
+  ['photos', 'Photos'],
+  ['messages', 'Messages'],
+  ['files', 'Files'],
+  ['seller', 'Seller activity'],
+];
 
-// Close to LaVante's page, minus his powers: no saving numbers, no invites, no settings.
+// Close to LaVante's page, minus his powers: no saving numbers, no invites, no settings, no strategy ideas.
 export default function Realtor({ deal, me, member, preview, tab }) {
-  const tabs = leaseAccess('realtor', deal.slug).pipeline ? [...TABS, ['lease-up', 'Lease-up']] : TABS;
-  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
+  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>
-      <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
-      {active === 'lease-up' && <LeaseUp key={deal.id} deal={deal} me={me} role="realtor" preview={preview} />}
+      <Tabs tabs={TABS} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
       {active === 'overview' && <Dashboard deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'offers' && <Offers deal={deal} me={me} role="realtor" preview={preview} onlyShared={preview ? 'realtor' : undefined} />}
+      {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="realtor" preview={preview} />}
+      {active === 'tenants' && <Tenants deal={deal} me={me} role="realtor" preview={preview} />}
+      {active === 'comps' && <Comps deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'messages' && <Messages deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'photos' && <Photos deal={deal} role="realtor" me={me} preview={preview} />}
       {active === 'files' && <Files deal={deal} role="realtor" me={me} title="Photos and documents" canShare allowShare preview={preview} />}

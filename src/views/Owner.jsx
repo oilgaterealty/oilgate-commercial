@@ -1,6 +1,8 @@
 import { DictatedField } from '../components/Dictation.jsx';
-import LeaseUp from './LeaseUpRoute.jsx';
-import { leaseAccess } from '../lib/leaseUp.js';
+import Walkthrough from './Walkthrough.jsx';
+import Tenants from './Tenants.jsx';
+import Comps from './Comps.jsx';
+import StrategyIdeas from './StrategyIdeas.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
@@ -16,6 +18,10 @@ import LoanPosition from '../components/LoanPosition.jsx';
 const TABS = [
   ['overview', 'Overview'],
   ['offers', 'Offers'],
+  ['walkthrough', 'Walkthrough'],
+  ['tenants', 'Tenants'],
+  ['comps', 'Comps'],
+  ['strategy', 'Strategy ideas'],
   ['photos', 'Photos'],
   ['messages', 'Messages'],
   ['files', 'Files'],
@@ -210,23 +216,25 @@ function OwnerAlerts() {
 
 export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
-  const tabs = leaseAccess('owner', deal.slug).pipeline ? [...TABS, ['lease-up', 'Lease-up']] : TABS;
-  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
+  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Tabs tabs={tabs} active={active} base={`#/d/${deal.slug}`} />
+        <Tabs tabs={TABS} active={active} base={`#/d/${deal.slug}`} />
         <div className="mb-5 flex flex-wrap items-center gap-1 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>
           {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
         </div>
       </div>
 
-      {active === 'lease-up' && <LeaseUp key={deal.id} deal={deal} me={me} role="owner" />}
       {active === 'overview' && (
         <Dashboard deal={deal} me={me} role="owner" />
       )}
       {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
+      {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="owner" />}
+      {active === 'tenants' && <Tenants deal={deal} me={me} role="owner" />}
+      {active === 'comps' && <Comps deal={deal} me={me} role="owner" />}
+      {active === 'strategy' && <StrategyIdeas deal={deal} role="owner" />}
       {active === 'photos' && <Photos deal={deal} role="owner" me={me} />}
       {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
