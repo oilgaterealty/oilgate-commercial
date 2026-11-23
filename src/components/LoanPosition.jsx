@@ -1,3 +1,4 @@
+import { buyerName } from '../lib/people.js';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Field, Button } from './Shell.jsx';
@@ -22,7 +23,7 @@ export default function LoanPosition({ deal, role, preview, me }) {
     setStatus(error ? 'Loan details not saved. Please try again.' : 'Loan saved. Visible only to the owner and seller.');
   };
   const blank = (v) => v === undefined || v === '' || v === null;
-  // The seller fills in what we don't have yet. It goes to LaVante as a message; he enters it.
+  // The seller fills in what we don't have yet. It goes to the buyer as a message; the buyer enters it.
   const send = async e => {
     e.preventDefault(); if (preview || busy) return;
     const lines = FIELDS.filter(([k]) => !blank(mine[k])).map(([k, l]) => `${l}: ${mine[k]}`);
@@ -30,11 +31,11 @@ export default function LoanPosition({ deal, role, preview, me }) {
     setBusy(true);
     try {
       const error = await sendToOwner(deal, me, role, `My loan details:\n${lines.join('\n')}`, 'Loan details');
-      setStatus(error ? 'Not sent. Your entries are still here; try again.' : 'Sent to LaVante. He’ll add them here.');
+      setStatus(error ? 'Not sent. Your entries are still here; try again.' : `Sent to ${buyerName()}. They’ll be added here.`);
       if (!error) setMine({});
     } catch { setStatus('Not sent. Please try again.'); }
     finally { setBusy(false); }
   };
   const shown = (key, value) => blank(value) ? 'Not entered yet' : ['balance', 'payment'].includes(key) ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value) : key === 'rate' ? `${value}%` : value;
-  return <Card><CardTitle>{owner ? 'Seller loan position · owner entry' : 'Your current loan'}</CardTitle><p className="mb-4 text-sm text-ink-soft">{owner ? 'Enter figures from the seller’s records. Blank means unconfirmed. Only you and the seller can read these fields.' : 'Fill in anything that’s blank and send it. Message us if anything needs correcting.'}</p>{owner ? <form onSubmit={save} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <label key={key} className="text-sm">{label}<Field disabled={!loaded} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} value={loan[key] ?? ''} onChange={e => setLoan({ ...loan, [key]: e.target.value })} /></label>)}</div><Button type="submit" disabled={!loaded}>Save loan</Button></form> : <form onSubmit={send} className="space-y-4"><dl className="grid gap-4 text-sm sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <div key={key}><dt className="text-ink-soft">{label}</dt>{blank(loan[key]) ? <dd><Field aria-label={label} disabled={preview || !loaded} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} placeholder="Not entered yet. Type it here" value={mine[key] ?? ''} onChange={e => setMine({ ...mine, [key]: e.target.value })} /></dd> : <dd className="font-medium">{shown(key, loan[key])}</dd>}</div>)}</dl>{FIELDS.some(([k]) => blank(loan[k])) && <Button type="submit" disabled={preview || busy || !FIELDS.some(([k]) => !blank(mine[k]))}>Send to LaVante</Button>}</form>}<p role="status" className="mt-3 text-sm">{status}</p></Card>;
+  return <Card><CardTitle>{owner ? 'Seller loan position · owner entry' : 'Your current loan'}</CardTitle><p className="mb-4 text-sm text-ink-soft">{owner ? 'Enter figures from the seller’s records. Blank means unconfirmed. Only you and the seller can read these fields.' : 'Fill in anything that’s blank and send it. Message us if anything needs correcting.'}</p>{owner ? <form onSubmit={save} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <label key={key} className="text-sm">{label}<Field disabled={!loaded} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} value={loan[key] ?? ''} onChange={e => setLoan({ ...loan, [key]: e.target.value })} /></label>)}</div><Button type="submit" disabled={!loaded}>Save loan</Button></form> : <form onSubmit={send} className="space-y-4"><dl className="grid gap-4 text-sm sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <div key={key}><dt className="text-ink-soft">{label}</dt>{blank(loan[key]) ? <dd><Field aria-label={label} disabled={preview || !loaded} type={type} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} placeholder="Not entered yet. Type it here" value={mine[key] ?? ''} onChange={e => setMine({ ...mine, [key]: e.target.value })} /></dd> : <dd className="font-medium">{shown(key, loan[key])}</dd>}</div>)}</dl>{FIELDS.some(([k]) => blank(loan[k])) && <Button type="submit" disabled={preview || busy || !FIELDS.some(([k]) => !blank(mine[k]))}>Send to {buyerName()}</Button>}</form>}<p role="status" className="mt-3 text-sm">{status}</p></Card>;
 }

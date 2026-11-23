@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { buyerTag } from '../lib/people.js';
 import { supabase, BUCKET } from '../lib/supabase.js';
-import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, LAST_SPACE, spaceLabel, roomsFor, v5Access } from '../lib/leaseUp.js';
+import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, LAST_SPACE, spaceLabel, roomsFor, v5Access, visibleNotes } from '../lib/leaseUp.js';
 import { when, roleLabel } from '../lib/format.js';
 import { MAX_RECORDING_MS, WHISPER_ENGINE_LABEL, transcribeAudio } from '../lib/dictation.js';
 import { assembleSessionAudio } from '../lib/audioStitch.js';
@@ -48,6 +49,7 @@ const storagePathFor = (dealId, uid, ext) =>
   `commercial-v5/${dealId}/walkthrough/${uid}/${crypto.randomUUID()}.${ext}`;
 const roomLabel = (key) => [...ROOMS, ...AREA_ROOMS].find(([k]) => k === key)?.[1] || key;
 const authorTag = (row) => {
+  if (row.author_role === 'owner') return buyerTag();
   const role = roleLabel[row.author_role] || row.author_role;
   return row.author_name && row.author_name.toLowerCase() !== role.toLowerCase()
     ? `${row.author_name} (${role})`
@@ -166,13 +168,13 @@ export default function Walkthrough({ deal, me, role, preview }) {
       
       setPhotos(p.data || []);
       setVideos(v.data || []);
-      setNotes(n.data || []);
+      setNotes(visibleNotes(role, n.data));
       setLoadErr(p.error || v.error || n.error ? 'Walkthrough could not load. Refresh to try again.' : '');
     });
     return () => {
       live = false;
     };
-  }, [deal.id, access.walkthrough, refresh]);
+  }, [deal.id, access.walkthrough, refresh, role]);
 
   // Load user-scoped local IndexedDB audio sessions and pending media queue.
   const reloadLocalState = useCallback(async () => {
@@ -1044,6 +1046,18 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
   };
 
+  // Owner only: show this photo on the seller's or lender's page. Off by default.
+  const toggleShare = async (p, field) => {
+    if (role !== 'owner' || preview || busy) return;
+    const next = !p[field];
+    setPhotos((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: next } : x)));
+    const { error } = await supabase.from('commercial_walkthrough_photos').update({ [field]: next }).eq('id', p.id).eq('deal_id', deal.id);
+    if (error) {
+      setPhotos((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: !next } : x)));
+      setStatus('Sharing did not save. Try again.');
+    }
+  };
+
   const removeRemotePhoto = async (p) => {
     if (!edit || busy || !window.confirm('Remove this photo?')) return;
     setBusy(true);
@@ -1905,6 +1919,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           </button>
                         )}
                       </div>
+                      {role === 'owner' && !preview && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line px-2 py-1.5 text-xs">
+                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(p.share_seller)} onChange={() => void toggleShare(p, 'share_seller')} />Share with seller</label>
+                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(p.share_lender)} onChange={() => void toggleShare(p, 'share_lender')} />Share with lender</label>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

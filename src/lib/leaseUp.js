@@ -113,3 +113,31 @@ export function compWhatIfMessage({ savedComps, localComps, units, noi, cap }) {
   );
   return lines.join('\n');
 }
+
+// Voice notes: the owner's are his alone. Everyone else (and his "See as" preview) sees only the realtor's.
+export function visibleNotes(role, rows) {
+  return role === 'owner' ? rows || [] : (rows || []).filter((n) => n.author_role !== 'owner');
+}
+
+// Walkthrough photos a seller or lender may see: only the ones the owner switched on for them.
+export function sharedPhotos(role, rows) {
+  if (role === 'seller') return (rows || []).filter((p) => p.share_seller);
+  if (role === 'lender') return (rows || []).filter((p) => p.share_lender);
+  return rows || [];
+}
+
+// Tenants: the owner changes anything; the realtor changes only rows she added.
+export const canChangeLead = (role, lead, uid) => role === 'owner' || (Boolean(uid) && lead?.author_uid === uid);
+
+export const SUGGEST_FIELDS = ['name', 'phone', 'email', 'notes', 'stage'];
+
+// Only the fields the realtor actually changed, so the owner sees a clean before/after.
+export function suggestionDiff(lead, draft) {
+  const out = {};
+  for (const k of SUGGEST_FIELDS) {
+    const next = (draft?.[k] ?? '').toString().trim();
+    if (next !== ((lead?.[k] ?? '').toString().trim())) out[k] = next;
+  }
+  if (out.stage === 'moved_in') delete out.stage;
+  return out;
+}

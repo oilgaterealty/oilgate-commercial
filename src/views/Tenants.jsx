@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { STAGES, stageMove, unitCount, v5Access } from '../lib/leaseUp.js';
+import { STAGES, stageMove, unitCount, v5Access, canChangeLead, suggestionDiff } from '../lib/leaseUp.js';
 import { roleLabel } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
@@ -61,6 +61,38 @@ function LeadForm({ initial = BLANK, disabled, onSave, onCancel }) {
   );
 }
 
+const FIELD_LABEL = { name: 'Name', phone: 'Phone', email: 'Email', notes: 'Notes', stage: 'Stage' };
+const stageName = (k) => STAGES.find(([id]) => id === k)?.[1] || k;
+const shown = (k, v) => (k === 'stage' ? stageName(v) : v || '(blank)');
+
+// The realtor's proposed edit to one of the owner's leads. Nothing changes until the owner accepts.
+function SuggestForm({ lead, disabled, onSend, onCancel }) {
+  const [f, setF] = useState({ name: lead.name, phone: lead.phone, email: lead.email, notes: lead.notes, stage: lead.stage === 'moved_in' ? 'approved' : lead.stage });
+  const [note, setNote] = useState('');
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const changes = suggestionDiff(lead, f);
+  const none = Object.keys(changes).length === 0;
+  return (
+    <form className="space-y-2 rounded-lg bg-paper p-2" onSubmit={(e) => { e.preventDefault(); if (!none) onSend(changes, note.trim()); }}>
+      <p className="text-xs font-medium">Suggest a change. The owner accepts or rejects it.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field aria-label="Suggested name" maxLength={140} value={f.name} onChange={set('name')} />
+        <Field aria-label="Suggested phone" maxLength={60} value={f.phone} onChange={set('phone')} />
+        <Field aria-label="Suggested email" maxLength={200} value={f.email} onChange={set('email')} />
+        <select aria-label="Suggested stage" value={f.stage} onChange={set('stage')} className="rounded-xl border border-line bg-white px-3 py-2 text-sm">
+          {STAGES.filter(([k]) => k !== 'moved_in').map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+      </div>
+      <DictatedField as="textarea" rows={2} aria-label="Suggested notes" maxLength={4000} value={f.notes} onChange={set('notes')} className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" />
+      <Field aria-label="Why (optional)" placeholder="Why (optional)" maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={disabled || none} className="!px-2.5 !py-1 !text-xs">Send suggestion</Button>
+        <Button type="button" kind="secondary" onClick={onCancel} className="!px-2.5 !py-1 !text-xs">Cancel</Button>
+      </div>
+    </form>
+  );
+}
+
 export default function Tenants({ deal, me, role, preview }) {
   const access = v5Access(role);
   const edit = access.editTenants && !preview;
@@ -74,6 +106,8 @@ export default function Tenants({ deal, me, role, preview }) {
   const [pickUnit, setPickUnit] = useState('');
   const [formKey, setFormKey] = useState(0);
   const [refresh, setRefresh] = useState(0);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestingId, setSuggestingId] = useState(null);
 
   useEffect(() => {
     if (!access.tenants) return;
@@ -81,8 +115,10 @@ export default function Tenants({ deal, me, role, preview }) {
     Promise.all([
       supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
       supabase.from('commercial_tenant_leads').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }),
-    ]).then(([m, l]) => {
+      preview ? Promise.resolve({ data: [] }) : supabase.from('commercial_tenant_suggestions').select('*').eq('deal_id', deal.id).eq('status', 'pending').order('created_at'),
+    ]).then(([m, l, s]) => {
       if (!live) return;
+      setSuggestions(s.data || []);
       setUnits(unitCount(m.data?.base?.units));
       setLeads(l.data || []);
       setLoadErr(l.error ? 'Tenant pipeline could not load. Refresh to try again.' : '');
@@ -142,6 +178,41 @@ export default function Tenants({ deal, me, role, preview }) {
       const { error } = await supabase.from('commercial_tenant_leads').delete().eq('id', lead.id).eq('deal_id', deal.id);
       setStatus(error ? 'Could not remove lead.' : 'Lead removed.');
       setRefresh((r) => r + 1);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const suggest = async (lead, changes, note) => {
+    if (!edit || pending) return;
+    setPending(true);
+    setStatus('');
+    try {
+      const { error } = await supabase.from('commercial_tenant_suggestions').insert({ deal_id: deal.id, lead_id: lead.id, changes, note, author_uid: me.uid, author_role: 'realtor', author_name: me.name || '' });
+      setStatus(error ? 'Suggestion not sent. Try again.' : 'Suggestion sent to the owner.');
+      if (!error) { setSuggestingId(null); setRefresh((r) => r + 1); }
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const decide = async (sg, accept) => {
+    if (role !== 'owner' || preview || pending) return;
+    const lead = list.find((l) => l.id === sg.lead_id);
+    setPending(true);
+    setStatus('');
+    try {
+      if (accept && lead) {
+        const patch = { ...sg.changes };
+        if (patch.stage) Object.assign(patch, stageMove(patch.stage, null, units, []));
+        const { error } = await supabase.from('commercial_tenant_leads').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', lead.id).eq('deal_id', deal.id);
+        if (error) { setStatus('Could not apply that suggestion.'); return; }
+      }
+      const { error } = await supabase.from('commercial_tenant_suggestions').update({ status: accept ? 'accepted' : 'rejected', decided_at: new Date().toISOString() }).eq('id', sg.id);
+      setStatus(error ? 'Could not save your answer.' : accept ? 'Suggestion accepted.' : 'Suggestion rejected.');
+      setRefresh((r) => r + 1);
+    } catch (e) {
+      setStatus(e.message || 'Could not save your answer.');
     } finally {
       setPending(false);
     }
@@ -249,7 +320,25 @@ export default function Tenants({ deal, me, role, preview }) {
                               {lead.notes && (
                                 <p className="whitespace-pre-wrap break-words text-xs text-ink">{lead.notes}</p>
                               )}
-                              {edit && (
+                              {suggestions.filter((sg) => sg.lead_id === lead.id).map((sg) => (
+                                <div key={sg.id} className="space-y-1 rounded-lg border border-warm/40 bg-warm-soft p-2 text-xs">
+                                  <p className="font-medium">{role === 'owner' ? `${sg.author_name || 'Realtor'} suggests:` : 'Suggestion pending'}</p>
+                                  <ul>{Object.entries(sg.changes || {}).map(([k, v]) => <li key={k}><span className="text-ink-soft">{FIELD_LABEL[k] || k}:</span> {shown(k, lead[k])} → <strong>{shown(k, v)}</strong></li>)}</ul>
+                                  {sg.note && <p className="text-ink-soft">“{sg.note}”</p>}
+                                  {role === 'owner' && !preview && (
+                                    <div className="flex gap-2 pt-1">
+                                      <Button type="button" className="!px-2.5 !py-1 !text-xs" disabled={pending} onClick={() => decide(sg, true)}>Accept</Button>
+                                      <Button type="button" kind="secondary" className="!px-2.5 !py-1 !text-xs" disabled={pending} onClick={() => decide(sg, false)}>Reject</Button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              {edit && !canChangeLead(role, lead, me?.uid) && (
+                                suggestingId === lead.id
+                                  ? <SuggestForm lead={lead} disabled={pending} onSend={(c, n) => suggest(lead, c, n)} onCancel={() => setSuggestingId(null)} />
+                                  : <button type="button" className="text-xs underline" onClick={() => setSuggestingId(lead.id)}>Suggest change</button>
+                              )}
+                              {edit && canChangeLead(role, lead, me?.uid) && (
                                 <div className="space-y-2 pt-1">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <select

@@ -1,3 +1,4 @@
+import { buyerName, possessive } from '../lib/people.js';
 import { useState } from 'react';
 import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
@@ -74,14 +75,14 @@ export default function Switches({ base, setBase, owner }) {
           )}
         </div>
       )}
-      <p className="mt-3 text-xs text-ink-soft">{owner ? 'Your changes save and update every offer.' : 'Try any number. Nothing you change here is saved or changes LaVante’s numbers.'}</p>
+      <p className="mt-3 text-xs text-ink-soft">{owner ? 'Your changes save and update every offer.' : `Try any number. Nothing you change here is saved or changes ${possessive(buyerName())} numbers.`}</p>
     </div>
   );
 }
 
 const LABEL = { ...Object.fromEntries([...BASE_FIELDS, ...STR_FIELDS].map(([k, l]) => [k, l])), units: 'Units', tenthUnitRepair: 'Extra repair for the 10th unit', rent: 'Rent per unit / month', strUnits: 'Units as Airbnb' };
 
-// A plain message to LaVante describing what someone changed and what it does to each offer.
+// A plain message to the buyer describing what someone changed and what it does to each offer.
 export function whatIfMessage(original, base, offers) {
   const lines = ['What-if from the deal page (nothing was saved):'];
   for (const k of Object.keys({ ...original.base, ...base })) {
@@ -117,7 +118,7 @@ export function SendWhatIf({ deal, me, role, preview, model }) {
     setBusy(true);
     try {
       const error = await sendToOwner(deal, me, role, text(), 'What-if');
-      setStatus(error ? 'Not sent. Try again.' : 'Sent to LaVante. It’s in Messages.');
+      setStatus(error ? 'Not sent. Try again.' : `Sent to ${buyerName()}. It’s in Messages.`);
     } catch { setStatus('Not sent. Try again.'); }
     finally { setBusy(false); }
   };
@@ -126,7 +127,7 @@ export function SendWhatIf({ deal, me, role, preview, model }) {
     <div className="fixed inset-x-0 bottom-3 z-30 mx-auto w-[min(720px,calc(100%-24px))] rounded-2xl border border-warm bg-white px-4 py-3 text-sm shadow-lg">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">You’re trying your own numbers.</span>
-        <Button onClick={send} disabled={busy}>{busy ? 'Sending…' : 'Send to LaVante'}</Button>
+        <Button onClick={send} disabled={busy}>{busy ? 'Sending…' : `Send to ${buyerName()}`}</Button>
         <Button kind="secondary" onClick={() => { model.reset(); setStatus(''); setShow(false); }}>Reset</Button>
         <span role="status" className="text-ink-soft">{status}</span>
       </div>

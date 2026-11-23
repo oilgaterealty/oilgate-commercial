@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { roleLabel } from '../lib/format.js';
+import { setDealNames, buyerName } from '../lib/people.js';
 import Shell, { Card, Empty, PropertyHead } from '../components/Shell.jsx';
 import Owner from './Owner.jsx';
 import Realtor from './Realtor.jsx';
@@ -34,7 +35,8 @@ export default function DealRoom({ slug, tab, sub, session }) {
     })();
   }, [slug, session.user.email, viewing]);
 
-  const me = { uid: session.user.id, email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' ? 'LaVante' : '') };
+  setDealNames(state.deal);
+  const me = { uid: session.user.id, email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' && state.deal ? buyerName(state.deal) : '') };
 
   if (state.loading) return <Shell session={session}><Empty>Loading…</Empty></Shell>;
   if (!state.deal || !state.role) {

@@ -37,7 +37,7 @@ export const STR_FIELDS = [
 
 // Facts about the building (from the rent roll, bills and seller records). Only the owner can change these.
 // Everything else is an assumption anyone with access can try a what-if on.
-// Units, rent and the Airbnb switch are what-ifs anyone on the team can try; only LaVante's changes save.
+// Units, rent and the Airbnb switch are what-ifs anyone on the team can try; only the owner's changes save.
 export const KNOWN_BASE = ['taxes', 'insurance', 'utilities', 'admin', 'turns'];
 
 export const BASE_DEFAULTS = {

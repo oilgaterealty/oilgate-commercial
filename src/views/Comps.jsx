@@ -4,6 +4,7 @@ import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5A
 import { money, operating } from '../lib/dealmath.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
+import { buyerName, possessive } from '../lib/people.js';
 
 const BLANK = { address: '', units: '', sale_price: '' };
 
@@ -126,7 +127,7 @@ export default function Comps({ deal, me, role, preview }) {
         return;
       }
       const err = await sendToOwner(deal, me, role, body, 'Comps / ARV what-if');
-      setSendStatus(err ? 'Not sent. Try again.' : 'Sent to LaVante. It’s in Messages.');
+      setSendStatus(err ? 'Not sent. Try again.' : `Sent to ${buyerName()}. It’s in Messages.`);
     } catch {
       setSendStatus('Not sent. Try again.');
     } finally {
@@ -145,7 +146,7 @@ export default function Comps({ deal, me, role, preview }) {
   return (
     <div className="space-y-5 pb-20">
       <Card>
-        <CardTitle aside={<span className="text-xs text-ink-soft">{owner ? 'Your comps & cap rate save' : 'What-ifs never overwrite LaVante’s numbers'}</span>}>
+        <CardTitle aside={<span className="text-xs text-ink-soft">{owner ? 'Your comps & cap rate save' : `What-ifs never overwrite ${possessive(buyerName())} numbers`}</span>}>
           Comps / ARV calculator
         </CardTitle>
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
@@ -268,8 +269,9 @@ export default function Comps({ deal, me, role, preview }) {
                     <span className="font-medium break-words">{r.address}</span>
                     {r.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs">what-if</span>}
                     <p className="text-xs text-ink-soft">
-                      {r.units} units · Sale {money(+r.sale_price)} · <strong className="text-ink">{money(pricePerUnit(r))}/unit</strong>
+                      {r.units} units · Sale {money(+r.sale_price)}{r.sale_date ? ` · ${new Date(r.sale_date + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : ''} · <strong className="text-ink">{money(pricePerUnit(r))}/unit</strong>
                     </p>
+                    {r.source && <p className="text-[11px] text-ink-soft break-words">Source: {r.source}</p>}
                   </div>
                   {(owner || r.local) && (
                     <button type="button" disabled={pending} onClick={() => removeComp(r)} className="text-xs text-ink-soft underline hover:text-red-700">
@@ -287,7 +289,7 @@ export default function Comps({ deal, me, role, preview }) {
         <div className="fixed inset-x-0 bottom-3 z-30 mx-auto w-[min(720px,calc(100%-24px))] rounded-2xl border border-warm bg-white px-4 py-3 text-sm shadow-lg">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">You’re trying your own comps / ARV numbers.</span>
-            <Button type="button" onClick={sendWhatIf} disabled={sendBusy}>{sendBusy ? 'Sending…' : 'Send to LaVante'}</Button>
+            <Button type="button" onClick={sendWhatIf} disabled={sendBusy}>{sendBusy ? 'Sending…' : `Send to ${buyerName()}`}</Button>
             <Button type="button" kind="secondary" onClick={resetWhatIf}>Reset</Button>
             <span role="status" className="text-ink-soft">{sendStatus}</span>
           </div>

@@ -1,3 +1,4 @@
+import { buyerName, possessive } from '../lib/people.js';
 import { DictatedField } from '../components/Dictation.jsx';
 import { useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
@@ -18,7 +19,7 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
     return (
       <div className="flex items-center justify-between gap-3 py-1.5">
         <span className="text-sm text-ink-soft">{label}</span>
-        <span className="flex items-center gap-2 text-sm font-medium" title="From the property's records. Only LaVante can change it.">{shown}<span className="rounded-full bg-warm-soft px-2 py-0.5 text-[10px] uppercase tracking-wider text-ink-soft">Locked</span></span>
+        <span className="flex items-center gap-2 text-sm font-medium" title={`From the property's records. Only ${buyerName()} can change it.`}>{shown}<span className="rounded-full bg-warm-soft px-2 py-0.5 text-[10px] uppercase tracking-wider text-ink-soft">Locked</span></span>
       </div>
     );
   }
@@ -83,7 +84,7 @@ function BuildingNumbers({ base, setBase, o, owner }) {
         <div className="mt-3">
           <p className="mb-2 text-xs text-ink-soft">{owner
             ? 'Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.'
-            : 'These are LaVante’s numbers for the building. Try your own on any of them; nothing you change is saved, and Send to LaVante shows him what you changed.'}</p>
+            : `These are ${possessive(buyerName())} numbers for the building. Try your own on any of them; nothing you change is saved, and Send to ${buyerName()} shows what you changed.`}</p>
           <div className="grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.filter(([k]) => !['units', 'tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
@@ -147,7 +148,7 @@ export function OptionTable({ offers, evals }) {
   );
 }
 
-// Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to LaVante.
+// Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to the buyer.
 export default function Offers({ deal, canSave, onlyShared, me, role, preview }) {
   const owner = !!canSave;
   const model = useDealModel(deal, { owner, onlyShared });

@@ -1,11 +1,12 @@
 import { DictatedField } from './Dictation.jsx';
 import { roleLabel } from '../lib/format.js';
+import { buyerName } from '../lib/people.js';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Button, Empty } from './Shell.jsx';
 
 // Who a new task is for, and which roles can read it. The owner always sees every task.
-const FOR = [['owner', 'LaVante', []], ['shared', 'LaVante + realtor', ['realtor']], ['realtor', 'Realtor', ['realtor']], ['reviewer', 'Reviewer', ['reviewer']], ['lender', 'Lender', ['lender']]];
+const FOR = () => [['owner', buyerName(), []], ['shared', `${buyerName()} + realtor`, ['realtor']], ['realtor', 'Realtor', ['realtor']], ['reviewer', 'Reviewer', ['reviewer']], ['lender', 'Lender', ['lender']]];
 
 function LinkedText({ text }) {
   return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="break-all underline">{part}</a> : part);
@@ -27,7 +28,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
   const add = async e => {
     e.preventDefault();
     if (!body.trim() || preview) return;
-    const pick = FOR.find(([k]) => k === audience);
+    const pick = FOR().find(([k]) => k === audience);
     const row = { deal_id: deal.id, kind, body: body.trim(), author_email: me.email, author_role: role, audience: role === 'owner' ? pick[2] : [role] };
     if (kind === 'task') row.assignee = role === 'owner' ? pick[1] : roleLabel[role];
     let r = await supabase.from('commercial_work_items').insert(row);
@@ -52,8 +53,8 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
     </li>)}</ul>}
     {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">
       <DictatedField as="textarea" aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />
-      <div className="flex flex-wrap gap-2">{role === 'owner' && <select aria-label={kind === 'task' ? 'Who it is for' : 'Share with'} value={audience} onChange={e => setAudience(e.target.value)} className="rounded-xl border border-line px-3 py-2">{FOR.filter(([k]) => kind === 'task' || k !== 'shared').map(([k, l]) => <option key={k} value={k}>{kind === 'task' ? `For ${l}` : k === 'owner' ? 'Only me' : `Share with ${l.toLowerCase()}`}</option>)}</select>}<Button type="submit" disabled={!body.trim()}>Add {kind}</Button></div>
-      <p className="text-xs text-ink-soft">{role === 'owner' ? 'Only the people you pick and you can read this.' : 'Shared with LaVante. Other roles can’t see your entries.'}</p>
+      <div className="flex flex-wrap gap-2">{role === 'owner' && <select aria-label={kind === 'task' ? 'Who it is for' : 'Share with'} value={audience} onChange={e => setAudience(e.target.value)} className="rounded-xl border border-line px-3 py-2">{FOR().filter(([k]) => kind === 'task' || k !== 'shared').map(([k, l]) => <option key={k} value={k}>{kind === 'task' ? `For ${l}` : k === 'owner' ? 'Only me' : `Share with ${l.toLowerCase()}`}</option>)}</select>}<Button type="submit" disabled={!body.trim()}>Add {kind}</Button></div>
+      <p className="text-xs text-ink-soft">{role === 'owner' ? 'Only the people you pick and you can read this.' : `Shared with ${buyerName()}. Other roles can’t see your entries.`}</p>
     </form>}
   </Card>;
 }

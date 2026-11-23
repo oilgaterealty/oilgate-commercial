@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase.js';
+import { supabase, BUCKET } from '../lib/supabase.js';
 import { Card, CardTitle, Empty } from './Shell.jsx';
 import { useUploads, Uploader, ShareChips } from './Files.jsx';
+import { sharedPhotos } from '../lib/leaseUp.js';
 
 const IMAGES = 'image/jpeg,image/png,image/webp,image/heic';
 export const photosOf = (rows) => (rows || []).filter((r) => r.kind === 'photo' && r.url).sort((a, b) => (b.featured - a.featured));
@@ -98,4 +99,25 @@ export default function Photos({ deal, role, me, preview }) {
       </Card>
     </div>
   );
+}
+
+// Walkthrough photos the owner switched on for this role (seller or lender). The database enforces it;
+// the filter here only matters for the owner's own "See as" preview.
+export function useSharedWalkPhotos(deal, role) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    if (role !== 'seller' && role !== 'lender') return;
+    let live = true;
+    (async () => {
+      const flag = role === 'seller' ? 'share_seller' : 'share_lender';
+      const { data } = await supabase.from('commercial_walkthrough_photos').select('*').eq('deal_id', deal.id).eq(flag, true).order('created_at', { ascending: false });
+      const list = sharedPhotos(role, data);
+      if (!list.length) { if (live) setRows([]); return; }
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(list.map((p) => p.storage_path), 3600);
+      const url = Object.fromEntries((signed || []).map((s) => [s.path, s.signedUrl]));
+      if (live) setRows(list.filter((p) => url[p.storage_path]).map((p) => ({ id: `walk-${p.id}`, kind: 'photo', url: url[p.storage_path], note: 'Walkthrough photo', featured: false })));
+    })();
+    return () => { live = false; };
+  }, [deal.id, role]);
+  return rows;
 }

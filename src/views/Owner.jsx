@@ -1,4 +1,5 @@
 import { DictatedField } from '../components/Dictation.jsx';
+import { setDealNames } from '../lib/people.js';
 import Walkthrough from './Walkthrough.jsx';
 import Tenants from './Tenants.jsx';
 import Comps from './Comps.jsx';
@@ -166,12 +167,12 @@ function SellerEditor({ deal, onSaved }) {
 
 function Settings({ deal, onSaved }) {
   const [folder, setFolder] = useState('');
-  const [d, setD] = useState({ title: deal.title, address: deal.address, status: deal.status });
+  const [d, setD] = useState({ title: deal.title, address: deal.address, status: deal.status, buyer_name: deal.buyer_name || '', seller_name: deal.seller_name || '' });
   const [msg, setMsg] = useState('');
   useEffect(() => { supabase.from('commercial_deal_private').select('drive_folder_id').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setFolder(data?.drive_folder_id || '')); }, [deal.id]);
   const save = async () => {
     const id = (folder.match(/folders\/([A-Za-z0-9_-]+)/) || [])[1] || folder.trim();
-    const a = await supabase.from('commercial_deals').update(d).eq('id', deal.id).select().single();
+    const a = await supabase.from('commercial_deals').update({ ...d, buyer_name: d.buyer_name.trim(), seller_name: d.seller_name.trim() }).eq('id', deal.id).select().single();
     const b = id ? await supabase.from('commercial_deal_private').upsert({ deal_id: deal.id, drive_folder_id: id, updated_at: new Date().toISOString() }) : { error: null };
     setMsg(a.error?.message || b.error?.message || 'Saved.');
     if (a.data) onSaved(a.data);
@@ -182,6 +183,8 @@ function Settings({ deal, onSaved }) {
       <div className="grid gap-3 md:grid-cols-2">
         <Field value={d.title} placeholder="Name" onChange={(e) => setD({ ...d, title: e.target.value })} />
         <Field value={d.address} placeholder="Address" onChange={(e) => setD({ ...d, address: e.target.value })} />
+        <label className="text-xs text-ink-soft">Buyer name (shown as “Name · Buyer”)<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
+        <label className="text-xs text-ink-soft">Seller name<Field value={d.seller_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, seller_name: e.target.value })} /></label>
         <Field value={folder} placeholder="Google Drive folder link" onChange={(e) => setFolder(e.target.value)} />
         <select className="rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
           <option value="active">Active</option><option value="closed">Closed</option><option value="archived">Archived</option>
@@ -216,6 +219,7 @@ function OwnerAlerts() {
 
 export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
+  setDealNames(deal);
   const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>

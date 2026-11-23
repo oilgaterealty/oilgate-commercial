@@ -1,3 +1,4 @@
+import { buyerName } from '../lib/people.js';
 import Comps from './Comps.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
@@ -65,7 +66,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>
-              {viewer ? <Empty>Ask LaVante for purchase information.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
+              {viewer ? <Empty>Ask {buyerName()} for purchase information.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
             </Card>
             {!viewer && (
               <Card>

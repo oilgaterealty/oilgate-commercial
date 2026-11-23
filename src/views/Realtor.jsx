@@ -24,7 +24,7 @@ const TABS = [
   ['seller', 'Seller activity'],
 ];
 
-// Close to LaVante's page, minus his powers: no saving numbers, no invites, no settings, no strategy ideas.
+// Close to the owner's page, minus his powers: no saving numbers, no invites, no settings, no strategy ideas.
 export default function Realtor({ deal, me, member, preview, tab }) {
   const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
   return (

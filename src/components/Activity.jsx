@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when } from '../lib/format.js';
+import { actorLabel, activityText } from '../lib/people.js';
 import { Card, CardTitle, Empty } from './Shell.jsx';
 
 export default function Activity({ deal, title = 'Activity', kinds }) {
@@ -27,7 +28,7 @@ export default function Activity({ deal, title = 'Activity', kinds }) {
         {rows?.map((a) => (
           <li key={a.id} className="flex gap-3 text-sm">
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-warm" />
-            <div><p>{a.summary}</p><p className="text-xs text-ink-soft">{when(a.created_at)}</p></div>
+            <div className="min-w-0"><p className="break-words"><strong className="font-semibold">{actorLabel(a)}</strong> {activityText(a)}</p><p className="text-xs text-ink-soft">{when(a.created_at)}</p></div>
           </li>
         ))}
       </ol>

@@ -2,6 +2,7 @@ import { DictatedField } from './Dictation.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
+import { buyerName, buyerTag, sellerTag, sellerName } from '../lib/people.js';
 import { Card, CardTitle, Button, Empty } from './Shell.jsx';
 
 // Finds (or opens) the person's own conversation with the owner and posts into it.
@@ -12,23 +13,27 @@ export async function sendToOwner(deal, me, role, body, topic) {
   return error;
 }
 
-const ROLE_ORDER = ['seller', 'realtor', 'reviewer', 'lender'];
+const ROLE_ORDER = ['seller', 'realtor', 'reviewer', 'lender', 'realtor-lender'];
+// The realtor's rows: the buyer, the seller and the lender.
+export const REALTOR_SLOTS = ['owner', 'seller', 'lender'];
+const SLOT_ROLE = { 'realtor-lender': 'lender' };
 const CAN_MESSAGE = ['owner', 'seller', 'realtor', 'reviewer', 'lender'];
 
 // Which role a conversation belongs to, from the owner's side: the most private role in it wins.
 function keyOf(conv, people) {
   const roles = conv.participants.map((e) => people.find((p) => p.email === e)?.role).filter(Boolean);
+  if (roles.includes('lender') && roles.includes('realtor')) return 'realtor-lender';
   for (const r of ['seller', 'lender', 'reviewer', 'realtor']) if (roles.includes(r)) return r;
   return null;
 }
 
-// The fixed rows everyone sees: one per role for LaVante, one or two for everyone else. Nobody gets added by hand.
+// The fixed rows everyone sees: one per role for the owner, a few for everyone else. Nobody gets added by hand.
 export function useInbox(deal, me, role, preview) {
   const owner = role === 'owner';
   const [state, setState] = useState({ slots: null, error: '' });
   const load = async () => {
     if (preview) {
-      const keys = owner ? ROLE_ORDER : role === 'realtor' ? ['owner', 'seller'] : ['owner'];
+      const keys = owner ? ROLE_ORDER : role === 'realtor' ? REALTOR_SLOTS : ['owner'];
       return setState({ slots: keys.map((k) => ({ key: k, label: slotLabel(k, role), people: [], conv: null, last: null })), error: '' });
     }
     const [c, m, p] = await Promise.all([
@@ -43,16 +48,26 @@ export function useInbox(deal, me, role, preview) {
     if (owner) {
       slots = ROLE_ORDER.map((k) => {
         const conv = convs.find((x) => keyOf(x, people) === k) || null;
-        const mine = people.filter((x) => x.role === k);
-        const emails = k === 'seller' ? [...mine, ...people.filter((x) => x.role === 'realtor')].map((x) => x.email) : k === 'lender' ? mine.slice(0, 1).map((x) => x.email) : mine.map((x) => x.email);
-        return { key: k, label: roleLabel[k], people: mine, emails, conv, last: lastOf(conv) };
+        const mine = people.filter((x) => x.role === (SLOT_ROLE[k] || k));
+        const realtors = people.filter((x) => x.role === 'realtor');
+        const emails = k === 'seller' || k === 'realtor-lender' ? [...mine, ...realtors].map((x) => x.email) : k === 'lender' ? mine.slice(0, 1).map((x) => x.email) : mine.map((x) => x.email);
+        const ready = k === 'realtor-lender' ? mine.length > 0 && realtors.length > 0 : true;
+        return { key: k, label: slotLabel(k, role), people: k === 'realtor-lender' && ready ? [...realtors, ...mine] : ready ? mine : [], emails, conv, last: lastOf(conv) };
       });
     } else {
       const own = convs.find((x) => x.participants.length === 1 && x.participants[0] === me.email) || (role === 'seller' ? convs[0] : null) || null;
       slots = [{ key: 'owner', label: slotLabel('owner', role), people: [], conv: own, last: lastOf(own) }];
       if (role === 'realtor') {
-        const seller = convs.find((x) => x !== own && x.participants.length > 1) || null;
+        // A realtor can't read the member list, so threads are told apart by their title from the server.
+        const others = convs.filter((x) => x !== own && x.participants.length > 1);
+        const lender = others.find((x) => /^Lender/.test(x.title || '')) || null;
+        const seller = others.find((x) => x !== lender) || null;
         slots.push({ key: 'seller', label: slotLabel('seller', role), people: [], conv: seller, last: lastOf(seller) });
+        slots.push({ key: 'lender', label: slotLabel('lender', role), people: [], conv: lender, last: lastOf(lender) });
+      }
+      if (role === 'lender') {
+        const withRealtor = convs.find((x) => x !== own && x.participants.length > 1) || null;
+        if (withRealtor) slots.push({ key: 'realtor', label: slotLabel('realtor', role), people: [], conv: withRealtor, last: lastOf(withRealtor) });
       }
     }
     setState({ slots, error: c.error || m.error ? 'Some messages could not load. Refresh to try again.' : '' });
@@ -69,14 +84,18 @@ export function useInbox(deal, me, role, preview) {
 }
 
 function slotLabel(k, role) {
-  if (k === 'owner') return role === 'seller' ? 'LaVante and the realtor' : 'LaVante';
-  if (k === 'seller' && role === 'realtor') return 'Seller and LaVante';
+  if (k === 'owner') return role === 'seller' ? `${buyerName()} and the realtor` : buyerTag();
+  if (k === 'seller' && role === 'realtor') return `${sellerName() || 'Seller'} (${buyerName()} sees it)`;
+  if (k === 'lender' && role === 'realtor') return `Lender (${buyerName()} sees it)`;
+  if (k === 'realtor' && role === 'lender') return `Realtor (${buyerName()} sees it)`;
+  if (k === 'realtor-lender') return 'Realtor + lender';
+  if (k === 'seller') return sellerTag();
   return roleLabel[k];
 }
 
 function who(slot, owner) {
   if (!owner) return '';
-  if (!slot.people.length) return `No ${roleLabel[slot.key].toLowerCase()} invited yet`;
+  if (!slot.people.length) return slot.key === 'realtor-lender' ? 'Needs a realtor and a lender invited' : `No ${roleLabel[slot.key].toLowerCase()} invited yet`;
   return slot.people.map((p) => p.display_name || p.email).join(', ');
 }
 
@@ -143,6 +162,10 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
         const emails = slot.emails;
         const { data: made, error: e1 } = await supabase.from('commercial_conversations').insert({ deal_id: deal.id, participants: emails, created_by: me.email, title: '' }).select().single();
         error = e1 || (await supabase.from('commercial_messages').insert({ deal_id: deal.id, conversation_id: made.id, body: body.trim(), author_email: me.email, author_role: role, author_name: me.name || '' })).error;
+      } else if (role === 'realtor' && (slot.key === 'seller' || slot.key === 'lender')) {
+        const { data: id, error: e1 } = await supabase.rpc('commercial_open_realtor_thread', { p_deal: deal.id, p_with: slot.key });
+        error = e1 || (await supabase.from('commercial_messages').insert({ deal_id: deal.id, conversation_id: id, body: body.trim(), author_email: me.email, author_role: role, author_name: me.name || '' })).error;
+        if (e1 && /invited/.test(e1.message || '')) { setError(`No ${slot.key} has been invited yet.`); return; }
       } else error = await sendToOwner(deal, me, role, body.trim());
       setError(error ? 'Message not sent. Your text is still here; try again.' : '');
       if (!error) { setBody(''); await load(); onSent?.(); }
@@ -158,7 +181,7 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto pr-1">
         {preview && <Empty>Preview. A real {role === 'owner' ? '' : roleLabel[role].toLowerCase() + ' '}sign-in sees the conversation here and can send.</Empty>}
-        {!preview && rows.length === 0 && <Empty>{noOne ? `Invite a ${roleLabel[slot.key].toLowerCase()} under Settings and their messages land here.` : 'No messages yet. Say hello.'}</Empty>}
+        {!preview && rows.length === 0 && <Empty>{noOne ? `Invite a ${roleLabel[SLOT_ROLE[slot.key] || slot.key].toLowerCase()} under Settings and their messages land here.` : 'No messages yet. Say hello.'}</Empty>}
         {rows.map((m) => {
           const mine = m.author_email === me.email;
           return (

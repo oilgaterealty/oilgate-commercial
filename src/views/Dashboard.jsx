@@ -57,7 +57,7 @@ function PhotoTile({ photos, href }) {
   );
 }
 
-// Overview for LaVante and (with fewer powers) the realtor.
+// Overview for the owner and (with fewer powers) the realtor.
 export default function Dashboard({ deal, me, role = 'owner', preview }) {
   const owner = role === 'owner' && !preview;
   const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;

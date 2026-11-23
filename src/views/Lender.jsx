@@ -1,10 +1,11 @@
+import { buyerName } from '../lib/people.js';
 import { useMemo, useState } from 'react';
 import { evaluate, money } from '../lib/dealmath.js';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads } from '../components/Files.jsx';
-import { Hero, photosOf } from '../components/Photos.jsx';
+import { Hero, photosOf, useSharedWalkPhotos } from '../components/Photos.jsx';
 import { Card, CardTitle, Empty, Tabs, Button } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
@@ -45,7 +46,8 @@ export default function Lender({ deal, me, preview, tab }) {
   const tabs = [['overview', 'The plan'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   const [rows] = useUploads(deal);
-  const photos = photosOf(preview ? seenBy('lender', rows) : rows || []);
+  const walk = useSharedWalkPhotos(deal, 'lender');
+  const photos = [...photosOf(preview ? seenBy('lender', rows) : rows || []), ...walk];
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [pickUnits, setUnits] = useState(null);
   const [pickStr, setStr] = useState(null);
@@ -92,7 +94,7 @@ export default function Lender({ deal, me, preview, tab }) {
       {active === 'overview' && (
         <>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-          {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>LaVante will share the plan here.</Empty></Card> : (
+          {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
             <>
               <section className="rounded-3xl bg-ink p-6 text-white">
                 <p className="text-xs uppercase tracking-[0.18em] text-warm">The plan</p>
