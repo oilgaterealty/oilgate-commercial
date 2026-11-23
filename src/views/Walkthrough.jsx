@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
-import { ROOMS, unitCount, v5Access } from '../lib/leaseUp.js';
+import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, LAST_SPACE, spaceLabel, roomsFor, v5Access } from '../lib/leaseUp.js';
 import { when, roleLabel } from '../lib/format.js';
 import { MAX_RECORDING_MS, WHISPER_ENGINE_LABEL, transcribeAudio } from '../lib/dictation.js';
 import { assembleSessionAudio } from '../lib/audioStitch.js';
@@ -46,7 +46,7 @@ const voiceExt = (type) =>
   type?.includes('wav') ? 'wav' : type?.includes('mp4') ? 'm4a' : type?.includes('ogg') ? 'ogg' : 'webm';
 const storagePathFor = (dealId, uid, ext) =>
   `commercial-v5/${dealId}/walkthrough/${uid}/${crypto.randomUUID()}.${ext}`;
-const roomLabel = (key) => ROOMS.find(([k]) => k === key)?.[1] || key;
+const roomLabel = (key) => [...ROOMS, ...AREA_ROOMS].find(([k]) => k === key)?.[1] || key;
 const authorTag = (row) => {
   const role = roleLabel[row.author_role] || row.author_role;
   return row.author_name && row.author_name.toLowerCase() !== role.toLowerCase()
@@ -96,7 +96,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const edit = access.editWalkthrough && !preview && Boolean(me?.uid);
   const scopeKey = edit ? makeScopeKey(deal.id, me.uid) : '';
 
-  const [units, setUnits] = useState(9);
+  const units = WALK_UNITS;
   const [selectedUnit, setSelectedUnit] = useState(1);
   const [selectedRoom, setSelectedRoom] = useState(ROOMS[0][0]);
   const [showMatrix, setShowMatrix] = useState(false);
@@ -163,7 +163,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
       supabase.from('commercial_walkthrough_notes').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }),
     ]).then(([m, p, v, n]) => {
       if (!live) return;
-      setUnits(unitCount(m.data?.base?.units));
+      
       setPhotos(p.data || []);
       setVideos(v.data || []);
       setNotes(n.data || []);
@@ -214,7 +214,10 @@ export default function Walkthrough({ deal, me, role, preview }) {
     return out;
   }, [localMedia]);
 
-  const unit = Math.min(selectedUnit, units);
+  const unit = Math.min(selectedUnit, LAST_SPACE);
+  useEffect(() => {
+    if (!roomsFor(unit).some(([k]) => k === selectedRoom)) setSelectedRoom(roomsFor(unit)[0][0]);
+  }, [unit, selectedRoom]);
 
   // Hydrate playable <audio> URLs for paused/ready/failed sessions in the current room.
   const loadSessionAudioPreview = useCallback(async (sessionId) => {
@@ -300,10 +303,10 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
   const unitTotals = useMemo(() => {
     const map = {};
-    for (const u of range(units)) {
+    for (const u of WALK_SPACES) {
       let total = 0;
       let pending = 0;
-      for (const [r] of ROOMS) {
+      for (const [r] of roomsFor(u)) {
         const c = counts[`${u}:${r}`];
         if (c) {
           total += c.p + c.v + c.n;
@@ -745,7 +748,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
       if (mountedRef.current) {
         setLocalSessions((prev) => prev.filter((s) => s.id !== session.id));
         setRefresh((r) => r + 1);
-        setStatus(`Voice note + original audio saved to Unit ${session.unitNumber} ${roomLabel(session.room)}.`);
+        setStatus(`Voice note + original audio saved to ${spaceLabel(session.unitNumber)} ${roomLabel(session.room)}.`);
       }
       return true;
     } catch (err) {
@@ -1103,11 +1106,11 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
   if (!access.walkthrough) return null;
 
-  const totalRooms = units * ROOMS.length;
-  const startedRooms = range(units).reduce(
+  const totalRooms = WALK_SPACES.reduce((s, u) => s + roomsFor(u).length, 0);
+  const startedRooms = WALK_SPACES.reduce(
     (sum, u) =>
       sum +
-      ROOMS.filter(([r]) => {
+      roomsFor(u).filter(([r]) => {
         const c = counts[`${u}:${r}`];
         return c && c.p + c.v + c.n + c.pending > 0;
       }).length,
@@ -1132,18 +1135,18 @@ export default function Walkthrough({ deal, me, role, preview }) {
           </tr>
         </thead>
         <tbody>
-          {range(units).map((u) => (
+          {WALK_SPACES.map((u) => (
             <tr key={u}>
-              <th scope="row" className="px-2 py-1 font-semibold text-ink">Unit {u}</th>
-              {ROOMS.map(([r, label]) => {
+              <th scope="row" className="px-2 py-1 font-semibold text-ink">{spaceLabel(u)}</th>
+              {roomsFor(u).map(([r, label]) => {
                 const c = counts[`${u}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
                 const active = u === unit && r === selectedRoom;
                 const empty = c.p === 0 && c.v === 0 && c.n === 0 && c.pending === 0;
                 return (
-                  <td key={r}>
+                  <td key={r} colSpan={u > WALK_UNITS ? ROOMS.length : undefined}>
                     <button
                       type="button"
-                      aria-label={`Unit ${u} ${label}: ${c.p} photos, ${c.v} videos, ${c.n} voice notes`}
+                      aria-label={`${spaceLabel(u)} ${label}: ${c.p} photos, ${c.v} videos, ${c.n} voice notes`}
                       aria-pressed={active}
                       onClick={() => {
                         setSelectedUnit(u);
@@ -1183,7 +1186,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
             activeVoiceUi && (
               <div className="flex flex-wrap items-center justify-between gap-2 bg-red-950/90 px-4 py-2 text-xs text-white">
                 <span>
-                  Voice active: <strong>Unit {activeVoiceUi.unitNumber} — {roomLabel(activeVoiceUi.room)}</strong> · {fmtClock(activeVoiceUi.elapsedMs)} · {activeVoiceUi.chunkCount} chunks saved
+                  Voice active: <strong>{spaceLabel(activeVoiceUi.unitNumber)} — {roomLabel(activeVoiceUi.room)}</strong> · {fmtClock(activeVoiceUi.elapsedMs)} · {activeVoiceUi.chunkCount} chunks saved
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -1257,10 +1260,10 @@ export default function Walkthrough({ deal, me, role, preview }) {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900">
             <div className="min-w-0">
               <p className="font-semibold">
-                Recording Unit {activeVoiceUi.unitNumber} — {roomLabel(activeVoiceUi.room)} ({fmtClock(activeVoiceUi.elapsedMs)})
+                Recording {spaceLabel(activeVoiceUi.unitNumber)} — {roomLabel(activeVoiceUi.room)} ({fmtClock(activeVoiceUi.elapsedMs)})
               </p>
               <p className="text-xs text-red-800">
-                {activeVoiceUi.chunkCount} chunks ({fmtBytes(activeVoiceUi.totalBytes)}) saved locally · bound to Unit {activeVoiceUi.unitNumber} {roomLabel(activeVoiceUi.room)}
+                {activeVoiceUi.chunkCount} chunks ({fmtBytes(activeVoiceUi.totalBytes)}) saved locally · bound to {spaceLabel(activeVoiceUi.unitNumber)} {roomLabel(activeVoiceUi.room)}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1331,29 +1334,29 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 onChange={(e) => setSelectedUnit(Number(e.target.value))}
                 className="min-h-[44px] rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold"
               >
-                {range(units).map((u) => (
+                {WALK_SPACES.map((u) => (
                   <option key={u} value={u}>
-                    Unit {u} ({unitTotals[u]?.total || 0} saved{unitTotals[u]?.pending ? `, +${unitTotals[u].pending} pending` : ''})
+                    {spaceLabel(u)} ({unitTotals[u]?.total || 0} saved{unitTotals[u]?.pending ? `, +${unitTotals[u].pending} pending` : ''})
                   </option>
                 ))}
               </select>
               <button
                 type="button"
                 aria-label="Next unit"
-                disabled={unit >= units}
-                onClick={() => setSelectedUnit((u) => Math.min(units, u + 1))}
+                disabled={unit >= LAST_SPACE}
+                onClick={() => setSelectedUnit((u) => Math.min(LAST_SPACE, u + 1))}
                 className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-medium disabled:opacity-40"
               >
                 ›
               </button>
             </div>
             <span className="text-xs font-medium text-ink-soft">
-              {units === 10 ? '10 units active' : '9 units active'}
+              10 units + 6 areas
             </span>
           </div>
 
-          <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Units">
-            {range(units).map((u) => {
+          <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Units">
+            {WALK_SPACES.map((u) => {
               const t = unitTotals[u] || { total: 0, pending: 0 };
               const active = u === unit;
               return (
@@ -1370,7 +1373,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         : 'border-line bg-paper text-ink-soft hover:border-ink'
                   }`}
                 >
-                  Unit {u}
+                  {spaceLabel(u)}
                   {t.pending > 0 ? '*' : ''}
                 </button>
               );
@@ -1379,9 +1382,9 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
           {/* All 5 named room choices — full labels, >= 44px tap targets, zero horizontal clipping */}
           <div>
-            <p className="mb-1.5 text-xs font-medium text-ink-soft">Room in Unit {unit}</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5" role="group" aria-label={`Rooms for Unit ${unit}`}>
-              {ROOMS.map(([r, label]) => {
+            <p className="mb-1.5 text-xs font-medium text-ink-soft">Room in {spaceLabel(unit)}</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5" role="group" aria-label={`Rooms for ${spaceLabel(unit)}`}>
+              {roomsFor(unit).map(([r, label]) => {
                 const c = counts[`${unit}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
                 const active = r === selectedRoom;
                 return (
@@ -1417,7 +1420,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
             </span>
           }
         >
-          Unit {unit} — {roomLabel(selectedRoom)}
+          {spaceLabel(unit)} — {roomLabel(selectedRoom)}
         </CardTitle>
         {preview && (
           <p className="mb-3 text-xs text-ink-soft">
@@ -1444,7 +1447,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 <div className="flex flex-wrap gap-2">
                   {activeVoiceUi ? (
                     <span className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
-                      Mic active on Unit {activeVoiceUi.unitNumber} {roomLabel(activeVoiceUi.room)}
+                      Mic active on {spaceLabel(activeVoiceUi.unitNumber)} {roomLabel(activeVoiceUi.room)}
                     </span>
                   ) : (
                     <Button
@@ -1490,7 +1493,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     <li key={s.id} className="space-y-2.5 rounded-xl border border-warm bg-paper p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-ink">
-                          Unit {s.unitNumber} {roomLabel(s.room)} · {s.chunkCount || 0} chunks ({fmtBytes(s.totalBytes)})
+                          {spaceLabel(s.unitNumber)} {roomLabel(s.room)} · {s.chunkCount || 0} chunks ({fmtBytes(s.totalBytes)})
                         </span>
                         <span className="rounded-full bg-warm-soft px-2.5 py-0.5 font-medium text-ink">
                           {statusLabel}
@@ -1721,7 +1724,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-white px-3.5 py-2 text-sm font-medium hover:bg-warm-soft">
                       Upload photos
                       <input
-                        aria-label={`Upload photos for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        aria-label={`Upload photos for ${spaceLabel(unit)} ${roomLabel(selectedRoom)}`}
                         type="file"
                         accept="image/*"
                         multiple
@@ -1737,7 +1740,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-paper px-3 py-2 text-xs font-medium text-ink-soft hover:border-ink">
                       Single camera
                       <input
-                        aria-label={`Take photo for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        aria-label={`Take photo for ${spaceLabel(unit)} ${roomLabel(selectedRoom)}`}
                         type="file"
                         accept="image/*"
                         capture="environment"
@@ -1800,7 +1803,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         <a href={urls[p.storage_path]} target="_blank" rel="noreferrer">
                           <img
                             src={urls[p.storage_path]}
-                            alt={`Unit ${unit} ${roomLabel(selectedRoom)} photo ${i + 1}`}
+                            alt={`${spaceLabel(unit)} ${roomLabel(selectedRoom)} photo ${i + 1}`}
                             loading="lazy"
                             className="aspect-[4/3] w-full object-cover"
                           />
@@ -1847,7 +1850,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-white px-3.5 py-2 text-sm font-medium hover:bg-warm-soft">
                       Upload video
                       <input
-                        aria-label={`Upload video for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        aria-label={`Upload video for ${spaceLabel(unit)} ${roomLabel(selectedRoom)}`}
                         type="file"
                         accept="video/mp4,video/webm,video/quicktime,video/*"
                         disabled={busy}

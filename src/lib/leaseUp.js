@@ -35,6 +35,21 @@ export function v5Access(role) {
   };
 }
 
+// Walkthrough always covers 10 units plus shared areas (spaces 11-16 use the single room 'general').
+export const WALK_UNITS = 10;
+export const WALK_AREAS = [
+  [11, 'Common area 1'],
+  [12, 'Common area 2'],
+  [13, 'Common area 3'],
+  [14, 'Exterior'],
+  [15, 'Storage'],
+  [16, 'Catch-all'],
+];
+export const AREA_ROOMS = [['general', 'Photos & notes']];
+export const WALK_SPACES = [...Array.from({ length: WALK_UNITS }, (_, i) => i + 1), ...WALK_AREAS.map(([n]) => n)];
+export const LAST_SPACE = WALK_SPACES[WALK_SPACES.length - 1];
+export const spaceLabel = (n) => (n <= WALK_UNITS ? `Unit ${n}` : WALK_AREAS.find(([k]) => k === n)?.[1] || `Area ${n}`);
+export const roomsFor = (n) => (n <= WALK_UNITS ? ROOMS : AREA_ROOMS);
 export const unitCount = (savedUnits) => (+savedUnits >= 10 ? 10 : 9);
 
 export function stageMove(stage, requestedUnit, units, occupied = []) {
