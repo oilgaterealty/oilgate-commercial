@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { when, bytes, roleLabel } from '../lib/format.js';
 import { Card, CardTitle, Button, Empty } from './Shell.jsx';
+import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt';
 const MAX = 20 * 1024 * 1024;
@@ -87,20 +88,32 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
 
 const AUD = [['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 
+const setUpload = async (r, patch, onChange) => { await supabase.from('commercial_uploads').update(patch).eq('id', r.id); onChange?.(); };
+const toggleAudience = (r, k) => ({ audience: (r.audience || []).includes(k) ? r.audience.filter((x) => x !== k) : [...(r.audience || []), k] });
+
+// Share toggles for one uploaded photo, as overlay / viewer buttons. Same updates as ShareChips:
+// "Seller" for anyone who can share; "Lender" only for the owner.
+export function uploadShareButtons(r, owner, onChange) {
+  const list = [{ key: 'seller', icon: 'S', label: 'Share with seller', pressed: r.visibility === 'seller', onClick: () => void setUpload(r, { visibility: r.visibility === 'seller' ? 'team' : 'seller' }, onChange) }];
+  if (owner) list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: (r.audience || []).includes('lender'), onClick: () => void setUpload(r, toggleAudience(r, 'lender'), onChange) });
+  return list;
+}
+
 export function ShareChips({ r, onChange, owner }) {
-  const set = async (patch) => { await supabase.from('commercial_uploads').update(patch).eq('id', r.id); onChange?.(); };
+  const set = (patch) => setUpload(r, patch, onChange);
   const chip = (on, label, fn) => (
     <button key={label} onClick={fn} className={`rounded-full px-2.5 py-1 text-xs font-medium ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
   );
   return (
     <div className="flex flex-wrap gap-1">
       {chip(r.visibility === 'seller', 'Seller', () => set({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }))}
-      {owner && AUD.map(([k, l]) => chip((r.audience || []).includes(k), l, () => set({ audience: (r.audience || []).includes(k) ? r.audience.filter((x) => x !== k) : [...(r.audience || []), k] })))}
+      {owner && AUD.map(([k, l]) => chip((r.audience || []).includes(k), l, () => set(toggleAudience(r, k))))}
     </div>
   );
 }
 
 export function FileList({ rows, canShare, owner, onChange }) {
+  const [view, setView] = useState(null);
   if (!rows) return <Empty>Loading…</Empty>;
   if (!rows.length) return <Empty>Nothing uploaded yet.</Empty>;
   const remove = async (r) => {
@@ -108,36 +121,49 @@ export function FileList({ rows, canShare, owner, onChange }) {
     await supabase.from('commercial_uploads').delete().eq('id', r.id);
     onChange?.();
   };
+  // Photos open in the in-app viewer; documents (PDF, Word, Excel) still open in a new tab.
+  const pics = rows.filter((r) => r.kind === 'photo' && r.url);
+  const open = (r) => setView(pics.indexOf(r));
   return (
     <ul className="divide-y divide-line">
       {rows.map((r) => (
         <li key={r.id} className="flex flex-wrap items-center gap-3 py-3">
           {r.kind === 'photo' && r.url
-            ? <img src={r.url} alt="" className="h-12 w-12 rounded-lg object-cover" />
+            ? <button type="button" onClick={() => open(r)} aria-label={`Open ${r.file_name}`} className="shrink-0 cursor-zoom-in"><img src={r.url} alt="" className="h-12 w-12 rounded-lg object-cover" /></button>
             : <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-warm-soft text-xs font-medium">DOC</span>}
           <div className="min-w-0 flex-1">
-            <a href={r.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium hover:underline">{r.file_name}</a>
+            {r.kind === 'photo' && r.url
+              ? <button type="button" onClick={() => open(r)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{r.file_name}</button>
+              : <a href={r.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium hover:underline">{r.file_name}</a>}
             <p className="text-xs text-ink-soft">{roleLabel[r.uploaded_by_role]} · {when(r.created_at)} · {bytes(r.size_bytes)}{r.note ? ` · ${r.note}` : ''}</p>
           </div>
           {canShare && <ShareChips r={r} owner={owner} onChange={onChange} />}
           {owner && <button onClick={() => remove(r)} className="text-xs text-ink-soft hover:text-red-700">Delete</button>}
         </li>
       ))}
+      <PhotoViewer items={pics.map((r) => ({ url: r.url, alt: r.note || r.file_name }))} index={view} onIndex={setView} />
     </ul>
   );
 }
 
 export function PhotoGrid({ rows }) {
   const photos = (rows || []).filter((r) => r.kind === 'photo' && r.url);
+  const [view, setView] = useState(null);
   if (!photos.length) return <Empty>Photos will appear here.</Empty>;
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {photos.map((p) => (
-        <a key={p.id} href={p.url} target="_blank" rel="noreferrer" className="group block overflow-hidden rounded-xl border border-line">
-          <img src={p.url} alt={p.note || 'Property photo'} className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]" />
+      {photos.map((p, j) => (
+        <div key={p.id} className="overflow-hidden rounded-xl border border-line">
+          <div className="group relative overflow-hidden">
+            <button type="button" onClick={() => setView(j)} aria-label={`Open ${p.note || 'photo'}`} className="block w-full cursor-zoom-in text-left">
+              <img src={p.url} alt={p.note || 'Property photo'} className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.02]" />
+            </button>
+            <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }]} />
+          </div>
           {p.note && <p className="px-3 py-2 text-xs text-ink-soft">{p.note}</p>}
-        </a>
+        </div>
       ))}
+      <PhotoViewer items={photos.map((p) => ({ url: p.url, alt: p.note || 'Property photo' }))} index={view} onIndex={setView} />
     </div>
   );
 }

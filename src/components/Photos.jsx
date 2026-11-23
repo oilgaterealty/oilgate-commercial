@@ -1,14 +1,26 @@
 import { useEffect, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { Card, CardTitle, Empty } from './Shell.jsx';
-import { useUploads, Uploader, ShareChips } from './Files.jsx';
+import { useUploads, Uploader, ShareChips, uploadShareButtons } from './Files.jsx';
 import { sharedPhotos } from '../lib/leaseUp.js';
+import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 
 const IMAGES = 'image/jpeg,image/png,image/webp,image/heic';
 export const photosOf = (rows) => (rows || []).filter((r) => r.kind === 'photo' && r.url).sort((a, b) => (b.featured - a.featured));
 
 export function PhotoStrip({ photos }) {
-  return <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Property photos">{photos.length ? photos.map(p => <a key={p.id} href={p.url} target="_blank" rel="noreferrer" className="shrink-0"><img src={p.url} alt={p.note || 'Open property photo'} className="h-20 w-28 rounded-xl object-cover" /></a>) : <Empty>Photos will appear after the walkthrough.</Empty>}</div>;
+  const [view, setView] = useState(null);
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Property photos">
+      {photos.length ? photos.map((p, j) => (
+        <div key={p.id} className="group relative shrink-0 overflow-hidden rounded-xl">
+          <button type="button" onClick={() => setView(j)} className="block cursor-zoom-in"><img src={p.url} alt={p.note || 'Open property photo'} className="h-20 w-28 object-cover" /></button>
+          <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }]} />
+        </div>
+      )) : <Empty>Photos will appear after the walkthrough.</Empty>}
+      <PhotoViewer items={photos.map((p) => ({ url: p.url, alt: p.note || 'Property photo' }))} index={view} onIndex={setView} />
+    </div>
+  );
 }
 
 // Big photo up top. Arrows, swipe-free thumbnails, full screen on tap.
@@ -72,6 +84,9 @@ export default function Photos({ deal, role, me, preview }) {
   const [rows, load] = useUploads(deal);
   const photos = photosOf(rows);
   const owner = role === 'owner';
+  const [view, setView] = useState(null);
+  // Same share toggles as the chips under each photo; none in the read-only preview.
+  const shareButtons = (r) => (preview ? [] : uploadShareButtons(r, owner, load));
   const star = async (r) => { await supabase.from('commercial_uploads').update({ featured: !r.featured }).eq('id', r.id); load(); };
   return (
     <div className="space-y-5">
@@ -83,9 +98,12 @@ export default function Photos({ deal, role, me, preview }) {
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {rows === null && <Empty>Loading…</Empty>}
           {rows && !photos.length && <Empty>Nothing here yet.</Empty>}
-          {photos.map((r) => (
+          {photos.map((r, j) => (
             <div key={r.id} className="overflow-hidden rounded-xl border border-line bg-white">
-              <a href={r.url} target="_blank" rel="noreferrer"><img src={r.url} alt={r.note || ''} className="aspect-[4/3] w-full object-cover" /></a>
+              <div className="group relative">
+                <button type="button" onClick={() => setView(j)} aria-label={`Open ${r.note || r.file_name || 'photo'}`} className="block w-full cursor-zoom-in"><img src={r.url} alt={r.note || ''} className="aspect-[4/3] w-full object-cover" /></button>
+                <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }, ...shareButtons(r)]} />
+              </div>
               <div className="space-y-2 p-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate text-xs text-ink-soft">{r.note || r.file_name}</p>
@@ -96,6 +114,8 @@ export default function Photos({ deal, role, me, preview }) {
             </div>
           ))}
         </div>
+        <PhotoViewer items={photos.map((r) => ({ url: r.url, alt: r.note || r.file_name || 'Property photo' }))} index={view} onIndex={setView}
+          actions={(_, j) => (photos[j] ? shareButtons(photos[j]) : [])} />
       </Card>
     </div>
   );

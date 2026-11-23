@@ -27,7 +27,8 @@ import {
 } from '../lib/walkthroughStore.js';
 import { Button, Card, CardTitle, Empty } from '../components/Shell.jsx';
 import WalkthroughCamera from '../components/WalkthroughCamera.jsx';
-import MoveBar from '../components/WalkMoveBar.jsx';
+import MoveBar, { MoveOneDialog } from '../components/WalkMoveBar.jsx';
+import PhotoViewer, { ThumbOverlay } from '../components/PhotoViewer.jsx';
 
 const PHOTO_EXT = {
   'image/jpeg': 'jpg',
@@ -145,6 +146,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const [selecting, setSelecting] = useState(false);
   const [picked, setPicked] = useState(() => new Set()); // 'p:<id>' remote photo, 'v:<id>' remote video, 'l:<id>' on this device
   const [moving, setMoving] = useState(false);
+  const [viewKey, setViewKey] = useState(null); // photo open in the in-app viewer: 'l:<id>' on this device, 'p:<id>' uploaded
+  const [moveOne, setMoveOne] = useState(null); // one photo key ('l:' / 'p:') whose "Move to…" picker is open
 
   const mountedRef = useRef(true);
   const inFlightRef = useRef(new Set());
@@ -1152,9 +1155,17 @@ export default function Walkthrough({ deal, me, role, preview }) {
     });
   };
 
-  const moveSelected = async (toUnit, toRoom) => {
-    if (!edit || moving || !roomFits(toUnit, toRoom) || picked.size === 0) return;
-    const keys = [...picked].filter((k) => movable.has(k));
+  // In-app photo viewer: this room's photos in the order shown (on this device first, then uploaded).
+  const viewerPhotos = [
+    ...roomPendingPhotos.filter((m) => m.previewUrl).map((m) => ({ key: `l:${m.id}`, url: m.previewUrl, alt: `Pending ${m.fileName}` })),
+    ...roomPhotos.filter((p) => urls[p.storage_path]).map((p) => ({ key: `p:${p.id}`, url: urls[p.storage_path], alt: `${spaceLabel(unit)} ${roomLabel(selectedRoom)} photo` })),
+  ];
+  const viewIndex = viewKey ? viewerPhotos.findIndex((x) => x.key === viewKey) : -1;
+
+  // only: move just these keys (one photo's "Move to…"), keeping the rest of the batch selection as it was.
+  const moveSelected = async (toUnit, toRoom, only) => {
+    if (!edit || moving || !roomFits(toUnit, toRoom) || (only ? only.length : picked.size) === 0) return;
+    const keys = (only || [...picked]).filter((k) => movable.has(k));
     const ids = (prefix) => keys.filter((k) => k.startsWith(prefix)).map((k) => k.slice(2));
     setMoving(true);
     setStatus('');
@@ -1188,8 +1199,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
     } finally {
       if (mountedRef.current) {
         setMoving(false);
-        setPicked(new Set());
-        setSelecting(false);
+        if (only) {
+          setPicked((prev) => new Set([...prev].filter((k) => !only.includes(k))));
+        } else {
+          setPicked(new Set());
+          setSelecting(false);
+        }
         setStatus(
           `${moved} moved to ${spaceLabel(toUnit)} — ${roomLabel(toRoom)}.` +
             (skipped ? ` ${skipped} did not move; try those again.` : '')
@@ -1198,6 +1213,44 @@ export default function Walkthrough({ deal, me, role, preview }) {
       }
     }
   };
+
+  // "Move to…" on one photo. If it was open in the viewer, the viewer moves on to the next photo, or closes if none.
+  const moveOnePhoto = async (toUnit, toRoom) => {
+    const k = moveOne;
+    if (!k) return;
+    const viewing = viewKey === k;
+    const i = viewerPhotos.findIndex((x) => x.key === k);
+    const nextKey = i >= 0 ? viewerPhotos[i + 1]?.key ?? null : null;
+    await moveSelected(toUnit, toRoom, [k]);
+    if (!mountedRef.current) return;
+    setMoveOne(null);
+    if (viewing) setViewKey(nextKey);
+  };
+
+  // "Select" on one photo: adds it to (or removes it from) the batch-move selection, starting select mode if needed.
+  const selectOne = (k) => {
+    if (!movable.has(k)) return;
+    if (!selecting) {
+      setSelecting(true);
+      setPicked(new Set([k]));
+    } else togglePick(k);
+  };
+
+  // Actions for one photo, shown on its thumbnail overlay and in the viewer's bottom bar. Only what this role can do.
+  const photoButtons = (k, row, withOpen) => {
+    const list = [];
+    if (withOpen) list.push({ key: 'open', icon: '⤢', label: 'Open', onClick: () => setViewKey(k) });
+    if (movable.has(k)) {
+      list.push({ key: 'move', icon: '⇄', label: 'Move to…', disabled: moving, onClick: () => setMoveOne(k) });
+      list.push({ key: 'select', icon: '✓', label: 'Select', pressed: picked.has(k), onClick: () => selectOne(k) });
+    }
+    if (row && role === 'owner' && !preview) {
+      list.push({ key: 'seller', icon: 'S', label: 'Share with seller', pressed: Boolean(row.share_seller), disabled: busy, onClick: () => void toggleShare(row, 'share_seller') });
+      list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: Boolean(row.share_lender), disabled: busy, onClick: () => void toggleShare(row, 'share_lender') });
+    }
+    return list;
+  };
+  const viewerActions = (item) => photoButtons(item.key, roomPhotos.find((p) => `p:${p.id}` === item.key) || null, false);
 
   const removeRemotePhoto = async (p) => {
     if (!edit || busy || !window.confirm('Remove this photo?')) return;
@@ -1959,12 +2012,22 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           </Button>
                         </div>
                       </div>
-                    ) : n.raw_transcript ? (
-                      <p className="whitespace-pre-wrap break-words text-sm">{n.raw_transcript}</p>
                     ) : (
-                      <p className="text-xs italic text-ink-soft">
-                        Audio saved without transcript yet — tap Retranscribe or Edit.
-                      </p>
+                      <>
+                        {n.polished && String(n.polished).trim() ? (
+                          <p className="whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-2 py-1 text-sm font-semibold text-ink">
+                            <span className="mr-1 text-xs font-bold uppercase tracking-wide text-amber-800">Summary</span>
+                            {String(n.polished).trim()}
+                          </p>
+                        ) : null}
+                        {n.raw_transcript ? (
+                          <p className="whitespace-pre-wrap break-words text-sm">{n.raw_transcript}</p>
+                        ) : (
+                          <p className="text-xs italic text-ink-soft">
+                            Audio saved without transcript yet — tap Retranscribe or Edit.
+                          </p>
+                        )}
+                      </>
                     )}
                   </li>
                 ))}
@@ -2052,7 +2115,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           <Tick on={picked.has(`l:${m.id}`)} />
                         </button>
                       ) : (
-                        <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                        <div className="group relative">
+                          <button type="button" onClick={() => setViewKey(`l:${m.id}`)} aria-label={`Open ${m.fileName}`} className="block w-full cursor-zoom-in">
+                            <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                          </button>
+                          <ThumbOverlay buttons={photoButtons(`l:${m.id}`, null, true)} />
+                        </div>
                       )}
                       <div className="space-y-1 p-2 text-xs">
                         <div className="flex items-center justify-between gap-1">
@@ -2101,14 +2169,17 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           <Tick on={picked.has(`p:${p.id}`)} />
                         </button>
                       ) : urls[p.storage_path] ? (
-                        <a href={urls[p.storage_path]} target="_blank" rel="noreferrer">
-                          <img
-                            src={urls[p.storage_path]}
-                            alt={`${spaceLabel(unit)} ${roomLabel(selectedRoom)} photo ${i + 1}`}
-                            loading="lazy"
-                            className="aspect-[4/3] w-full object-cover"
-                          />
-                        </a>
+                        <div className="group relative">
+                          <button type="button" onClick={() => setViewKey(`p:${p.id}`)} aria-label={`Open photo ${i + 1}`} className="block w-full cursor-zoom-in">
+                            <img
+                              src={urls[p.storage_path]}
+                              alt={`${spaceLabel(unit)} ${roomLabel(selectedRoom)} photo ${i + 1}`}
+                              loading="lazy"
+                              className="aspect-[4/3] w-full object-cover"
+                            />
+                          </button>
+                          <ThumbOverlay buttons={photoButtons(`p:${p.id}`, p, true)} />
+                        </div>
                       ) : (
                         <div className="flex aspect-[4/3] items-center justify-center bg-paper text-xs text-ink-soft">Loading…</div>
                       )}
@@ -2135,6 +2206,21 @@ export default function Walkthrough({ deal, me, role, preview }) {
                   ))}
                 </ul>
               ) : null}
+              <PhotoViewer
+                items={viewerPhotos}
+                index={viewIndex >= 0 ? viewIndex : null}
+                onIndex={(n) => setViewKey(n === null ? null : viewerPhotos[n]?.key ?? null)}
+                actions={viewerActions}
+              />
+              {moveOne && (
+                <MoveOneDialog
+                  fromUnit={unit}
+                  fromRoom={selectedRoom}
+                  busy={moving}
+                  onCancel={() => setMoveOne(null)}
+                  onMove={(u, r) => void moveOnePhoto(u, r)}
+                />
+              )}
             </div>
 
             {/* Videos section */}
