@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Button, Empty } from '../components/Shell.jsx';
 import Messages, { sendToOwner } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
-import { PhotoStrip, photosOf, useSharedWalkPhotos } from '../components/Photos.jsx';
+import { PhotoStrip, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 
 const LEVELS = [
@@ -110,6 +110,7 @@ export default function Seller({ deal, me, preview }) {
   const [view, setView] = useState('table');
   const [saveError, setSaveError] = useState('');
   const walk = useSharedWalkPhotos(deal, 'seller');
+  const walkVideos = useSharedWalkVideos(deal, 'seller');
   const photos = [...photosOf((rows || []).filter((r) => r.visibility === 'seller')), ...walk];
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
   const options = c.options || [];
@@ -130,6 +131,7 @@ export default function Seller({ deal, me, preview }) {
   return (
     <div className="space-y-8">
       <PhotoStrip photos={photos} />
+      <WalkVideos videos={walkVideos} />
 
       <div>
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>

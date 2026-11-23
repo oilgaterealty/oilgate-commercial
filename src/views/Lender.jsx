@@ -5,7 +5,7 @@ import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads } from '../components/Files.jsx';
-import { Hero, photosOf, useSharedWalkPhotos } from '../components/Photos.jsx';
+import { Hero, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
 import { Card, CardTitle, Empty, Tabs, Button } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
@@ -47,6 +47,7 @@ export default function Lender({ deal, me, preview, tab }) {
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   const [rows] = useUploads(deal);
   const walk = useSharedWalkPhotos(deal, 'lender');
+  const walkVideos = useSharedWalkVideos(deal, 'lender');
   const photos = [...photosOf(preview ? seenBy('lender', rows) : rows || []), ...walk];
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [pickUnits, setUnits] = useState(null);
@@ -120,6 +121,7 @@ export default function Lender({ deal, me, preview, tab }) {
               </section>
 
               {photos.length > 0 && <Hero photos={photos} />}
+              <WalkVideos videos={walkVideos} />
 
               <Card>
                 <CardTitle>The numbers</CardTitle>

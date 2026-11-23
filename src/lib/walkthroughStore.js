@@ -410,3 +410,25 @@ export async function deleteMediaItem(id) {
   tx.objectStore('media_queue').delete(id);
   await txDone(tx);
 }
+
+// Move a queued (not yet uploaded) photo or video to another unit/room. Refuses while it is uploading,
+// so the row the server gets always matches what the screen shows.
+export function applyMove(existing, unitNumber, room) {
+  if (!existing || existing.status === MEDIA_STATUS.UPLOADING) return null;
+  return { ...existing, unitNumber: Number(unitNumber), room, updatedAt: Date.now() };
+}
+
+export async function moveMediaItem(id, unitNumber, room) {
+  const db = await openDb();
+  if (!db) {
+    const updated = applyMove(memStores.media_queue.get(id), unitNumber, room);
+    if (updated) memStores.media_queue.set(id, updated);
+    return updated;
+  }
+  const tx = db.transaction('media_queue', 'readwrite');
+  const store = tx.objectStore('media_queue');
+  const updated = applyMove(await idbReq(store.get(id)), unitNumber, room);
+  if (updated) store.put(updated);
+  await txDone(tx);
+  return updated;
+}

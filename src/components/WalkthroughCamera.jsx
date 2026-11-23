@@ -20,6 +20,13 @@ export default function WalkthroughCamera({
   mode, // 'photo' | 'video'
   unit,
   roomLabel,
+  spaceLabel = `Unit ${unit}`,
+  spaces = [], // [[number, label]] — every unit and building area
+  rooms = [], // [[key, label]] for the current space
+  room,
+  onTargetChange, // (unit, room) — switch where the next shot saves without closing the camera
+  onModeChange, // ('photo' | 'video')
+  upload = null, // { waiting, uploading, failed, online }
   voiceBanner,
   sharedAudioStream,
   capturedPhotos = [],
@@ -54,6 +61,9 @@ export default function WalkthroughCamera({
     let localStream = null;
 
     async function openCamera() {
+      setReady(false);
+      setCamError('');
+      setVideoNote('');
       if (!navigator.mediaDevices?.getUserMedia) {
         setCamError('Camera is unavailable in this browser. Use Upload instead.');
         return;
@@ -179,7 +189,8 @@ export default function WalkthroughCamera({
     ].find((t) => MediaRecorder.isTypeSupported?.(t));
 
     try {
-      const recorder = new MediaRecorder(stream, codec ? { mimeType: codec } : undefined);
+      // ~2.5 Mbps keeps a 2-minute clip near 40 MB on a phone.
+      const recorder = new MediaRecorder(stream, { ...(codec ? { mimeType: codec } : {}), videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 96_000 });
       recorderRef.current = recorder;
       chunksRef.current = [];
       bytesRef.current = 0;
@@ -229,9 +240,10 @@ export default function WalkthroughCamera({
             fileName: `unit-${unit}-${Date.now()}.${ext}`,
           });
         }
+        // Stay on the camera so the next room can be shot right away.
         if (mountedRef.current) {
           setVideoSaving(false);
-          onClose?.();
+          setVideoNote(blob.size > 0 ? `Video saved to ${spaceLabel} — ${roomLabel}.` : '');
         }
       };
 
@@ -259,34 +271,80 @@ export default function WalkthroughCamera({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={mode === 'photo' ? `Rear camera photos for Unit ${unit} ${roomLabel}` : `Record video for Unit ${unit} ${roomLabel}`}
+      aria-label={mode === 'photo' ? `Camera photos for ${spaceLabel} ${roomLabel}` : `Record video for ${spaceLabel} ${roomLabel}`}
       className="fixed inset-0 z-50 flex flex-col bg-ink text-white"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/15 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.14em] text-warm">
-            {mode === 'photo' ? 'Multi-photo camera' : 'Walkthrough video'}
-          </p>
-          <p className="truncate font-display text-lg font-semibold">
-            Unit {unit} — {roomLabel}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {mode === 'photo' && (
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium">
-              {capturedPhotos.length} shot{capturedPhotos.length === 1 ? '' : 's'}
+      <div className="space-y-2 border-b border-white/15 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex rounded-xl bg-white/10 p-0.5 text-sm font-semibold" role="group" aria-label="Camera mode">
+            {[['photo', 'Photo'], ['video', 'Video']].map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={mode === k}
+                disabled={(recordingVideo || videoSaving) || !onModeChange}
+                onClick={() => mode !== k && onModeChange?.(k)}
+                className={`min-h-[40px] rounded-lg px-4 ${mode === k ? 'bg-warm text-ink' : 'text-white/80'} disabled:opacity-60`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {upload && (
+            <span
+              role="status"
+              aria-live="polite"
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${upload.waiting ? 'bg-amber-400 text-ink' : 'bg-emerald-500 text-white'}`}
+            >
+              {upload.waiting ? `${upload.waiting} waiting to upload${upload.online ? '' : ' (offline)'}` : 'All uploaded ✓'}
             </span>
           )}
           <Button
             type="button"
             kind="secondary"
-            disabled={recordingVideo || videoSaving}
+            disabled={(recordingVideo || videoSaving)}
             onClick={onClose}
-            className="!min-h-[44px] !border-white/30 !bg-white !px-4 !text-ink"
+            className="!min-h-[40px] !border-white/30 !bg-white !px-4 !text-ink"
           >
             Done
           </Button>
         </div>
+        <div className="flex items-center gap-2">
+          <label className="sr-only" htmlFor="cam-space">Save to space</label>
+          <select
+            id="cam-space"
+            value={unit}
+            disabled={(recordingVideo || videoSaving) || !onTargetChange}
+            onChange={(e) => onTargetChange?.(Number(e.target.value), room)}
+            className="min-h-[40px] min-w-0 flex-1 rounded-xl border border-white/25 bg-white/10 px-2 text-sm font-semibold text-white [&>option]:text-ink"
+          >
+            {(spaces.length ? spaces : [[unit, spaceLabel]]).map(([n, label]) => (
+              <option key={n} value={n}>{label}</option>
+            ))}
+          </select>
+          {mode === 'photo' && (
+            <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium">
+              {capturedPhotos.length} here
+            </span>
+          )}
+        </div>
+        {rooms.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label={`Room in ${spaceLabel}`}>
+            {rooms.map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={k === room}
+                disabled={(recordingVideo || videoSaving)}
+                onClick={() => onTargetChange?.(unit, k)}
+                className={`min-h-[40px] shrink-0 rounded-xl px-3 text-sm font-medium ${k === room ? 'bg-white text-ink' : 'border border-white/25 text-white'} disabled:opacity-50`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {(recordingVideo || videoSaving) && <p className="text-[11px] text-warm">Room is locked while this video records and saves.</p>}
       </div>
 
       {voiceBanner}
@@ -360,7 +418,7 @@ export default function WalkthroughCamera({
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-white/75">
-              MP4 / WebM up to 50 MB (recommended under 2 min).{' '}
+              Saves to {spaceLabel} — {roomLabel}. Up to about 2 min per clip (50 MB).{' '}
               {hasAudioTrack ? 'Video audio active.' : 'Video only (no mic permission).'}
             </p>
             {videoNote && <p role="status" className="text-xs text-warm">{videoNote}</p>}

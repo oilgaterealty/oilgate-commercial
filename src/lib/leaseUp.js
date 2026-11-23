@@ -43,6 +43,8 @@ export const WALK_AREAS = [
   [13, 'Common area 3'],
   [14, 'Exterior'],
   [15, 'Storage'],
+  [17, 'Laundry room'],
+  [18, 'Utility room (gas & electric)'],
   [16, 'Catch-all'],
 ];
 export const AREA_ROOMS = [['general', 'Photos & notes']];
@@ -50,6 +52,21 @@ export const WALK_SPACES = [...Array.from({ length: WALK_UNITS }, (_, i) => i + 
 export const LAST_SPACE = WALK_SPACES[WALK_SPACES.length - 1];
 export const spaceLabel = (n) => (n <= WALK_UNITS ? `Unit ${n}` : WALK_AREAS.find(([k]) => k === n)?.[1] || `Area ${n}`);
 export const roomsFor = (n) => (n <= WALK_UNITS ? ROOMS : AREA_ROOMS);
+export const roomFits = (n, room) => roomsFor(n).some(([k]) => k === room);
+// Step through spaces in the order shown (Catch-all stays last), not by number.
+export const stepSpace = (n, dir) => {
+  const i = WALK_SPACES.indexOf(n);
+  return WALK_SPACES[Math.min(WALK_SPACES.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir))];
+};
+// Moving walkthrough media: the owner moves anything, the realtor only what she took.
+export const canMoveMedia = (role, row, uid) =>
+  role === 'owner' || (role === 'realtor' && Boolean(uid) && (row?.author_uid ?? row?.userUid) === uid);
+// What still has to reach the server: queued photos/videos and voice notes not yet saved.
+export function uploadCounts(media = [], sessions = []) {
+  const uploading = media.filter((m) => m.status === 'uploading').length;
+  const failed = media.filter((m) => m.status === 'failed').length;
+  return { waiting: media.length + sessions.length, uploading, failed };
+}
 export const unitCount = (savedUnits) => (+savedUnits >= 10 ? 10 : 9);
 
 export function stageMove(stage, requestedUnit, units, occupied = []) {

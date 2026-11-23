@@ -121,3 +121,34 @@ export function useSharedWalkPhotos(deal, role) {
   }, [deal.id, role]);
   return rows;
 }
+
+// Walkthrough videos the owner switched on for this role (seller or lender); the database enforces it.
+export function useSharedWalkVideos(deal, role) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    if (role !== 'seller' && role !== 'lender') return;
+    let live = true;
+    (async () => {
+      const flag = role === 'seller' ? 'share_seller' : 'share_lender';
+      const { data } = await supabase.from('commercial_walkthrough_videos').select('*').eq('deal_id', deal.id).eq(flag, true).order('created_at', { ascending: false });
+      const list = sharedPhotos(role, data);
+      if (!list.length) { if (live) setRows([]); return; }
+      const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(list.map((v) => v.storage_path), 3600);
+      const url = Object.fromEntries((signed || []).map((s) => [s.path, s.signedUrl]));
+      if (live) setRows(list.filter((v) => url[v.storage_path]).map((v) => ({ id: `walkvid-${v.id}`, url: url[v.storage_path] })));
+    })();
+    return () => { live = false; };
+  }, [deal.id, role]);
+  return rows;
+}
+
+export function WalkVideos({ videos }) {
+  if (!videos.length) return null;
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-2" aria-label="Walkthrough videos">
+      {videos.map((v) => (
+        <video key={v.id} src={v.url} controls playsInline preload="metadata" className="aspect-video w-72 shrink-0 rounded-xl bg-black" />
+      ))}
+    </div>
+  );
+}

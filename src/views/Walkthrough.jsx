@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buyerTag } from '../lib/people.js';
 import { supabase, BUCKET } from '../lib/supabase.js';
-import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, LAST_SPACE, spaceLabel, roomsFor, v5Access, visibleNotes } from '../lib/leaseUp.js';
+import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, spaceLabel, roomsFor, roomFits, stepSpace, canMoveMedia, uploadCounts, v5Access, visibleNotes } from '../lib/leaseUp.js';
 import { when, roleLabel } from '../lib/format.js';
 import { MAX_RECORDING_MS, WHISPER_ENGINE_LABEL, transcribeAudio } from '../lib/dictation.js';
 import { assembleSessionAudio } from '../lib/audioStitch.js';
@@ -20,12 +20,14 @@ import {
   listAudioSessions,
   listMediaQueue,
   makeScopeKey,
+  moveMediaItem,
   requestPersistentStorage,
   updateAudioSession,
   updateMediaItem,
 } from '../lib/walkthroughStore.js';
 import { Button, Card, CardTitle, Empty } from '../components/Shell.jsx';
 import WalkthroughCamera from '../components/WalkthroughCamera.jsx';
+import MoveBar from '../components/WalkMoveBar.jsx';
 
 const PHOTO_EXT = {
   'image/jpeg': 'jpg',
@@ -65,6 +67,24 @@ const fmtBytes = (bytes) => {
   if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+const Tick = ({ on }) => (
+  <span
+    aria-hidden="true"
+    className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 text-sm font-bold ${
+      on ? 'border-white bg-ink text-white' : 'border-white bg-black/30 text-transparent'
+    }`}
+  >
+    ✓
+  </span>
+);
+
+const PickRow = ({ on, onToggle }) => (
+  <label className="flex min-h-[40px] items-center gap-2 text-sm font-medium">
+    <input type="checkbox" className="h-5 w-5" checked={on} onChange={onToggle} />
+    {on ? 'Selected to move' : 'Select to move'}
+  </label>
+);
 
 function useSignedUrls(paths) {
   const [urls, setUrls] = useState({});
@@ -122,8 +142,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const [editingNoteText, setEditingNoteText] = useState('');
   const [retranscribingId, setRetranscribingId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState(() => new Set()); // 'p:<id>' remote photo, 'v:<id>' remote video, 'l:<id>' on this device
+  const [moving, setMoving] = useState(false);
 
   const mountedRef = useRef(true);
+  const inFlightRef = useRef(new Set());
   const chunkWriteQueueRef = useRef(Promise.resolve());
   const activeVoiceRef = useRef(null);
   const handoffStreamRef = useRef(null);
@@ -216,9 +240,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
     return out;
   }, [localMedia]);
 
-  const unit = Math.min(selectedUnit, LAST_SPACE);
+  const unit = WALK_SPACES.includes(selectedUnit) ? selectedUnit : 1;
   useEffect(() => {
     if (!roomsFor(unit).some(([k]) => k === selectedRoom)) setSelectedRoom(roomsFor(unit)[0][0]);
+  }, [unit, selectedRoom]);
+  useEffect(() => {
+    setPicked(new Set());
   }, [unit, selectedRoom]);
 
   // Hydrate playable <audio> URLs for paused/ready/failed sessions in the current room.
@@ -321,6 +348,18 @@ export default function Walkthrough({ deal, me, role, preview }) {
   }, [counts, units]);
 
   const totalPendingCount = localSessions.length + localMedia.length;
+  const upload = { ...uploadCounts(localMedia, localSessions), online };
+
+  // Warn before leaving the page while anything is still only on this phone.
+  useEffect(() => {
+    if (!edit || totalPendingCount === 0) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [edit, totalPendingCount]);
 
   // Pause active voice recording cleanly while preserving every written chunk.
   const pauseActiveVoice = useCallback(
@@ -781,6 +820,20 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const syncMediaItem = useCallback(
     async (item) => {
       if (!edit || !item) return false;
+      // One upload per item at a time: auto-sync, camera close and Sync all can overlap.
+      if (inFlightRef.current.has(item.id)) return false;
+      inFlightRef.current.add(item.id);
+      try {
+        return await syncMediaItemOnce(item);
+      } finally {
+        inFlightRef.current.delete(item.id);
+      }
+    },
+    [deal.id, edit, me.name, me.uid, role] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const syncMediaItemOnce = useCallback(
+    async (item) => {
       if (!navigator.onLine) {
         const off = await updateMediaItem(item.id, {
           status: MEDIA_STATUS.FAILED,
@@ -793,9 +846,16 @@ export default function Walkthrough({ deal, me, role, preview }) {
       }
 
       const uploading = await updateMediaItem(item.id, { status: MEDIA_STATUS.UPLOADING, error: '' });
-      if (mountedRef.current && uploading) {
+      if (!uploading) {
+        // Already uploaded (or removed) by another pass: never upload a stale copy twice.
+        if (mountedRef.current) setLocalMedia((prev) => prev.filter((m) => m.id !== item.id));
+        return false;
+      }
+      if (mountedRef.current) {
         setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? uploading : m)));
       }
+      // Use the stored copy: it carries any move made after this item was queued.
+      item = uploading;
 
       const ext =
         item.kind === 'video'
@@ -932,29 +992,44 @@ export default function Walkthrough({ deal, me, role, preview }) {
     setCameraModal({ mode: 'photo', unit, room: selectedRoom, sharedStream: null });
   };
 
-  const closeMultiPhotoCamera = async () => {
-    const modal = cameraModal;
+  // Change where the next shot saves without leaving the camera; the page follows along.
+  const setCameraTarget = (nextUnit, nextRoom) => {
+    const r = roomFits(nextUnit, nextRoom) ? nextRoom : roomsFor(nextUnit)[0][0];
+    setCameraModal((m) => (m ? { ...m, unit: nextUnit, room: r } : m));
+    setSelectedUnit(nextUnit);
+    setSelectedRoom(r);
+  };
+
+  const switchCameraMode = async (mode) => {
+    if (!cameraModal || cameraModal.mode === mode) return;
+    if (mode === 'video') {
+      const handoff = await mediaCoordinator.prepareVideoHandoff();
+      setCameraModal((m) => (m ? { ...m, mode: 'video', sharedStream: handoff.stream } : m));
+    } else {
+      handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
+      handoffStreamRef.current = null;
+      setCameraModal((m) => (m ? { ...m, mode: 'photo', sharedStream: null } : m));
+    }
+  };
+
+  // On close, push everything still on the phone (every room shot this session), never drop it.
+  const closeCamera = async () => {
+    handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
+    handoffStreamRef.current = null;
     setCameraModal(null);
-    if (!modal || modal.mode !== 'photo') return;
-    const pendingForRoom = localMediaRef.current.filter(
-      (m) => m.kind === 'photo' && m.unitNumber === modal.unit && m.room === modal.room && m.status === MEDIA_STATUS.PENDING
-    );
-    if (!pendingForRoom.length) return;
+    const waiting = localMediaRef.current.filter((m) => m.status !== MEDIA_STATUS.UPLOADING);
+    if (!waiting.length) return;
     if (!navigator.onLine) {
-      setStatus(`${pendingForRoom.length} photo${pendingForRoom.length === 1 ? '' : 's'} kept on device while offline.`);
+      setStatus(`${waiting.length} item${waiting.length === 1 ? '' : 's'} kept on this phone until you are back online.`);
       return;
     }
     let saved = 0;
-    for (const item of [...pendingForRoom].reverse()) {
+    for (const item of [...waiting].reverse()) {
       if (await syncMediaItem(item)) saved++;
     }
     if (mountedRef.current) {
-      const left = pendingForRoom.length - saved;
-      setStatus(
-        left === 0
-          ? `${saved} photo${saved === 1 ? '' : 's'} saved.`
-          : `${saved} photo${saved === 1 ? '' : 's'} saved, ${left} kept on device for retry.`
-      );
+      const left = localMediaRef.current.length;
+      setStatus(left === 0 ? `All uploaded (${saved} just now).` : `${saved} uploaded, ${left} still waiting. They retry every 15 seconds.`);
     }
   };
 
@@ -962,12 +1037,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
     if (!edit) return;
     const handoff = await mediaCoordinator.prepareVideoHandoff();
     setCameraModal({ mode: 'video', unit, room: selectedRoom, sharedStream: handoff.stream });
-  };
-
-  const closeVideoRecorder = () => {
-    handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
-    handoffStreamRef.current = null;
-    setCameraModal(null);
   };
 
   const handleVideoRecorded = async (blob, meta) => {
@@ -1046,15 +1115,87 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
   };
 
-  // Owner only: show this photo on the seller's or lender's page. Off by default.
-  const toggleShare = async (p, field) => {
+  // Owner only: show this photo or video on the seller's or lender's page. Off by default.
+  const toggleShare = async (p, field, kind = 'photo') => {
     if (role !== 'owner' || preview || busy) return;
     const next = !p[field];
-    setPhotos((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: next } : x)));
-    const { error } = await supabase.from('commercial_walkthrough_photos').update({ [field]: next }).eq('id', p.id).eq('deal_id', deal.id);
+    const setRows = kind === 'video' ? setVideos : setPhotos;
+    const table = kind === 'video' ? 'commercial_walkthrough_videos' : 'commercial_walkthrough_photos';
+    setRows((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: next } : x)));
+    const { error } = await supabase.from(table).update({ [field]: next }).eq('id', p.id).eq('deal_id', deal.id);
     if (error) {
-      setPhotos((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: !next } : x)));
+      setRows((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: !next } : x)));
       setStatus('Sharing did not save. Try again.');
+    }
+  };
+
+  // Batch move: pick photos and videos in this room, send them to another unit/space and room.
+  const movableKeys = useMemo(() => {
+    if (!edit) return [];
+    return [
+      ...localMediaWithUrls
+        .filter((m) => m.unitNumber === unit && m.room === selectedRoom && m.status !== MEDIA_STATUS.UPLOADING)
+        .map((m) => `l:${m.id}`),
+      ...roomPhotos.filter((p) => canMoveMedia(role, p, me?.uid)).map((p) => `p:${p.id}`),
+      ...roomVideos.filter((v) => canMoveMedia(role, v, me?.uid)).map((v) => `v:${v.id}`),
+    ];
+  }, [edit, localMediaWithUrls, unit, selectedRoom, roomPhotos, roomVideos, role, me?.uid]);
+  const movable = useMemo(() => new Set(movableKeys), [movableKeys]);
+
+  const togglePick = (k) => {
+    if (!movable.has(k)) return;
+    setPicked((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  };
+
+  const moveSelected = async (toUnit, toRoom) => {
+    if (!edit || moving || !roomFits(toUnit, toRoom) || picked.size === 0) return;
+    const keys = [...picked].filter((k) => movable.has(k));
+    const ids = (prefix) => keys.filter((k) => k.startsWith(prefix)).map((k) => k.slice(2));
+    setMoving(true);
+    setStatus('');
+    let moved = 0;
+    let skipped = 0;
+    try {
+      for (const id of ids('l:')) {
+        const m = await moveMediaItem(id, toUnit, toRoom);
+        if (m) {
+          moved++;
+          if (mountedRef.current) setLocalMedia((prev) => prev.map((x) => (x.id === id ? m : x)));
+        } else skipped++;
+      }
+      for (const [prefix, table] of [['p:', 'commercial_walkthrough_photos'], ['v:', 'commercial_walkthrough_videos']]) {
+        const list = ids(prefix);
+        for (let i = 0; i < list.length; i += 100) {
+          const chunk = list.slice(i, i + 100);
+          const { data, error } = await supabase
+            .from(table)
+            .update({ unit_number: toUnit, room: toRoom })
+            .in('id', chunk)
+            .eq('deal_id', deal.id)
+            .select('id');
+          const n = error ? 0 : (data || []).length;
+          moved += n;
+          skipped += chunk.length - n;
+        }
+      }
+    } catch {
+      // whatever did not move stays where it was
+    } finally {
+      if (mountedRef.current) {
+        setMoving(false);
+        setPicked(new Set());
+        setSelecting(false);
+        setStatus(
+          `${moved} moved to ${spaceLabel(toUnit)} — ${roomLabel(toRoom)}.` +
+            (skipped ? ` ${skipped} did not move; try those again.` : '')
+        );
+        setRefresh((r) => r + 1);
+      }
     }
   };
 
@@ -1229,7 +1370,23 @@ export default function Walkthrough({ deal, me, role, preview }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${selecting ? 'pb-44' : ''}`}>
+      {selecting && !cameraModal && (
+        <MoveBar
+          count={picked.size}
+          total={movableKeys.length}
+          fromUnit={unit}
+          fromRoom={selectedRoom}
+          busy={moving}
+          onSelectAll={() => setPicked(new Set(movableKeys))}
+          onClear={() => setPicked(new Set())}
+          onCancel={() => {
+            setSelecting(false);
+            setPicked(new Set());
+          }}
+          onMove={(u, r) => void moveSelected(u, r)}
+        />
+      )}
       {cameraModal && (
         <WalkthroughCamera
           mode={cameraModal.mode}
@@ -1286,7 +1443,14 @@ export default function Walkthrough({ deal, me, role, preview }) {
             if (mountedRef.current) setLocalMedia((prev) => prev.filter((m) => m.id !== id));
           }}
           onVideoRecorded={handleVideoRecorded}
-          onClose={() => (cameraModal.mode === 'photo' ? void closeMultiPhotoCamera() : closeVideoRecorder())}
+          onClose={() => void closeCamera()}
+          spaceLabel={spaceLabel(cameraModal.unit)}
+          spaces={WALK_SPACES.map((u) => [u, spaceLabel(u)])}
+          rooms={roomsFor(cameraModal.unit)}
+          room={cameraModal.room}
+          onTargetChange={setCameraTarget}
+          onModeChange={(m) => void switchCameraMode(m)}
+          upload={upload}
         />
       )}
       {activeVoiceUi && !cameraModal && (
@@ -1379,21 +1543,32 @@ export default function Walkthrough({ deal, me, role, preview }) {
           </div>
         )}
 
-        {edit && totalPendingCount > 0 && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warm bg-warm-soft/70 px-3 py-2 text-xs">
-            <span className="font-medium text-ink">
-              {totalPendingCount} pending item{totalPendingCount === 1 ? '' : 's'} saved on this device
+        {edit && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${
+              upload.waiting ? 'border-amber-400 bg-amber-50 text-amber-950' : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+            }`}
+          >
+            <span className="font-semibold">
+              {upload.waiting
+                ? `${upload.waiting} waiting to upload${upload.uploading ? ` · ${upload.uploading} uploading now` : ''}${upload.failed ? ` · ${upload.failed} will retry` : ''}`
+                : 'All uploaded ✓ Nothing is only on this phone.'}
             </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!online || syncingAll}
-                onClick={() => void syncAllPending()}
-                className="min-h-[36px] rounded-lg bg-ink px-3 py-1 font-medium text-white disabled:opacity-40"
-              >
-                {syncingAll ? 'Syncing…' : online ? 'Sync all pending' : 'Waiting for connection'}
-              </button>
-            </div>
+            {upload.waiting > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs">Safe on this phone until the server confirms.</span>
+                <button
+                  type="button"
+                  disabled={!online || syncingAll}
+                  onClick={() => void syncAllPending()}
+                  className="min-h-[36px] rounded-lg bg-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
+                >
+                  {syncingAll ? 'Uploading…' : online ? 'Upload now' : 'Waiting for connection'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1404,8 +1579,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
               <button
                 type="button"
                 aria-label="Previous unit"
-                disabled={unit <= 1}
-                onClick={() => setSelectedUnit((u) => Math.max(1, u - 1))}
+                disabled={unit === WALK_SPACES[0]}
+                onClick={() => setSelectedUnit((u) => stepSpace(u, -1))}
                 className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-medium disabled:opacity-40"
               >
                 ‹
@@ -1425,15 +1600,15 @@ export default function Walkthrough({ deal, me, role, preview }) {
               <button
                 type="button"
                 aria-label="Next unit"
-                disabled={unit >= LAST_SPACE}
-                onClick={() => setSelectedUnit((u) => Math.min(LAST_SPACE, u + 1))}
+                disabled={unit === WALK_SPACES[WALK_SPACES.length - 1]}
+                onClick={() => setSelectedUnit((u) => stepSpace(u, 1))}
                 className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-medium disabled:opacity-40"
               >
                 ›
               </button>
             </div>
             <span className="text-xs font-medium text-ink-soft">
-              10 units + 6 areas
+              {WALK_UNITS} units + {WALK_SPACES.length - WALK_UNITS} areas
             </span>
           </div>
 
@@ -1808,6 +1983,21 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 </h3>
                 {edit && (
                   <div className="flex flex-wrap gap-2">
+                    {movableKeys.length > 0 && (
+                      <button
+                        type="button"
+                        aria-pressed={selecting}
+                        onClick={() => {
+                          setSelecting((x) => !x);
+                          setPicked(new Set());
+                        }}
+                        className={`inline-flex min-h-[44px] items-center rounded-xl border px-3.5 py-2 text-sm font-semibold ${
+                          selecting ? 'border-ink bg-ink text-white' : 'border-ink bg-white text-ink hover:bg-warm-soft'
+                        }`}
+                      >
+                        {selecting ? 'Done selecting' : 'Select to move'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={busy}
@@ -1855,8 +2045,15 @@ export default function Walkthrough({ deal, me, role, preview }) {
               {roomPendingPhotos.length > 0 && (
                 <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-label="Pending room photos">
                   {roomPendingPhotos.map((m) => (
-                    <li key={m.id} className="overflow-hidden rounded-xl border border-warm bg-paper">
-                      <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                    <li key={m.id} className={`relative overflow-hidden rounded-xl border bg-paper ${picked.has(`l:${m.id}`) ? 'border-ink ring-2 ring-ink' : 'border-warm'}`}>
+                      {selecting && movable.has(`l:${m.id}`) ? (
+                        <button type="button" aria-pressed={picked.has(`l:${m.id}`)} aria-label={`Select ${m.fileName}`} onClick={() => togglePick(`l:${m.id}`)} className="block w-full">
+                          <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                          <Tick on={picked.has(`l:${m.id}`)} />
+                        </button>
+                      ) : (
+                        <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                      )}
                       <div className="space-y-1 p-2 text-xs">
                         <div className="flex items-center justify-between gap-1">
                           <span className="font-medium text-ink">
@@ -1893,8 +2090,17 @@ export default function Walkthrough({ deal, me, role, preview }) {
               ) : roomPhotos.length > 0 ? (
                 <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                   {roomPhotos.map((p, i) => (
-                    <li key={p.id} className="overflow-hidden rounded-xl border border-line bg-white">
-                      {urls[p.storage_path] ? (
+                    <li key={p.id} className={`relative overflow-hidden rounded-xl border bg-white ${picked.has(`p:${p.id}`) ? 'border-ink ring-2 ring-ink' : 'border-line'}`}>
+                      {selecting && movable.has(`p:${p.id}`) ? (
+                        <button type="button" aria-pressed={picked.has(`p:${p.id}`)} aria-label={`Select photo ${i + 1}`} onClick={() => togglePick(`p:${p.id}`)} className="block w-full">
+                          {urls[p.storage_path] ? (
+                            <img src={urls[p.storage_path]} alt={`${spaceLabel(unit)} ${roomLabel(selectedRoom)} photo ${i + 1}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                          ) : (
+                            <div className="flex aspect-[4/3] items-center justify-center bg-paper text-xs text-ink-soft">Loading…</div>
+                          )}
+                          <Tick on={picked.has(`p:${p.id}`)} />
+                        </button>
+                      ) : urls[p.storage_path] ? (
                         <a href={urls[p.storage_path]} target="_blank" rel="noreferrer">
                           <img
                             src={urls[p.storage_path]}
@@ -1976,7 +2182,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
               {roomPendingVideos.length > 0 && (
                 <ul className="space-y-2.5" aria-label="Pending room videos">
                   {roomPendingVideos.map((v) => (
-                    <li key={v.id} className="space-y-2 rounded-xl border border-warm bg-paper p-3 text-xs">
+                    <li key={v.id} className={`space-y-2 rounded-xl border bg-paper p-3 text-xs ${picked.has(`l:${v.id}`) ? 'border-ink ring-2 ring-ink' : 'border-warm'}`}>
+                      {selecting && movable.has(`l:${v.id}`) && <PickRow on={picked.has(`l:${v.id}`)} onToggle={() => togglePick(`l:${v.id}`)} />}
                       <video
                         src={v.previewUrl}
                         controls
@@ -2021,7 +2228,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
               ) : roomVideos.length > 0 ? (
                 <ul className="space-y-2.5">
                   {roomVideos.map((v) => (
-                    <li key={v.id} className="space-y-2 rounded-xl border border-line bg-white p-3">
+                    <li key={v.id} className={`space-y-2 rounded-xl border bg-white p-3 ${picked.has(`v:${v.id}`) ? 'border-ink ring-2 ring-ink' : 'border-line'}`}>
+                      {selecting && movable.has(`v:${v.id}`) && <PickRow on={picked.has(`v:${v.id}`)} onToggle={() => togglePick(`v:${v.id}`)} />}
                       {urls[v.storage_path] ? (
                         <video
                           src={urls[v.storage_path]}
@@ -2051,6 +2259,12 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           </button>
                         )}
                       </div>
+                      {role === 'owner' && !preview && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-1.5 text-xs">
+                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(v.share_seller)} onChange={() => void toggleShare(v, 'share_seller', 'video')} />Share with seller</label>
+                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(v.share_lender)} onChange={() => void toggleShare(v, 'share_lender', 'video')} />Share with lender</label>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
