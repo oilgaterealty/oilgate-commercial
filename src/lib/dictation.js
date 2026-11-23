@@ -1,58 +1,112 @@
-export const MAX_RECORDING_MS = 120_000;
-let worker;
+import { TARGET_SAMPLE_RATE, decodeSegmentsTo16kPcm } from './audioStitch.js';
 
-export async function transcribe(blob, progress, signal) {
-  const Context = window.AudioContext || window.webkitAudioContext;
-  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Context || !Offline) throw new Error('This browser cannot decode audio.');
-  const ctx = new Context();
-  let original;
-  try {
-    original = await ctx.decodeAudioData(await blob.arrayBuffer());
-  } finally {
-    await ctx.close().catch(() => {});
-  }
-  if (!(original.duration > 0 && original.duration <= 125)) {
-    throw new Error('Keep each recording under two minutes.');
-  }
-  const offline = new Offline(1, Math.max(1, Math.ceil(original.duration * 16000)), 16000);
-  const source = offline.createBufferSource();
-  source.buffer = original;
-  source.connect(offline.destination);
-  source.start();
-  const pcm = (await offline.startRendering()).getChannelData(0);
-  if (signal?.aborted) return '';
+export const MAX_RECORDING_MS = 30 * 60_000;
+export const WHISPER_ENGINE_LABEL = 'Local Whisper (onnx-community/whisper-tiny.en, on-device)';
 
-  worker ??= new Worker(new URL('./dictation-worker.js', import.meta.url), { type: 'module' });
+const SINGLE_PASS_SAMPLES = 90 * TARGET_SAMPLE_RATE;
+const WINDOW_SAMPLES = 60 * TARGET_SAMPLE_RATE;
+
+let worker = null;
+let nextJobId = 1;
+let queueTail = Promise.resolve();
+
+function getWorker() {
+  if (!worker) {
+    worker = new Worker(new URL('./dictation-worker.js', import.meta.url), { type: 'module' });
+  }
+  return worker;
+}
+
+function runWorkerPart(pcmSlice, part, totalParts, progress, signal) {
+  const jobId = nextJobId++;
   return new Promise((resolve, reject) => {
-    const current = worker;
-    function clear() {
+    if (signal?.aborted) {
+      resolve('');
+      return;
+    }
+    const current = getWorker();
+    const copy = new Float32Array(pcmSlice);
+    let settled = false;
+
+    function cleanup() {
       current.onmessage = null;
       current.onerror = null;
-      signal?.removeEventListener('abort', cancel);
+      signal?.removeEventListener('abort', onAbort);
     }
-    function cancel() {
-      clear();
+
+    function onAbort() {
+      if (settled) return;
+      settled = true;
+      cleanup();
       current.terminate();
-      worker = null;
+      if (worker === current) worker = null;
       resolve('');
     }
-    signal?.addEventListener('abort', cancel, { once: true });
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     current.onmessage = ({ data }) => {
+      if (data.jobId !== jobId) return;
       if (data.phase) {
         progress?.(data.phase);
         return;
       }
-      clear();
+      if (settled) return;
+      settled = true;
+      cleanup();
       if (data.error) reject(new Error(data.error));
       else resolve(data.text || '');
     };
+
     current.onerror = () => {
-      clear();
+      if (settled) return;
+      settled = true;
+      cleanup();
       current.terminate();
-      worker = null;
+      if (worker === current) worker = null;
       reject(new Error('Local transcription could not run in this browser.'));
     };
-    current.postMessage({ pcm }, [pcm.buffer]);
+
+    current.postMessage({ jobId, pcm: copy, part, totalParts }, [copy.buffer]);
   });
+}
+
+function enqueueTranscription(task) {
+  const run = queueTail.then(task, task);
+  queueTail = run.catch(() => {});
+  return run;
+}
+
+export async function transcribeAudio(blobOrSegments, progress, signal) {
+  const segments = Array.isArray(blobOrSegments) ? blobOrSegments : [blobOrSegments];
+  progress?.('Preparing audio for local Whisper…');
+  const { pcm, durationSec } = await decodeSegmentsTo16kPcm(segments);
+  if (signal?.aborted) return { text: '', durationSec, engine: WHISPER_ENGINE_LABEL };
+
+  const slices = [];
+  if (pcm.length <= SINGLE_PASS_SAMPLES) {
+    slices.push(pcm);
+  } else {
+    for (let start = 0; start < pcm.length; start += WINDOW_SAMPLES) {
+      const end = Math.min(pcm.length, start + WINDOW_SAMPLES);
+      if (end > start) slices.push(pcm.subarray(start, end));
+    }
+  }
+
+  const text = await enqueueTranscription(async () => {
+    const parts = [];
+    for (let i = 0; i < slices.length; i++) {
+      if (signal?.aborted) return '';
+      const partText = await runWorkerPart(slices[i], i + 1, slices.length, progress, signal);
+      if (partText?.trim()) parts.push(partText.trim());
+    }
+    return parts.join(' ').trim();
+  });
+
+  return { text, durationSec, engine: WHISPER_ENGINE_LABEL };
+}
+
+export async function transcribe(blob, progress, signal) {
+  const res = await transcribeAudio(blob, progress, signal);
+  return res.text;
 }

@@ -50,10 +50,10 @@ export default function DealRoom({ slug, tab, sub, session }) {
     const innerTab = (window.location.hash.split('/')[5] || '').split('?')[0];
     return (
       <div className="min-h-screen">
-        <div className="sticky top-0 z-40 flex items-center justify-center gap-3 bg-ink px-4 py-1.5 text-xs text-white">
+        <div className="sticky top-0 z-40 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 bg-ink px-4 py-1.5 text-xs text-white">
           <span>Seeing it as the {roleLabel[sub].toLowerCase()}. Nothing can be sent from here.</span>
-          {PREVIEWABLE.filter((r) => r !== sub).map((r) => <a key={r} href={`#/d/${slug}/view/${r}`} className="underline-offset-2 opacity-70 hover:underline hover:opacity-100">{roleLabel[r]}</a>)}
-          <a href={`#/d/${slug}`} className="rounded-full bg-white px-3 py-0.5 font-medium text-ink">Exit</a>
+          {PREVIEWABLE.filter((r) => r !== sub).map((r) => <a key={r} href={`#/d/${slug}/view/${r}`} className="shrink-0 underline-offset-2 opacity-70 hover:underline hover:opacity-100">{roleLabel[r]}</a>)}
+          <a href={`#/d/${slug}`} className="shrink-0 rounded-full bg-white px-3 py-0.5 font-medium text-ink">Exit</a>
         </div>
         <Shell head={<PropertyHead deal={state.deal} />} wide={sub === 'seller'}>
           <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview' }} preview tab={innerTab} />

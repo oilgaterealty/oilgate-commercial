@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { MAX_RECORDING_MS } from '../lib/dictation.js';
-
-let activeMic = null;
+import { mediaCoordinator } from '../lib/mediaCoordinator.js';
 
 const NON_TEXT_TYPES = new Set(['number', 'email', 'password', 'tel', 'url', 'date', 'time', 'hidden', 'checkbox', 'radio', 'file']);
 
@@ -53,7 +52,7 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
     clearTimeout(s.timer);
     if (s.recorder?.state === 'recording') s.recorder.stop();
     s.stream?.getTracks().forEach((x) => x.stop());
-    if (activeMic === s) activeMic = null;
+    mediaCoordinator.release('field-dictation');
   }, []);
 
   const toggle = async () => {
@@ -63,15 +62,15 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
       return;
     }
     if (state !== 'idle') return;
-    if (activeMic && activeMic !== s) {
-      setStatus('Finish the other recording first.');
-      return;
-    }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setStatus('Microphone is unavailable in this browser.');
       return;
     }
-    activeMic = s;
+    const lock = mediaCoordinator.acquire('field-dictation');
+    if (!lock.ok) {
+      setStatus(lock.message);
+      return;
+    }
     const abort = (s.abort = new AbortController());
     setStatus('');
     setState('opening');
@@ -79,6 +78,7 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (abort.signal.aborted) {
         stream.getTracks().forEach((x) => x.stop());
+        mediaCoordinator.release('field-dictation');
         return;
       }
       s.stream = stream;
@@ -92,6 +92,7 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
       recorder.onstop = async () => {
         clearTimeout(s.timer);
         stream.getTracks().forEach((x) => x.stop());
+        mediaCoordinator.release('field-dictation');
         if (abort.signal.aborted) return;
         setState('working');
         setStatus('Loading voice model…');
@@ -107,11 +108,10 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
         } catch (e) {
           if (!abort.signal.aborted) setStatus(e.message || 'Dictation failed.');
         } finally {
-          if (activeMic === s) activeMic = null;
           if (!abort.signal.aborted) setState('idle');
         }
       };
-      recorder.start();
+      recorder.start(1000);
       setState('recording');
       setStatus('Recording… tap to stop');
       s.timer = setTimeout(() => {
@@ -119,7 +119,7 @@ export function DictationMic({ label = 'this field', buttonText, disabled, onTex
       }, MAX_RECORDING_MS);
     } catch {
       s.stream?.getTracks().forEach((x) => x.stop());
-      if (activeMic === s) activeMic = null;
+      mediaCoordinator.release('field-dictation');
       if (!abort.signal.aborted) {
         setState('idle');
         setStatus('Could not start the microphone. Check browser permission.');

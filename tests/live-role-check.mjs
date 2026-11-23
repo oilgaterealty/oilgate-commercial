@@ -46,7 +46,7 @@ const check = (result, label) => {
 };
 const log = (message) => console.log(`PASS ${message}`);
 
-// Synthesize a short spoken English WAV clip for real in-browser Whisper dictation verification.
+// Synthesize a spoken English WAV clip for real in-browser Whisper dictation verification.
 function makeSpeechWav(filePath) {
   const ps = `
 Add-Type -AssemblyName System.Speech
@@ -57,6 +57,41 @@ $s.Speak('Kitchen cabinets look clean and ready for paint.')
 $s.Dispose()
 `;
   execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { stdio: 'ignore', windowsHide: true });
+}
+
+async function assertMobileNavAndOverflow(page, width, label) {
+  const metrics = await page.evaluate(() => {
+    const overflow = document.documentElement.scrollWidth > window.innerWidth;
+    const links = [...document.querySelectorAll('nav[aria-label="Deal sections"] a')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        text: el.textContent?.trim(),
+        current: el.getAttribute('aria-current'),
+        left: r.left,
+        right: r.right,
+        top: r.top,
+        bottom: r.bottom,
+        width: r.width,
+        height: r.height,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      };
+    });
+    return { overflow, scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth, links };
+  });
+  expect(metrics.overflow, `${label} width ${width}px overflow (${metrics.scrollWidth} > ${metrics.innerWidth})`).toBe(false);
+  expect(metrics.links.length).toBeGreaterThan(0);
+  for (let i = 0; i < metrics.links.length; i++) {
+    const l = metrics.links[i];
+    expect(l.width, `${label} nav pill "${l.text}" collapsed`).toBeGreaterThan(44);
+    expect(l.height, `${label} nav pill "${l.text}" too short`).toBeGreaterThanOrEqual(36);
+    expect(l.scrollWidth <= l.clientWidth + 2, `${label} nav pill "${l.text}" clipped`).toBe(true);
+    if (i > 0) {
+      const prev = metrics.links[i - 1];
+      const overlaps = l.left < prev.right - 1 && l.top < prev.bottom - 1 && l.bottom > prev.top + 1;
+      expect(overlaps, `${label} nav pills "${prev.text}" and "${l.text}" overlap`).toBe(false);
+    }
+  }
 }
 
 try {
@@ -166,8 +201,11 @@ try {
     ],
   });
 
-  const pageFor = async (role, width = 390) => {
-    const context = await browser.newContext({ viewport: { width, height: 844 }, permissions: ['microphone'] });
+  const pageFor = async (role, width = 390, height = 844) => {
+    const context = await browser.newContext({
+      viewport: { width, height },
+      permissions: ['microphone', 'camera'],
+    });
     contexts.push(context);
     await context.addInitScript(
       ({ session, project }) => localStorage.setItem(`sb-${project}-auth-token`, JSON.stringify(session)),
@@ -177,11 +215,11 @@ try {
     debugPage = page;
     page.on('dialog', (d) => d.accept());
     await page.goto(`${baseURL}#/d/${deal.slug}`);
-    return page;
+    return { context, page };
   };
 
   // 1. SELLER
-  const seller = await pageFor('seller');
+  const { page: seller } = await pageFor('seller');
   await expect(seller.getByRole('button', { name: 'Table view', exact: true })).toBeVisible();
   await expect(seller.getByRole('columnheader', { name: /Option [ABC]/ })).toHaveCount(3);
   for (const hidden of ['Walkthrough', 'Tenants', 'Comps', 'Strategy ideas', 'QA Private Strategy']) {
@@ -202,31 +240,182 @@ try {
   expect(await seller.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   log('seller: zero v5 exposure, options, question, message, upload, interest, phone width');
 
-  // 2. REALTOR (Walkthrough + real Whisper voice note, Tenants + real Whisper dictation, Comps what-if Send to LaVante, Messages, Files)
-  const realtor = await pageFor('realtor');
+  // 2. REALTOR (Walkthrough mobile widths, concurrent camera + Whisper, interruption, offline/reload/retry, Tenants dictation, Comps)
+  const { context: realtorCtx, page: realtor } = await pageFor('realtor', 390, 844);
   await expect(realtor.getByRole('link', { name: 'Strategy ideas', exact: true })).toHaveCount(0);
   await expect(realtor.getByText('QA Private Strategy', { exact: false })).toHaveCount(0);
 
-  // Walkthrough
   await realtor.getByRole('link', { name: 'Walkthrough', exact: true }).click();
   await expect(realtor.getByRole('heading', { name: 'Walkthrough inventory', exact: true })).toBeVisible();
   await expect(realtor.locator('input[capture="environment"]')).toHaveCount(1);
-  await realtor.getByLabel('Upload photos for Unit 1 Kitchen').setInputFiles({ name: 'kitchen.png', mimeType: 'image/png', buffer: photoData });
-  await expect(realtor.getByText('1 photo saved.', { exact: true })).toBeVisible();
-  await expect(realtor.getByText('QA realtor (Realtor)', { exact: true })).toBeVisible();
 
-  // Real in-browser Whisper voice note in Walkthrough
-  await realtor.getByRole('button', { name: 'Dictate Unit 1 Kitchen voice note', exact: true }).click();
-  await expect(realtor.getByRole('button', { name: 'Stop dictating Unit 1 Kitchen voice note', exact: true })).toBeVisible();
-  await realtor.waitForTimeout(3500);
-  await realtor.getByRole('button', { name: 'Stop dictating Unit 1 Kitchen voice note', exact: true }).click();
+  // Whisper model failure + retry verification (runs while model cache is empty, then caches Whisper once for the session)
+  await realtorCtx.route(/huggingface\.co|hf\.co/, (route) => route.abort());
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 3/ }).click();
+  await realtor.getByRole('button', { name: 'Record voice note', exact: true }).click();
+  await realtor.waitForTimeout(2200);
+  await realtor.getByRole('button', { name: 'Stop & transcribe', exact: true }).click();
+  await expect(realtor.getByText('Whisper needs retry · audio safe', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(realtor.getByLabel('Local voice note audio', { exact: true })).toBeVisible();
+  await realtorCtx.unrouteAll();
+  await realtor.getByRole('button', { name: 'Retry Whisper', exact: true }).click();
+  await expect.poll(async () => (await realtor.getByLabel('Voice note transcript', { exact: true }).inputValue()).trim().length, { timeout: 90_000 }).toBeGreaterThan(5);
+  await realtor.getByRole('button', { name: 'Save voice note', exact: true }).click();
+  await expect(realtor.getByText(/Voice note \+ original audio saved to Unit 3 Kitchen\./)).toBeVisible({ timeout: 20_000 });
+  log('realtor Whisper failure recovery: audio stayed playable during outage & Retry Whisper succeeded');
+
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 1\b/ }).click();
+
+  // Verify 360 / 390 / 430 portrait nav pills, non-collapsed Walkthrough pill, 5 named rooms, collapsed matrix, and zero overflow
+  for (const [w, h] of [[360, 800], [390, 844], [430, 932]]) {
+    await realtor.setViewportSize({ width: w, height: h });
+    await realtor.waitForTimeout(100);
+    await assertMobileNavAndOverflow(realtor, w, `realtor-${w}`);
+    for (const roomName of ['Kitchen', 'Bath', 'Bedroom 1', 'Bedroom 2', 'Living']) {
+      const btn = realtor.getByRole('group', { name: 'Rooms for Unit 1' }).getByRole('button', { name: new RegExp(`^${roomName}`) });
+      await expect(btn).toBeVisible();
+      const box = await btn.boundingBox();
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    const matrixToggle = realtor.getByRole('button', { name: /All units progress/ });
+    await expect(matrixToggle).toHaveAttribute('aria-expanded', 'false');
+    const takePhotosBox = await realtor.getByRole('button', { name: 'Take photos', exact: true }).boundingBox();
+    const matrixBox = await matrixToggle.boundingBox();
+    expect(takePhotosBox.y).toBeLessThan(matrixBox.y);
+  }
+  await realtor.setViewportSize({ width: 390, height: 844 });
+
+  // Concurrent voice recording + multi-photo rear camera session + room switch mid-transcription
+  await realtor.getByRole('button', { name: 'Record voice note', exact: true }).click();
+  await expect(realtor.getByText(/Recording Unit 1 — Kitchen/)).toBeVisible();
+  await expect.poll(async () => {
+    const txt = await realtor.getByText(/chunks .* saved locally/).textContent();
+    return Number((txt || '').match(/(\d+)\s+chunks/)?.[1] || 0);
+  }, { timeout: 10_000 }).toBeGreaterThan(0);
+
+  await realtor.getByRole('button', { name: 'Take photos', exact: true }).click();
+  const camDialog = realtor.getByRole('dialog');
+  await expect(camDialog).toBeVisible();
+  await expect(camDialog.getByText(/Voice active: Unit 1 — Kitchen/)).toBeVisible();
+  const captureBtn = camDialog.getByRole('button', { name: 'Capture photo', exact: true });
+  await expect(captureBtn).toBeEnabled({ timeout: 10_000 });
+  for (let i = 0; i < 3; i++) {
+    await captureBtn.click();
+    await expect(camDialog.getByText(`${i + 1} shot${i === 0 ? '' : 's'}`, { exact: true })).toBeVisible();
+  }
+  await camDialog.getByRole('button', { name: 'Undo last', exact: true }).click();
+  await expect(camDialog.getByText('2 shots', { exact: true })).toBeVisible();
+  await camDialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(realtor.getByText('2 photos saved.', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(realtor.getByText('QA realtor (Realtor)').first()).toBeVisible();
+
+  // Stop narration & immediately switch to Unit 2 Bath mid-transcription to confirm immutable Unit 1 Kitchen binding
+  await realtor.getByRole('button', { name: 'Stop & transcribe', exact: true }).click();
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 2/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 2' }).getByRole('button', { name: /^Bath/ }).click();
+  await expect(realtor.getByRole('heading', { name: 'Unit 2 — Bath', exact: true })).toBeVisible();
+
+  // Wait for transcription to finish while sitting on Unit 2 Bath, then assert zero leak into Unit 2 Bath
+  await expect(realtor.getByText(/No voice notes for this room yet\./)).toBeVisible();
+  await expect(realtor.getByLabel('Voice note transcript')).toHaveCount(0);
+
+  // Return to Unit 1 Kitchen -> transcript & playable local audio are bound there!
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 1\b/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 1' }).getByRole('button', { name: /^Kitchen/ }).click();
   const transcriptBox = realtor.getByLabel('Voice note transcript', { exact: true });
   await expect(transcriptBox).toBeVisible({ timeout: 90_000 });
+  await expect.poll(async () => (await transcriptBox.inputValue()).trim().length, { timeout: 90_000 }).toBeGreaterThan(5);
   const rawTranscript = await transcriptBox.inputValue();
-  expect(rawTranscript.trim().length).toBeGreaterThan(5);
+  await expect(realtor.getByLabel('Local voice note audio', { exact: true })).toBeVisible();
   await realtor.getByRole('button', { name: 'Save voice note', exact: true }).click();
-  await expect(realtor.getByText('Voice note saved.', { exact: true })).toBeVisible();
-  log(`realtor walkthrough: photo upload + real Whisper voice note transcribed ("${rawTranscript.trim().slice(0, 60)}")`);
+  await expect(realtor.getByText(/Voice note \+ original audio saved to Unit 1 Kitchen\./)).toBeVisible({ timeout: 20_000 });
+  await expect(realtor.getByLabel('Voice note audio', { exact: true })).toBeVisible();
+  log(`realtor walkthrough concurrent: 3 shots (-1 undo = 2 uploaded) + voice bound to Unit 1 Kitchen ("${rawTranscript.trim().slice(0, 50)}")`);
+
+  // Interruption test on Unit 1 Bedroom 1: background visibilitychange -> Pause -> preserve chunks -> Resume -> Save stitched WAV
+  await realtor.getByRole('group', { name: 'Rooms for Unit 1' }).getByRole('button', { name: /^Bedroom 1/ }).click();
+  await realtor.getByRole('button', { name: 'Record voice note', exact: true }).click();
+  await expect.poll(async () => {
+    const txt = await realtor.getByText(/chunks .* saved locally/).textContent();
+    return Number((txt || '').match(/(\d+)\s+chunks/)?.[1] || 0);
+  }, { timeout: 10_000 }).toBeGreaterThan(0);
+
+  await realtor.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(realtor.getByText('Paused · audio safe', { exact: true })).toBeVisible({ timeout: 10_000 });
+  await realtor.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await realtor.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect(realtor.getByText(/Recording Unit 1 — Bedroom 1/)).toBeVisible();
+  await realtor.waitForTimeout(2200);
+  await realtor.getByRole('button', { name: 'Stop & transcribe', exact: true }).click();
+  await expect.poll(async () => (await realtor.getByLabel('Voice note transcript', { exact: true }).inputValue()).trim().length, { timeout: 60_000 }).toBeGreaterThan(5);
+  await realtor.getByRole('button', { name: 'Save voice note', exact: true }).click();
+  await expect(realtor.getByText(/Voice note \+ original audio saved to Unit 1 Bedroom 1\./)).toBeVisible({ timeout: 20_000 });
+  log('realtor interruption: background pause preserved chunks, resumed, stitched WAV & synced');
+
+  // Offline + Reload + Back/Reopen + Video capture + Retry on Unit 2 Living
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 2/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 2' }).getByRole('button', { name: /^Living/ }).click();
+  await realtorCtx.setOffline(true);
+  await expect(realtor.getByText('Offline', { exact: true })).toBeVisible();
+
+  await realtor.getByLabel('Upload photos for Unit 2 Living').setInputFiles({ name: 'offline-living.png', mimeType: 'image/png', buffer: photoData });
+  await expect(realtor.getByText(/kept on device for retry/)).toBeVisible();
+
+  await realtor.getByRole('button', { name: 'Record video', exact: true }).click();
+  const vidDialog = realtor.getByRole('dialog');
+  await expect(vidDialog.getByText(/MP4 \/ WebM up to 50 MB/)).toBeVisible();
+  const startVidBtn = vidDialog.getByRole('button', { name: 'Start recording', exact: true });
+  await expect(startVidBtn).toBeEnabled({ timeout: 10_000 });
+  await startVidBtn.click();
+  await realtor.waitForTimeout(1600);
+  await vidDialog.getByRole('button', { name: 'Stop & save video', exact: true }).click();
+  await expect(realtor.getByText(/Video saved on device/)).toBeVisible({ timeout: 15_000 });
+
+  await realtor.getByRole('button', { name: 'Record voice note', exact: true }).click();
+  await realtor.waitForTimeout(2500);
+  await realtor.getByRole('button', { name: 'Stop & transcribe', exact: true }).click();
+  await expect.poll(async () => (await realtor.getByLabel('Voice note transcript', { exact: true }).inputValue()).trim().length, { timeout: 45_000 }).toBeGreaterThan(5);
+  await realtor.getByRole('button', { name: 'Save voice note', exact: true }).click();
+  await expect(realtor.getByText(/Sync failed · audio safe/)).toBeVisible();
+  await expect(realtor.getByText(/saved to Unit 2 Living/)).toHaveCount(0);
+
+  // SPA Back/reopen while offline -> ALL pending media & audio still intact!
+  await realtor.getByRole('link', { name: 'Overview', exact: true }).click();
+  await realtor.goBack();
+  await expect(realtor.getByText(/3 pending items saved on this device/)).toBeVisible();
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 2/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 2' }).getByRole('button', { name: /^Living/ }).click();
+  await expect(realtor.getByLabel('Pending room photos')).toBeVisible();
+  await expect(realtor.getByLabel('Pending room videos')).toBeVisible();
+  await expect(realtor.getByLabel('Pending voice notes')).toBeVisible();
+
+  // Reconnect & hard reload BEFORE syncing -> IndexedDB preserves all 3 pending items across full refresh!
+  await realtorCtx.setOffline(false);
+  await realtor.reload();
+  await expect(realtor.getByRole('heading', { name: 'Walkthrough inventory', exact: true })).toBeVisible();
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 2/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 2' }).getByRole('button', { name: /^Living/ }).click();
+  await expect(realtor.getByLabel('Pending room photos')).toBeVisible();
+  await expect(realtor.getByLabel('Pending room videos')).toBeVisible();
+  await expect(realtor.getByLabel('Pending voice notes')).toBeVisible();
+  await expect(realtor.getByLabel('Local voice note audio')).toBeVisible();
+
+  // Sync all pending after reload!
+  await expect(realtor.getByRole('button', { name: 'Sync all pending', exact: true })).toBeEnabled({ timeout: 10_000 });
+  await realtor.getByRole('button', { name: 'Sync all pending', exact: true }).click();
+  await expect(realtor.getByText(/Synced 2 media files and 1 voice note\./)).toBeVisible({ timeout: 30_000 });
+  await realtor.getByRole('group', { name: 'Units' }).getByRole('button', { name: /^Unit 2/ }).click();
+  await realtor.getByRole('group', { name: 'Rooms for Unit 2' }).getByRole('button', { name: /^Living/ }).click();
+  await expect(realtor.getByText('Photos (1)')).toBeVisible();
+  await expect(realtor.getByText('Videos (1)')).toBeVisible();
+  await expect(realtor.getByLabel('Voice note audio')).toBeVisible();
+  log('realtor offline/reload/Back recovery: photo + recorded video + voice note persisted and synced after reconnect');
 
   // Tenants + real Whisper dictation into a text box
   await realtor.getByRole('link', { name: 'Tenants', exact: true }).click();
@@ -234,9 +423,8 @@ try {
   await realtor.getByLabel('Lead name', { exact: true }).fill('QA Tenant Alice');
   await realtor.getByLabel('Lead phone', { exact: true }).fill('330-555-0199');
   await realtor.getByLabel('Lead email', { exact: true }).fill('alice@example.invalid');
-  // Dictate into Lead notes text box (model already cached in worker!)
   await realtor.getByRole('button', { name: 'Dictate Lead notes', exact: true }).click();
-  await realtor.waitForTimeout(3500);
+  await realtor.waitForTimeout(3000);
   await realtor.getByRole('button', { name: 'Stop dictating Lead notes', exact: true }).click();
   await expect.poll(async () => (await realtor.getByLabel('Lead notes', { exact: true }).inputValue()).trim().length, { timeout: 45_000 }).toBeGreaterThan(5);
   const dictatedLeadNote = await realtor.getByLabel('Lead notes', { exact: true }).inputValue();
@@ -276,7 +464,7 @@ try {
   log('realtor: comps what-if send, offers, photos, messages, files, seller activity, no strategy');
 
   // 3. REVIEWER
-  const reviewer = await pageFor('reviewer');
+  const { page: reviewer } = await pageFor('reviewer');
   for (const hidden of ['Walkthrough', 'Tenants', 'Strategy ideas']) {
     await expect(reviewer.getByRole('link', { name: hidden, exact: true })).toHaveCount(0);
   }
@@ -297,7 +485,7 @@ try {
   log('reviewer: comps what-if send, messages, zero walkthrough/tenants/strategy');
 
   // 4. LENDER
-  const lender = await pageFor('lender');
+  const { page: lender } = await pageFor('lender');
   for (const hidden of ['Walkthrough', 'Tenants', 'Comps', 'Strategy ideas']) {
     await expect(lender.getByRole('link', { name: hidden, exact: true })).toHaveCount(0);
   }
@@ -315,7 +503,7 @@ try {
   log('lender: the plan, randomize, financing desk send, messages, zero v5 tabs');
 
   // 5. VIEWER
-  const viewer = await pageFor('viewer');
+  const { page: viewer } = await pageFor('viewer');
   await expect(viewer.getByText('A proposed purchase of this nine-unit property.', { exact: false })).toBeVisible();
   await expect(viewer.getByRole('textbox')).toHaveCount(0);
   for (const hidden of ['Walkthrough', 'Tenants', 'Comps', 'Strategy ideas', 'Messages']) {
@@ -323,11 +511,17 @@ try {
   }
   log('viewer: read-only overview, zero v5 tabs');
 
-  // 6. OWNER (all tabs + verify received messages + See as previews)
-  const owner = await pageFor('owner', 1440);
+  // 6. OWNER (desktop 1440px + 360px mobile nav + Walkthrough mutual visibility + Unit 10 + See as)
+  const { page: owner } = await pageFor('owner', 360, 800);
+  await assertMobileNavAndOverflow(owner, 360, 'owner-mobile-360');
+  await owner.getByRole('link', { name: 'Walkthrough', exact: true }).click();
+  await assertMobileNavAndOverflow(owner, 360, 'owner-walkthrough-360');
+
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await owner.getByRole('link', { name: 'Overview', exact: true }).click();
   await expect(owner.getByRole('heading', { name: 'Deal at a glance', exact: true })).toBeVisible();
 
-  // Walkthrough: owner sees realtor photo & voice note AND adds owner's own photo
+  // Walkthrough: owner sees realtor photos & voice note AND adds owner's own photo
   await owner.getByRole('link', { name: 'Walkthrough', exact: true }).click();
   await expect(owner.getByText('QA realtor (Realtor)', { exact: true }).first()).toBeVisible();
   await expect(owner.getByText(rawTranscript.trim(), { exact: true })).toBeVisible();
@@ -382,7 +576,7 @@ try {
   await owner.getByRole('button', { name: /Seller/ }).first().click();
   await expect(owner.locator('p').filter({ hasText: 'QA seller typed message' }).first()).toBeVisible();
 
-  // Owner Units 9 -> 10 switch propagates to Walkthrough & Tenants
+  // Owner Units 9 -> 10 switch propagates to Walkthrough desktop matrix & Tenants
   await owner.getByRole('link', { name: 'Overview', exact: true }).click();
   await owner.getByRole('button', { name: '10 units', exact: true }).click();
   await expect(owner.getByText('Saved', { exact: true })).toBeVisible({ timeout: 5000 });
@@ -407,7 +601,7 @@ try {
     await expect(owner.getByRole('link', { name: 'Strategy ideas', exact: true })).toHaveCount(0);
     await expect(owner.getByText('QA Private Strategy', { exact: false })).toHaveCount(0);
   }
-  log('owner: all tabs, walkthrough mutual visibility, comps persistence, strategy CRUD, all messages received, See as previews');
+  log('owner: 360px nav + 1440px matrix, walkthrough mutual visibility, Unit 10, comps, strategy CRUD, all messages, See as');
 
   // 7. DIRECT RLS ISOLATION QUERIES
   const get = async (role, table) => check(await users[role].client.from(table).select('*').eq('deal_id', deal.id), `Read ${role} ${table}`);
@@ -415,13 +609,15 @@ try {
   for (const role of ['seller', 'reviewer', 'lender', 'viewer']) {
     expect((await get(role, 'commercial_tenant_leads')).length).toBe(0);
     expect((await get(role, 'commercial_walkthrough_photos')).length).toBe(0);
+    expect((await get(role, 'commercial_walkthrough_videos')).length).toBe(0);
     expect((await get(role, 'commercial_walkthrough_notes')).length).toBe(0);
     expect((await get(role, 'commercial_strategy_ideas')).length).toBe(0);
   }
   expect((await get('realtor', 'commercial_strategy_ideas')).length).toBe(0);
   expect((await get('realtor', 'commercial_tenant_leads')).length).toBeGreaterThan(0);
-  expect((await get('realtor', 'commercial_walkthrough_photos')).length).toBeGreaterThanOrEqual(2);
-  expect((await get('realtor', 'commercial_walkthrough_notes')).length).toBeGreaterThan(0);
+  expect((await get('realtor', 'commercial_walkthrough_photos')).length).toBeGreaterThanOrEqual(4);
+  expect((await get('realtor', 'commercial_walkthrough_videos')).length).toBeGreaterThanOrEqual(1);
+  expect((await get('realtor', 'commercial_walkthrough_notes')).length).toBeGreaterThanOrEqual(4);
 
   for (const role of ['lender', 'seller', 'viewer']) {
     expect((await get(role, 'commercial_comps')).length).toBe(0);
@@ -435,19 +631,24 @@ try {
     expect(badCap.error).toBeTruthy();
   }
 
-  // Storage RLS: seller, reviewer, lender, viewer cannot sign v5 walkthrough media
+  // Storage RLS: seller, reviewer, lender, viewer cannot sign v5 walkthrough photo, video or audio
   const wtPhotos = await get('owner', 'commercial_walkthrough_photos');
+  const wtVideos = await get('owner', 'commercial_walkthrough_videos');
   const wtNotes = await get('owner', 'commercial_walkthrough_notes');
   const sampleV5Path = wtPhotos[0]?.storage_path;
+  const sampleVideoPath = wtVideos[0]?.storage_path;
   expect(sampleV5Path).toBeTruthy();
+  expect(sampleVideoPath).toBeTruthy();
   for (const role of ['seller', 'reviewer', 'lender', 'viewer']) {
-    const signed = await users[role].client.storage.from('commercial-files').createSignedUrl(sampleV5Path, 60);
-    expect(signed.error).toBeTruthy();
+    const signedP = await users[role].client.storage.from('commercial-files').createSignedUrl(sampleV5Path, 60);
+    expect(signedP.error).toBeTruthy();
+    const signedV = await users[role].client.storage.from('commercial-files').createSignedUrl(sampleVideoPath, 60);
+    expect(signedV.error).toBeTruthy();
   }
   const ownerSigned = check(await users.owner.client.storage.from('commercial-files').createSignedUrl(sampleV5Path, 60), 'Owner sign v5 photo');
   expect((await fetch(ownerSigned.signedUrl)).ok).toBe(true);
-  const realtorSigned = check(await users.realtor.client.storage.from('commercial-files').createSignedUrl(sampleV5Path, 60), 'Realtor sign v5 photo');
-  expect((await fetch(realtorSigned.signedUrl)).ok).toBe(true);
+  const realtorSignedV = check(await users.realtor.client.storage.from('commercial-files').createSignedUrl(sampleVideoPath, 60), 'Realtor sign v5 video');
+  expect((await fetch(realtorSignedV.signedUrl)).ok).toBe(true);
 
   // Legacy RLS checks
   for (const role of ['seller', 'realtor', 'reviewer', 'lender', 'viewer']) {
@@ -457,7 +658,7 @@ try {
   for (const role of ['realtor', 'reviewer', 'lender', 'viewer']) {
     expect((await get(role, 'commercial_seller_loans')).length).toBe(0);
   }
-  log(`RLS isolation verified across all 6 roles + storage (${wtPhotos.length} photos, ${wtNotes.length} notes)`);
+  log(`RLS isolation verified across all 6 roles + storage (${wtPhotos.length} photos, ${wtVideos.length} videos, ${wtNotes.length} notes)`);
   console.log(`RESULT all v5 + v4 real-role end-to-end checks passed on ${new URL(baseURL).origin}`);
 } catch (error) {
   console.error(`FAIL live role check: ${error.name}`);
@@ -468,9 +669,10 @@ try {
   for (const c of contexts) await c.close().catch(() => {});
   await browser?.close().catch(() => {});
   if (deal) {
-    const [uFiles, wPhotos, wNotes] = await Promise.all([
+    const [uFiles, wPhotos, wVideos, wNotes] = await Promise.all([
       admin.from('commercial_uploads').select('storage_path').eq('deal_id', deal.id),
       admin.from('commercial_walkthrough_photos').select('storage_path').eq('deal_id', deal.id),
+      admin.from('commercial_walkthrough_videos').select('storage_path').eq('deal_id', deal.id),
       admin.from('commercial_walkthrough_notes').select('storage_path').eq('deal_id', deal.id),
     ]);
     const paths = [
@@ -478,6 +680,7 @@ try {
         ...objects,
         ...(uFiles.data || []).map((f) => f.storage_path),
         ...(wPhotos.data || []).map((f) => f.storage_path),
+        ...(wVideos.data || []).map((f) => f.storage_path),
         ...(wNotes.data || []).map((f) => f.storage_path).filter(Boolean),
       ]),
     ];

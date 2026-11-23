@@ -219,11 +219,11 @@ export default function Owner({ deal: initial, me, tab }) {
   const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-4 space-y-2.5">
         <Tabs tabs={TABS} active={active} base={`#/d/${deal.slug}`} />
-        <div className="mb-5 flex flex-wrap items-center gap-1 text-sm">
+        <div className="flex flex-wrap items-center gap-1.5 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>
-          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
+          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[36px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
         </div>
       </div>
 

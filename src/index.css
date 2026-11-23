@@ -13,10 +13,13 @@
   --color-good: #2f6f4f;
 }
 
-html, body { background: var(--color-paper); color: var(--color-ink); }
+html, body { background: var(--color-paper); color: var(--color-ink); overflow-x: clip; }
 body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 * { box-sizing: border-box; }
 main, section, .grid > *, .flex > * { min-width: 0; }
+.flex > .shrink-0 { min-width: auto; flex-shrink: 0; }
+.nav-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; max-width: 100%; }
+.nav-tabs > a, .nav-tabs > button { flex: 0 0 auto; min-width: max-content; white-space: nowrap; }
 button, input, textarea, select { font: inherit; }
 button, a, input, textarea, select { touch-action: manipulation; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--color-warm); outline-offset: 3px; }

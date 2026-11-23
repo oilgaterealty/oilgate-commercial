@@ -1,21 +1,67 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { ROOMS, unitCount, v5Access } from '../lib/leaseUp.js';
 import { when, roleLabel } from '../lib/format.js';
+import { MAX_RECORDING_MS, WHISPER_ENGINE_LABEL, transcribeAudio } from '../lib/dictation.js';
+import { assembleSessionAudio } from '../lib/audioStitch.js';
+import { mediaCoordinator } from '../lib/mediaCoordinator.js';
+import {
+  AUDIO_STATUS,
+  MEDIA_STATUS,
+  appendAudioChunk,
+  canReportVoiceNoteSynced,
+  createAudioSession,
+  deleteAudioSession,
+  deleteMediaItem,
+  enqueueMediaItem,
+  getSessionSegments,
+  isUsingMemoryFallback,
+  listAudioSessions,
+  listMediaQueue,
+  makeScopeKey,
+  requestPersistentStorage,
+  updateAudioSession,
+  updateMediaItem,
+} from '../lib/walkthroughStore.js';
 import { Button, Card, CardTitle, Empty } from '../components/Shell.jsx';
-import { DictationMic } from '../components/Dictation.jsx';
+import WalkthroughCamera from '../components/WalkthroughCamera.jsx';
 
-const PHOTO_EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' };
-const MAX_BYTES = 20 * 1024 * 1024;
+const PHOTO_EXT = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+};
+const VIDEO_EXT = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'video/x-m4v': 'm4v',
+};
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
-const voiceExt = (type) => (type?.includes('mp4') ? 'm4a' : type?.includes('ogg') ? 'ogg' : type?.includes('wav') ? 'wav' : 'webm');
-const storagePathFor = (dealId, uid, ext) => `commercial-v5/${dealId}/walkthrough/${uid}/${crypto.randomUUID()}.${ext}`;
+const voiceExt = (type) =>
+  type?.includes('wav') ? 'wav' : type?.includes('mp4') ? 'm4a' : type?.includes('ogg') ? 'ogg' : 'webm';
+const storagePathFor = (dealId, uid, ext) =>
+  `commercial-v5/${dealId}/walkthrough/${uid}/${crypto.randomUUID()}.${ext}`;
 const roomLabel = (key) => ROOMS.find(([k]) => k === key)?.[1] || key;
 const authorTag = (row) => {
   const role = roleLabel[row.author_role] || row.author_role;
   return row.author_name && row.author_name.toLowerCase() !== role.toLowerCase()
     ? `${row.author_name} (${role})`
     : role;
+};
+const fmtClock = (ms) => {
+  const s = Math.max(0, Math.floor((ms || 0) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+const fmtBytes = (bytes) => {
+  const b = Math.max(0, bytes || 0);
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 };
 
 function useSignedUrls(paths) {
@@ -24,132 +70,937 @@ function useSignedUrls(paths) {
   useEffect(() => {
     let active = true;
     const list = JSON.parse(key);
-    if (!list.length) { setUrls({}); return; }
-    const load = () => supabase.storage.from(BUCKET).createSignedUrls(list, 900).then(({ data }) => {
-      if (active) setUrls(Object.fromEntries((data || []).map((r) => [r.path, r.signedUrl])));
-    });
+    if (!list.length) {
+      setUrls({});
+      return;
+    }
+    const load = () =>
+      supabase.storage
+        .from(BUCKET)
+        .createSignedUrls(list, 900)
+        .then(({ data }) => {
+          if (active) setUrls(Object.fromEntries((data || []).map((r) => [r.path, r.signedUrl])));
+        });
     void load();
     const t = setInterval(load, 13 * 60_000);
-    return () => { active = false; clearInterval(t); };
+    return () => {
+      active = false;
+      clearInterval(t);
+    };
   }, [key]);
   return urls;
 }
 
 export default function Walkthrough({ deal, me, role, preview }) {
   const access = v5Access(role);
-  const edit = access.editWalkthrough && !preview;
+  const edit = access.editWalkthrough && !preview && Boolean(me?.uid);
+  const scopeKey = edit ? makeScopeKey(deal.id, me.uid) : '';
+
   const [units, setUnits] = useState(9);
   const [selectedUnit, setSelectedUnit] = useState(1);
   const [selectedRoom, setSelectedRoom] = useState(ROOMS[0][0]);
+  const [showMatrix, setShowMatrix] = useState(false);
+
   const [photos, setPhotos] = useState(null);
+  const [videos, setVideos] = useState(null);
   const [notes, setNotes] = useState(null);
   const [loadErr, setLoadErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
-  const [noteDraft, setNoteDraft] = useState(null); // { text, audio }
   const [refresh, setRefresh] = useState(0);
+  const [online, setOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
 
+  const [localSessions, setLocalSessions] = useState([]);
+  const [localMedia, setLocalMedia] = useState([]);
+  const [whisperPhases, setWhisperPhases] = useState({});
+  const [localAudioUrls, setLocalAudioUrls] = useState({});
+  const [cameraModal, setCameraModal] = useState(null); // { mode: 'photo' | 'video', unit, room, sharedStream }
+  const [activeVoiceUi, setActiveVoiceUi] = useState(null); // { sessionId, unitNumber, room, elapsedMs, chunkCount, totalBytes }
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
+  const [retranscribingId, setRetranscribingId] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
+
+  const mountedRef = useRef(true);
+  const chunkWriteQueueRef = useRef(Promise.resolve());
+  const activeVoiceRef = useRef(null);
+  const handoffStreamRef = useRef(null);
+  const localSessionsRef = useRef([]);
+  const localMediaRef = useRef([]);
+  const mediaPreviewCacheRef = useRef(new Map());
+  const audioPreviewCacheRef = useRef(new Map());
+
+  localSessionsRef.current = localSessions;
+  localMediaRef.current = localMedia;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      for (const entry of mediaPreviewCacheRef.current.values()) URL.revokeObjectURL(entry.url);
+      mediaPreviewCacheRef.current.clear();
+      for (const url of audioPreviewCacheRef.current.values()) URL.revokeObjectURL(url);
+      audioPreviewCacheRef.current.clear();
+      handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
+      handoffStreamRef.current = null;
+    };
+  }, []);
+
+  // Load remote Supabase data.
   useEffect(() => {
     if (!access.walkthrough) return;
     let live = true;
     Promise.all([
       supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
       supabase.from('commercial_walkthrough_photos').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }),
+      supabase.from('commercial_walkthrough_videos').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }),
       supabase.from('commercial_walkthrough_notes').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }),
-    ]).then(([m, p, n]) => {
+    ]).then(([m, p, v, n]) => {
       if (!live) return;
       setUnits(unitCount(m.data?.base?.units));
       setPhotos(p.data || []);
+      setVideos(v.data || []);
       setNotes(n.data || []);
-      setLoadErr(p.error || n.error ? 'Walkthrough could not load. Refresh to try again.' : '');
+      setLoadErr(p.error || v.error || n.error ? 'Walkthrough could not load. Refresh to try again.' : '');
     });
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [deal.id, access.walkthrough, refresh]);
 
+  // Load user-scoped local IndexedDB audio sessions and pending media queue.
+  const reloadLocalState = useCallback(async () => {
+    if (!scopeKey) {
+      setLocalSessions([]);
+      setLocalMedia([]);
+      return;
+    }
+    const [sessions, queue] = await Promise.all([listAudioSessions(scopeKey), listMediaQueue(scopeKey)]);
+    if (!mountedRef.current) return;
+    setLocalSessions(sessions);
+    setLocalMedia(queue);
+  }, [scopeKey]);
+
+  useEffect(() => {
+    void reloadLocalState();
+  }, [reloadLocalState]);
+
+  // Maintain preview URLs for queued local photos & videos without leaking object URLs.
+  const localMediaWithUrls = useMemo(() => {
+    const seenIds = new Set();
+    const out = localMedia.map((item) => {
+      seenIds.add(item.id);
+      const cached = mediaPreviewCacheRef.current.get(item.id);
+      let previewUrl = cached?.url;
+      if (!cached || cached.blob !== item.blob) {
+        if (cached) URL.revokeObjectURL(cached.url);
+        previewUrl = URL.createObjectURL(item.blob);
+        mediaPreviewCacheRef.current.set(item.id, { blob: item.blob, url: previewUrl });
+      }
+      return { ...item, previewUrl };
+    });
+    for (const [id, entry] of mediaPreviewCacheRef.current.entries()) {
+      if (!seenIds.has(id)) {
+        URL.revokeObjectURL(entry.url);
+        mediaPreviewCacheRef.current.delete(id);
+      }
+    }
+    return out;
+  }, [localMedia]);
+
   const unit = Math.min(selectedUnit, units);
+
+  // Hydrate playable <audio> URLs for paused/ready/failed sessions in the current room.
+  const loadSessionAudioPreview = useCallback(async (sessionId) => {
+    try {
+      const { segmentBlobs, session } = await getSessionSegments(sessionId);
+      if (!segmentBlobs.length) return;
+      let playableBlob;
+      try {
+        const assembled = await assembleSessionAudio(segmentBlobs, session?.mimeType || 'audio/webm');
+        playableBlob = assembled.blob;
+      } catch {
+        playableBlob = segmentBlobs[0];
+      }
+      const nextUrl = URL.createObjectURL(playableBlob);
+      const prev = audioPreviewCacheRef.current.get(sessionId);
+      if (prev) URL.revokeObjectURL(prev);
+      audioPreviewCacheRef.current.set(sessionId, nextUrl);
+      if (mountedRef.current) {
+        setLocalAudioUrls((m) => ({ ...m, [sessionId]: nextUrl }));
+      }
+    } catch {}
+  }, []);
+
+  const roomLocalSessions = useMemo(
+    () => localSessions.filter((s) => s.unitNumber === unit && s.room === selectedRoom),
+    [localSessions, unit, selectedRoom]
+  );
+
+  useEffect(() => {
+    for (const s of roomLocalSessions) {
+      if (s.status !== AUDIO_STATUS.RECORDING && s.chunkCount > 0 && !localAudioUrls[s.id]) {
+        void loadSessionAudioPreview(s.id);
+      }
+    }
+  }, [roomLocalSessions, localAudioUrls, loadSessionAudioPreview]);
+
   const roomPhotos = useMemo(
     () => (photos || []).filter((x) => x.unit_number === unit && x.room === selectedRoom),
     [photos, unit, selectedRoom]
+  );
+  const roomVideos = useMemo(
+    () => (videos || []).filter((x) => x.unit_number === unit && x.room === selectedRoom),
+    [videos, unit, selectedRoom]
   );
   const roomNotes = useMemo(
     () => (notes || []).filter((x) => x.unit_number === unit && x.room === selectedRoom),
     [notes, unit, selectedRoom]
   );
 
+  const roomPendingPhotos = useMemo(
+    () => localMediaWithUrls.filter((x) => x.kind === 'photo' && x.unitNumber === unit && x.room === selectedRoom),
+    [localMediaWithUrls, unit, selectedRoom]
+  );
+  const roomPendingVideos = useMemo(
+    () => localMediaWithUrls.filter((x) => x.kind === 'video' && x.unitNumber === unit && x.room === selectedRoom),
+    [localMediaWithUrls, unit, selectedRoom]
+  );
+
   const signedPaths = useMemo(
-    () => [...roomPhotos.map((p) => p.storage_path), ...roomNotes.map((n) => n.storage_path).filter(Boolean)],
-    [roomPhotos, roomNotes]
+    () => [
+      ...roomPhotos.map((p) => p.storage_path),
+      ...roomVideos.map((v) => v.storage_path),
+      ...roomNotes.map((n) => n.storage_path).filter(Boolean),
+    ],
+    [roomPhotos, roomVideos, roomNotes]
   );
   const urls = useSignedUrls(signedPaths);
 
   const counts = useMemo(() => {
     const map = {};
-    for (const p of photos || []) {
-      const k = `${p.unit_number}:${p.room}`;
-      map[k] = map[k] || { p: 0, n: 0 };
-      map[k].p++;
-    }
-    for (const n of notes || []) {
-      const k = `${n.unit_number}:${n.room}`;
-      map[k] = map[k] || { p: 0, n: 0 };
-      map[k].n++;
+    const add = (u, r, key) => {
+      const k = `${u}:${r}`;
+      map[k] = map[k] || { p: 0, v: 0, n: 0, pending: 0 };
+      map[k][key]++;
+    };
+    for (const p of photos || []) add(p.unit_number, p.room, 'p');
+    for (const v of videos || []) add(v.unit_number, v.room, 'v');
+    for (const n of notes || []) add(n.unit_number, n.room, 'n');
+    for (const q of localMedia) add(q.unitNumber, q.room, 'pending');
+    for (const s of localSessions) add(s.unitNumber, s.room, 'pending');
+    return map;
+  }, [photos, videos, notes, localMedia, localSessions]);
+
+  const unitTotals = useMemo(() => {
+    const map = {};
+    for (const u of range(units)) {
+      let total = 0;
+      let pending = 0;
+      for (const [r] of ROOMS) {
+        const c = counts[`${u}:${r}`];
+        if (c) {
+          total += c.p + c.v + c.n;
+          pending += c.pending;
+        }
+      }
+      map[u] = { total, pending };
     }
     return map;
-  }, [photos, notes]);
+  }, [counts, units]);
 
-  if (!access.walkthrough) return null;
+  const totalPendingCount = localSessions.length + localMedia.length;
 
-  const totalRooms = units * ROOMS.length;
-  const startedRooms = range(units).reduce(
-    (sum, u) => sum + ROOMS.filter(([r]) => (counts[`${u}:${r}`]?.p || 0) + (counts[`${u}:${r}`]?.n || 0) > 0).length,
-    0
+  // Pause active voice recording cleanly while preserving every written chunk.
+  const pauseActiveVoice = useCallback(
+    async (reason = 'Paused — audio saved on device.', keepStreamForHandoff = false) => {
+      const active = activeVoiceRef.current;
+      if (!active) return null;
+      activeVoiceRef.current = null;
+
+      clearInterval(active.timer);
+      clearTimeout(active.maxTimer);
+
+      const { sessionId, recorder, stream, startedAt, elapsedBaseMs } = active;
+      const durationMs = elapsedBaseMs + Math.max(0, Date.now() - startedAt);
+
+      if (recorder && recorder.state === 'recording') {
+        await new Promise((resolve) => {
+          const prevOnStop = recorder.onstop;
+          recorder.onstop = async (ev) => {
+            try {
+              await prevOnStop?.(ev);
+            } finally {
+              resolve();
+            }
+          };
+          try {
+            recorder.requestData?.();
+          } catch {}
+          try {
+            recorder.stop();
+          } catch {
+            resolve();
+          }
+        });
+      }
+
+      await chunkWriteQueueRef.current;
+
+      if (keepStreamForHandoff) {
+        handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
+        handoffStreamRef.current = stream;
+      } else {
+        stream?.getTracks().forEach((t) => t.stop());
+      }
+      mediaCoordinator.release('walkthrough-voice');
+
+      const updated = await updateAudioSession(sessionId, {
+        status: AUDIO_STATUS.PAUSED,
+        pauseReason: reason,
+        durationMs,
+      });
+      if (mountedRef.current) {
+        setActiveVoiceUi(null);
+        setLocalSessions((prev) => prev.map((s) => (s.id === sessionId && updated ? updated : s)));
+        void loadSessionAudioPreview(sessionId);
+      }
+      return keepStreamForHandoff ? stream : null;
+    },
+    [loadSessionAudioPreview]
   );
 
-  const uploadPhotos = async (e) => {
-    const files = [...(e.target.files || [])];
-    e.target.value = '';
-    if (!edit || !files.length || busy) return;
-    setBusy(true);
-    setStatus('');
-    let saved = 0;
-    const errs = [];
-    try {
-      for (const f of files) {
-        const extFromName = (f.name || '').split('.').pop()?.toLowerCase();
-        const ext = PHOTO_EXT[f.type] || (['jpg', 'jpeg', 'png', 'webp', 'heic'].includes(extFromName) ? extFromName : null);
-        if (!ext || !f.size || f.size > MAX_BYTES) {
-          errs.push('Use JPEG, PNG, WebP or HEIC under 20 MB.');
-          continue;
+  // Stop voice recording when navigating away (SPA unmount) without losing chunks.
+  useEffect(() => {
+    return () => {
+      const active = activeVoiceRef.current;
+      if (!active) return;
+      activeVoiceRef.current = null;
+      clearInterval(active.timer);
+      clearTimeout(active.maxTimer);
+      try {
+        if (active.recorder?.state === 'recording') {
+          active.recorder.requestData?.();
+          active.recorder.stop();
         }
-        const path = storagePathFor(deal.id, me.uid, ext === 'jpeg' ? 'jpg' : ext);
-        const up = await supabase.storage.from(BUCKET).upload(path, f, { contentType: f.type || 'image/jpeg' });
-        if (up.error) { errs.push('A photo could not upload.'); continue; }
-        const ins = await supabase.from('commercial_walkthrough_photos').insert({
+      } catch {}
+      active.stream?.getTracks().forEach((t) => t.stop());
+      mediaCoordinator.release('walkthrough-voice');
+      void chunkWriteQueueRef.current.then(() =>
+        updateAudioSession(active.sessionId, {
+          status: AUDIO_STATUS.PAUSED,
+          pauseReason: 'Navigated away — audio preserved.',
+          durationMs: active.elapsedBaseMs + Math.max(0, Date.now() - active.startedAt),
+        })
+      );
+    };
+  }, []);
+
+  // Pause cleanly if app is backgrounded/locked on Android or iOS.
+  useEffect(() => {
+    const handleInterrupt = () => {
+      if (document.visibilityState === 'hidden' && activeVoiceRef.current) {
+        void pauseActiveVoice('App backgrounded or screen locked — audio preserved.');
+      }
+    };
+    const handlePageHide = () => {
+      if (activeVoiceRef.current) {
+        void pauseActiveVoice('Page left — audio preserved.');
+      }
+    };
+    document.addEventListener('visibilitychange', handleInterrupt);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleInterrupt);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [pauseActiveVoice]);
+
+  const runWhisperOnSession = useCallback(
+    async (sessionId, { overwriteExisting = false } = {}) => {
+      const { session, segmentBlobs, totalBytes } = await getSessionSegments(sessionId);
+      if (!session) return;
+      if (!segmentBlobs.length || !totalBytes) {
+        const failed = await updateAudioSession(sessionId, {
+          status: AUDIO_STATUS.MODEL_FAILED,
+          transcriptError: 'No audio chunks were recorded. Try recording again.',
+        });
+        if (mountedRef.current && failed) {
+          setLocalSessions((prev) => prev.map((s) => (s.id === sessionId ? failed : s)));
+        }
+        return;
+      }
+
+      void loadSessionAudioPreview(sessionId);
+
+      const transcribing = await updateAudioSession(sessionId, {
+        status: AUDIO_STATUS.TRANSCRIBING,
+        pauseReason: '',
+        transcriptError: '',
+      });
+      if (mountedRef.current && transcribing) {
+        setLocalSessions((prev) => prev.map((s) => (s.id === sessionId ? transcribing : s)));
+        setWhisperPhases((m) => ({ ...m, [sessionId]: 'Loading local Whisper model…' }));
+      }
+
+      try {
+        const res = await transcribeAudio(segmentBlobs, (phase) => {
+          if (mountedRef.current) setWhisperPhases((m) => ({ ...m, [sessionId]: phase }));
+        });
+        const spoken = (res.text || '').trim();
+        const latest = localSessionsRef.current.find((x) => x.id === sessionId) || session;
+        if (!spoken) {
+          const emptyFail = await updateAudioSession(sessionId, {
+            status: AUDIO_STATUS.MODEL_FAILED,
+            transcriptError: 'No speech detected. Original audio is safe — type notes, Retry Whisper, or save audio backup.',
+          });
+          if (mountedRef.current && emptyFail) {
+            setLocalSessions((prev) => prev.map((s) => (s.id === sessionId ? emptyFail : s)));
+          }
+          return;
+        }
+        const existingText = overwriteExisting ? '' : (latest.rawTranscript || '').trim();
+        const combined = existingText ? `${existingText} ${spoken}` : spoken;
+        const ready = await updateAudioSession(sessionId, {
+          status: AUDIO_STATUS.READY,
+          rawTranscript: combined,
+          transcriptError: '',
+          syncError: '',
+        });
+        if (mountedRef.current && ready) {
+          setLocalSessions((prev) => prev.map((s) => (s.id === sessionId ? ready : s)));
+        }
+      } catch (err) {
+        const failed = await updateAudioSession(sessionId, {
+          status: AUDIO_STATUS.MODEL_FAILED,
+          transcriptError:
+            err?.message || 'Local Whisper could not finish. Original audio is safe — tap Retry Whisper.',
+        });
+        if (mountedRef.current && failed) {
+          setLocalSessions((prev) => prev.map((s) => (s.id === sessionId ? failed : s)));
+        }
+      } finally {
+        if (mountedRef.current) {
+          setWhisperPhases((m) => {
+            const copy = { ...m };
+            delete copy[sessionId];
+            return copy;
+          });
+        }
+      }
+    },
+    [loadSessionAudioPreview]
+  );
+
+  const startVoiceSession = async (resumeSession = null) => {
+    if (!edit || activeVoiceRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setStatus('Microphone recording is unavailable in this browser.');
+      return;
+    }
+
+    const targetUnit = resumeSession ? resumeSession.unitNumber : unit;
+    const targetRoom = resumeSession ? resumeSession.room : selectedRoom;
+
+    const lock = mediaCoordinator.acquire('walkthrough-voice', {
+      unit: targetUnit,
+      room: targetRoom,
+      onPauseRequest: () => pauseActiveVoice('Paused for video recording — audio saved.', true),
+    });
+    if (!lock.ok) {
+      setStatus(lock.message);
+      return;
+    }
+
+    setStatus('');
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      mediaCoordinator.release('walkthrough-voice');
+      setStatus('Could not access microphone. Check browser permission.');
+      return;
+    }
+
+    void requestPersistentStorage();
+
+    const codec = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(
+      (x) => MediaRecorder.isTypeSupported?.(x)
+    );
+
+    let session = resumeSession;
+    if (!session) {
+      session = await createAudioSession({
+        dealId: deal.id,
+        userUid: me.uid,
+        authorRole: role,
+        authorName: me.name || roleLabel[role],
+        unitNumber: targetUnit,
+        room: targetRoom,
+        mimeType: (codec || 'audio/webm').split(';')[0],
+      });
+      if (mountedRef.current) {
+        setLocalSessions((prev) => [session, ...prev]);
+      }
+    } else {
+      session = await updateAudioSession(session.id, {
+        status: AUDIO_STATUS.RECORDING,
+        pauseReason: '',
+        transcriptError: '',
+        syncError: '',
+      });
+      if (mountedRef.current && session) {
+        setLocalSessions((prev) => prev.map((s) => (s.id === session.id ? session : s)));
+      }
+    }
+
+    const segmentIndex = session.nextSegmentIndex || 0;
+    let seq = 0;
+    const recorder = new MediaRecorder(stream, codec ? { mimeType: codec } : undefined);
+    const startedAt = Date.now();
+    const elapsedBaseMs = session.durationMs || 0;
+
+    recorder.ondataavailable = (e) => {
+      if (!e.data || !e.data.size) return;
+      const chunkBlob = e.data;
+      const chunkSeq = seq++;
+      chunkWriteQueueRef.current = chunkWriteQueueRef.current
+        .then(() => appendAudioChunk(session.id, segmentIndex, chunkSeq, chunkBlob))
+        .then((saved) => {
+          if (!saved || !mountedRef.current) return;
+          setLocalSessions((prev) =>
+            prev.map((s) =>
+              s.id === session.id
+                ? {
+                    ...s,
+                    chunkCount: (s.chunkCount || 0) + 1,
+                    totalBytes: (s.totalBytes || 0) + chunkBlob.size,
+                    nextSegmentIndex: Math.max(s.nextSegmentIndex || 0, segmentIndex + 1),
+                    updatedAt: Date.now(),
+                  }
+                : s
+            )
+          );
+          if (activeVoiceRef.current?.sessionId === session.id) {
+            setActiveVoiceUi((ui) =>
+              ui
+                ? {
+                    ...ui,
+                    chunkCount: ui.chunkCount + 1,
+                    totalBytes: ui.totalBytes + chunkBlob.size,
+                  }
+                : ui
+            );
+          }
+        })
+        .catch(() => {});
+    };
+
+    recorder.onerror = () => {
+      if (activeVoiceRef.current?.sessionId === session.id) {
+        void pauseActiveVoice('Microphone interrupted — saved all captured audio.');
+      }
+    };
+
+    for (const track of stream.getAudioTracks()) {
+      track.onended = () => {
+        if (activeVoiceRef.current?.sessionId === session.id) {
+          void pauseActiveVoice('Microphone disconnected or interrupted — saved all captured audio.');
+        }
+      };
+    }
+
+    const timer = setInterval(() => {
+      if (!mountedRef.current || activeVoiceRef.current?.sessionId !== session.id) return;
+      setActiveVoiceUi((ui) =>
+        ui ? { ...ui, elapsedMs: elapsedBaseMs + Math.max(0, Date.now() - startedAt) } : ui
+      );
+    }, 500);
+
+    const maxTimer = setTimeout(() => {
+      if (activeVoiceRef.current?.sessionId === session.id) {
+        void pauseActiveVoice('30-minute segment saved — tap Resume to keep narrating.');
+      }
+    }, MAX_RECORDING_MS);
+
+    activeVoiceRef.current = {
+      sessionId: session.id,
+      unitNumber: targetUnit,
+      room: targetRoom,
+      recorder,
+      stream,
+      startedAt,
+      elapsedBaseMs,
+      timer,
+      maxTimer,
+    };
+
+    setActiveVoiceUi({
+      sessionId: session.id,
+      unitNumber: targetUnit,
+      room: targetRoom,
+      elapsedMs: elapsedBaseMs,
+      chunkCount: session.chunkCount || 0,
+      totalBytes: session.totalBytes || 0,
+    });
+
+    recorder.start(1000);
+  };
+
+  const stopAndTranscribeActiveVoice = async () => {
+    const active = activeVoiceRef.current;
+    if (!active) return;
+    const targetSessionId = active.sessionId;
+    await pauseActiveVoice('Processing with local Whisper…', false);
+    await runWhisperOnSession(targetSessionId);
+  };
+
+  const syncVoiceSession = async (session, allowAudioOnlyBackup = false) => {
+    if (!edit || !session) return;
+    const transcriptText = (session.rawTranscript || '').trim();
+    if (!transcriptText && !allowAudioOnlyBackup) {
+      setStatus('Transcribe or type a note before saving, or choose Save audio backup.');
+      return;
+    }
+    if (!navigator.onLine) {
+      const off = await updateAudioSession(session.id, {
+        status: AUDIO_STATUS.SYNC_FAILED,
+        syncError: 'Offline — original audio and draft stay safe on this device.',
+      });
+      if (mountedRef.current && off) {
+        setLocalSessions((prev) => prev.map((s) => (s.id === session.id ? off : s)));
+      }
+      setStatus('Offline. Original audio stays saved locally until connection returns.');
+      return false;
+    }
+
+    let uploadedPath = null;
+    try {
+      const { segmentBlobs } = await getSessionSegments(session.id);
+      if (!segmentBlobs.length) {
+        throw new Error('Original audio chunks are missing.');
+      }
+      const assembled = await assembleSessionAudio(segmentBlobs, session.mimeType || 'audio/webm');
+      if (!assembled.blob || !assembled.blob.size) {
+        throw new Error('Original audio could not be assembled.');
+      }
+      if (assembled.blob.size > MAX_VIDEO_BYTES) {
+        throw new Error('Audio recording exceeds 50 MB limit.');
+      }
+
+      const ext = voiceExt(assembled.mimeType);
+      const candidatePath = storagePathFor(deal.id, me.uid, ext);
+      const up = await supabase.storage.from(BUCKET).upload(candidatePath, assembled.blob, {
+        contentType: assembled.mimeType,
+      });
+      if (up.error) {
+        throw new Error('Could not upload original audio to private storage.');
+      }
+      uploadedPath = candidatePath;
+
+      const durationSec =
+        assembled.durationSec || Math.max(1, Math.round((session.durationMs || 1000) / 1000));
+
+      const { data: inserted, error: insErr } = await supabase
+        .from('commercial_walkthrough_notes')
+        .insert({
           deal_id: deal.id,
-          unit_number: unit,
-          room: selectedRoom,
-          storage_path: path,
+          unit_number: session.unitNumber,
+          room: session.room,
+          raw_transcript: transcriptText,
+          transcript_status: transcriptText ? 'ready' : 'failed',
+          storage_path: uploadedPath,
+          audio_mime: assembled.mimeType,
+          audio_size_bytes: assembled.blob.size,
+          duration_sec: durationSec,
+          client_id: session.id,
           author_uid: me.uid,
           author_role: role,
-          author_name: me.name || roleLabel[role],
-        });
-        if (ins.error) {
-          await supabase.storage.from(BUCKET).remove([path]);
-          errs.push('A photo record could not save.');
-          continue;
-        }
-        saved++;
+          author_name: session.authorName || me.name || roleLabel[role],
+        })
+        .select('*')
+        .single();
+
+      if (insErr) {
+        await supabase.storage.from(BUCKET).remove([uploadedPath]).catch(() => {});
+        throw new Error(insErr.message || 'Voice note record could not save.');
       }
-    } catch {
-      errs.push('Upload interrupted.');
-    } finally {
-      setBusy(false);
-      setRefresh((x) => x + 1);
-      setStatus([saved ? `${saved} photo${saved === 1 ? '' : 's'} saved.` : '', ...new Set(errs)].filter(Boolean).join(' '));
+
+      if (!canReportVoiceNoteSynced({ remoteId: inserted?.id, remoteStoragePath: inserted?.storage_path })) {
+        throw new Error('Original audio path did not verify after upload.');
+      }
+
+      await deleteAudioSession(session.id);
+      const cachedUrl = audioPreviewCacheRef.current.get(session.id);
+      if (cachedUrl) {
+        URL.revokeObjectURL(cachedUrl);
+        audioPreviewCacheRef.current.delete(session.id);
+      }
+      if (mountedRef.current) {
+        setLocalSessions((prev) => prev.filter((s) => s.id !== session.id));
+        setRefresh((r) => r + 1);
+        setStatus(`Voice note + original audio saved to Unit ${session.unitNumber} ${roomLabel(session.room)}.`);
+      }
+      return true;
+    } catch (err) {
+      const msg = err?.message || 'Could not sync voice note. Audio remains safe on this device.';
+      const failed = await updateAudioSession(session.id, {
+        status: AUDIO_STATUS.SYNC_FAILED,
+        syncError: msg,
+      });
+      if (mountedRef.current && failed) {
+        setLocalSessions((prev) => prev.map((s) => (s.id === session.id ? failed : s)));
+        setStatus(msg);
+      }
+      return false;
     }
   };
 
-  const removePhoto = async (p) => {
+  const syncMediaItem = useCallback(
+    async (item) => {
+      if (!edit || !item) return false;
+      if (!navigator.onLine) {
+        const off = await updateMediaItem(item.id, {
+          status: MEDIA_STATUS.FAILED,
+          error: 'Offline — kept on device until connection returns.',
+        });
+        if (mountedRef.current && off) {
+          setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? off : m)));
+        }
+        return false;
+      }
+
+      const uploading = await updateMediaItem(item.id, { status: MEDIA_STATUS.UPLOADING, error: '' });
+      if (mountedRef.current && uploading) {
+        setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? uploading : m)));
+      }
+
+      const ext =
+        item.kind === 'video'
+          ? VIDEO_EXT[item.mimeType] || item.fileName.split('.').pop()?.toLowerCase() || 'mp4'
+          : PHOTO_EXT[item.mimeType] || item.fileName.split('.').pop()?.toLowerCase() || 'jpg';
+      const normalizedExt = ext === 'jpeg' ? 'jpg' : ext;
+      const path = storagePathFor(deal.id, me.uid, normalizedExt);
+
+      const up = await supabase.storage.from(BUCKET).upload(path, item.blob, {
+        contentType: item.mimeType,
+      });
+      if (up.error) {
+        const failed = await updateMediaItem(item.id, {
+          status: MEDIA_STATUS.FAILED,
+          error: `Upload failed (${up.error.message || 'network'}). Kept locally for retry.`,
+        });
+        if (mountedRef.current && failed) {
+          setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? failed : m)));
+        }
+        return false;
+      }
+
+      const table = item.kind === 'video' ? 'commercial_walkthrough_videos' : 'commercial_walkthrough_photos';
+      const row =
+        item.kind === 'video'
+          ? {
+              deal_id: deal.id,
+              unit_number: item.unitNumber,
+              room: item.room,
+              storage_path: path,
+              mime: item.mimeType,
+              size_bytes: item.sizeBytes,
+              duration_sec: item.durationSec,
+              author_uid: me.uid,
+              author_role: role,
+              author_name: item.authorName || me.name || roleLabel[role],
+            }
+          : {
+              deal_id: deal.id,
+              unit_number: item.unitNumber,
+              room: item.room,
+              storage_path: path,
+              author_uid: me.uid,
+              author_role: role,
+              author_name: item.authorName || me.name || roleLabel[role],
+            };
+
+      const ins = await supabase.from(table).insert(row);
+      if (ins.error) {
+        await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+        const failed = await updateMediaItem(item.id, {
+          status: MEDIA_STATUS.FAILED,
+          error: 'Could not save media record. Kept locally for retry.',
+        });
+        if (mountedRef.current && failed) {
+          setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? failed : m)));
+        }
+        return false;
+      }
+
+      await deleteMediaItem(item.id);
+      if (mountedRef.current) {
+        setLocalMedia((prev) => prev.filter((m) => m.id !== item.id));
+        setRefresh((r) => r + 1);
+      }
+      return true;
+    },
+    [deal.id, edit, me.name, me.uid, role]
+  );
+
+  const enqueueAndMaybeSyncFiles = async (files, kind, targetUnit = unit, targetRoom = selectedRoom) => {
+    if (!edit || !files.length) return;
+    setStatus('');
+    let queued = 0;
+    let synced = 0;
+    const errs = [];
+
+    for (const f of files) {
+      const extFromName = (f.name || '').split('.').pop()?.toLowerCase();
+      if (kind === 'photo') {
+        const ext = PHOTO_EXT[f.type] || (['jpg', 'jpeg', 'png', 'webp', 'heic'].includes(extFromName) ? extFromName : null);
+        if (!ext || !f.size || f.size > MAX_PHOTO_BYTES) {
+          errs.push('Photos must be JPEG, PNG, WebP or HEIC under 20 MB.');
+          continue;
+        }
+        const item = await enqueueMediaItem({
+          dealId: deal.id,
+          userUid: me.uid,
+          authorRole: role,
+          authorName: me.name || roleLabel[role],
+          unitNumber: targetUnit,
+          room: targetRoom,
+          kind: 'photo',
+          fileName: f.name || `photo.${ext}`,
+          mimeType: f.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+          blob: f,
+        });
+        queued++;
+        if (mountedRef.current) setLocalMedia((prev) => [item, ...prev]);
+        if (await syncMediaItem(item)) synced++;
+      } else {
+        const ext = VIDEO_EXT[f.type] || (['mp4', 'webm', 'mov', 'm4v'].includes(extFromName) ? extFromName : null);
+        if (!ext || !f.size || f.size > MAX_VIDEO_BYTES) {
+          errs.push('Videos must be MP4, WebM or MOV under 50 MB.');
+          continue;
+        }
+        const item = await enqueueMediaItem({
+          dealId: deal.id,
+          userUid: me.uid,
+          authorRole: role,
+          authorName: me.name || roleLabel[role],
+          unitNumber: targetUnit,
+          room: targetRoom,
+          kind: 'video',
+          fileName: f.name || `video.${ext}`,
+          mimeType: f.type || (ext === 'mov' ? 'video/quicktime' : `video/${ext}`),
+          blob: f,
+        });
+        queued++;
+        if (mountedRef.current) setLocalMedia((prev) => [item, ...prev]);
+        if (await syncMediaItem(item)) synced++;
+      }
+    }
+
+    const parts = [];
+    if (synced > 0) parts.push(`${synced} ${kind}${synced === 1 ? '' : 's'} saved.`);
+    if (queued > synced) parts.push(`${queued - synced} kept on device for retry.`);
+    if (errs.length) parts.push(...new Set(errs));
+    if (mountedRef.current && parts.length) setStatus(parts.join(' '));
+  };
+
+  const openMultiPhotoCamera = () => {
+    if (!edit || !mediaCoordinator.canRunPhotoCamera()) return;
+    setCameraModal({ mode: 'photo', unit, room: selectedRoom, sharedStream: null });
+  };
+
+  const closeMultiPhotoCamera = async () => {
+    const modal = cameraModal;
+    setCameraModal(null);
+    if (!modal || modal.mode !== 'photo') return;
+    const pendingForRoom = localMediaRef.current.filter(
+      (m) => m.kind === 'photo' && m.unitNumber === modal.unit && m.room === modal.room && m.status === MEDIA_STATUS.PENDING
+    );
+    if (!pendingForRoom.length) return;
+    if (!navigator.onLine) {
+      setStatus(`${pendingForRoom.length} photo${pendingForRoom.length === 1 ? '' : 's'} kept on device while offline.`);
+      return;
+    }
+    let saved = 0;
+    for (const item of [...pendingForRoom].reverse()) {
+      if (await syncMediaItem(item)) saved++;
+    }
+    if (mountedRef.current) {
+      const left = pendingForRoom.length - saved;
+      setStatus(
+        left === 0
+          ? `${saved} photo${saved === 1 ? '' : 's'} saved.`
+          : `${saved} photo${saved === 1 ? '' : 's'} saved, ${left} kept on device for retry.`
+      );
+    }
+  };
+
+  const openVideoRecorder = async () => {
+    if (!edit) return;
+    const handoff = await mediaCoordinator.prepareVideoHandoff();
+    setCameraModal({ mode: 'video', unit, room: selectedRoom, sharedStream: handoff.stream });
+  };
+
+  const closeVideoRecorder = () => {
+    handoffStreamRef.current?.getTracks().forEach((t) => t.stop());
+    handoffStreamRef.current = null;
+    setCameraModal(null);
+  };
+
+  const handleVideoRecorded = async (blob, meta) => {
+    const targetUnit = cameraModal?.unit || unit;
+    const targetRoom = cameraModal?.room || selectedRoom;
+    const item = await enqueueMediaItem({
+      dealId: deal.id,
+      userUid: me.uid,
+      authorRole: role,
+      authorName: me.name || roleLabel[role],
+      unitNumber: targetUnit,
+      room: targetRoom,
+      kind: 'video',
+      fileName: meta.fileName || 'walkthrough.webm',
+      mimeType: meta.mimeType || blob.type || 'video/webm',
+      durationSec: meta.durationSec,
+      blob,
+    });
+    if (mountedRef.current) setLocalMedia((prev) => [item, ...prev]);
+    const ok = await syncMediaItem(item);
+    if (mountedRef.current) {
+      setStatus(ok ? 'Video saved.' : 'Video saved on device. Tap Retry upload when ready.');
+    }
+  };
+
+  const syncAllPending = async () => {
+    if (!edit || syncingAll || !navigator.onLine) return;
+    setSyncingAll(true);
+    setStatus('');
+    let syncedMedia = 0;
+    let syncedNotes = 0;
+    try {
+      for (const item of [...localMediaRef.current].reverse()) {
+        if (await syncMediaItem(item)) syncedMedia++;
+      }
+      for (const s of [...localSessionsRef.current].reverse()) {
+        if (s.status === AUDIO_STATUS.READY || (s.status === AUDIO_STATUS.SYNC_FAILED && s.rawTranscript?.trim())) {
+          if (await syncVoiceSession(s)) syncedNotes++;
+        }
+      }
+      if (mountedRef.current) {
+        setStatus(`Synced ${syncedMedia} media file${syncedMedia === 1 ? '' : 's'} and ${syncedNotes} voice note${syncedNotes === 1 ? '' : 's'}.`);
+      }
+    } finally {
+      if (mountedRef.current) setSyncingAll(false);
+    }
+  };
+
+  const removeRemotePhoto = async (p) => {
     if (!edit || busy || !window.confirm('Remove this photo?')) return;
     setBusy(true);
     setStatus('');
@@ -165,45 +1016,23 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
   };
 
-  const saveVoiceNote = async () => {
-    if (!edit || busy || !noteDraft?.text?.trim()) return;
+  const removeRemoteVideo = async (v) => {
+    if (!edit || busy || !window.confirm('Remove this video?')) return;
     setBusy(true);
     setStatus('');
-    let uploadedPath = null;
     try {
-      if (noteDraft.audio && noteDraft.audio.size > 0 && noteDraft.audio.size <= MAX_BYTES) {
-        const path = storagePathFor(deal.id, me.uid, voiceExt(noteDraft.audio.type));
-        const up = await supabase.storage.from(BUCKET).upload(path, noteDraft.audio, {
-          contentType: (noteDraft.audio.type || 'audio/webm').split(';')[0],
-        });
-        if (!up.error) uploadedPath = path;
-      }
-      const { error } = await supabase.from('commercial_walkthrough_notes').insert({
-        deal_id: deal.id,
-        unit_number: unit,
-        room: selectedRoom,
-        raw_transcript: noteDraft.text.trim(),
-        storage_path: uploadedPath,
-        author_uid: me.uid,
-        author_role: role,
-        author_name: me.name || roleLabel[role],
-      });
-      if (error) {
-        if (uploadedPath) await supabase.storage.from(BUCKET).remove([uploadedPath]);
-        setStatus('Voice note could not save. Try again.');
-        return;
-      }
-      setNoteDraft(null);
-      setStatus('Voice note saved.');
-      setRefresh((x) => x + 1);
+      await supabase.storage.from(BUCKET).remove([v.storage_path]);
+      const { error } = await supabase.from('commercial_walkthrough_videos').delete().eq('id', v.id).eq('deal_id', deal.id);
+      setStatus(error ? 'Video could not be removed.' : 'Video removed.');
     } catch {
-      setStatus('Voice note could not save. Try again.');
+      setStatus('Video could not be removed.');
     } finally {
       setBusy(false);
+      setRefresh((x) => x + 1);
     }
   };
 
-  const removeNote = async (n) => {
+  const removeRemoteNote = async (n) => {
     if (!edit || busy || !window.confirm('Remove this voice note?')) return;
     setBusy(true);
     setStatus('');
@@ -219,197 +1048,934 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
   };
 
+  const saveEditedRemoteNote = async (n) => {
+    if (!edit || busy) return;
+    const text = editingNoteText.trim();
+    if (!text && !n.storage_path) {
+      setStatus('Transcript cannot be empty without stored audio.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from('commercial_walkthrough_notes')
+        .update({ raw_transcript: text, transcript_status: text ? 'ready' : 'failed' })
+        .eq('id', n.id)
+        .eq('deal_id', deal.id);
+      if (error) setStatus('Could not update transcript.');
+      else {
+        setEditingNoteId(null);
+        setStatus('Transcript updated.');
+        setRefresh((x) => x + 1);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retranscribeRemoteNote = async (n) => {
+    if (!edit || !n.storage_path || !urls[n.storage_path] || retranscribingId) return;
+    setRetranscribingId(n.id);
+    setStatus('Downloading audio for local Whisper retranscribe…');
+    try {
+      const resp = await fetch(urls[n.storage_path]);
+      if (!resp.ok) throw new Error('Audio download failed.');
+      const blob = await resp.blob();
+      const res = await transcribeAudio(blob, (phase) => {
+        if (mountedRef.current) setStatus(phase);
+      });
+      const text = (res.text || '').trim();
+      if (!text) throw new Error('No speech detected.');
+      const { error } = await supabase
+        .from('commercial_walkthrough_notes')
+        .update({ raw_transcript: text, transcript_status: 'ready' })
+        .eq('id', n.id)
+        .eq('deal_id', deal.id);
+      if (error) throw new Error('Could not save retranscribed text.');
+      setStatus('Transcript refreshed with local Whisper.');
+      setRefresh((x) => x + 1);
+    } catch (e) {
+      setStatus(e?.message || 'Retranscribe failed. Original audio is still intact.');
+    } finally {
+      if (mountedRef.current) setRetranscribingId(null);
+    }
+  };
+
+  if (!access.walkthrough) return null;
+
+  const totalRooms = units * ROOMS.length;
+  const startedRooms = range(units).reduce(
+    (sum, u) =>
+      sum +
+      ROOMS.filter(([r]) => {
+        const c = counts[`${u}:${r}`];
+        return c && c.p + c.v + c.n + c.pending > 0;
+      }).length,
+    0
+  );
+
+  const cameraCapturedPhotos = cameraModal?.mode === 'photo'
+    ? localMediaWithUrls.filter(
+        (m) => m.kind === 'photo' && m.unitNumber === cameraModal.unit && m.room === cameraModal.room
+      )
+    : [];
+
+  const matrixTable = (
+    <div className="overflow-x-auto max-w-full">
+      <table className="w-full min-w-[560px] border-separate border-spacing-1 text-left text-xs">
+        <thead>
+          <tr>
+            <th className="w-16 px-2 py-1 font-medium text-ink-soft">Unit</th>
+            {ROOMS.map(([r, label]) => (
+              <th key={r} className="px-2 py-1 font-medium text-ink-soft">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {range(units).map((u) => (
+            <tr key={u}>
+              <th scope="row" className="px-2 py-1 font-semibold text-ink">Unit {u}</th>
+              {ROOMS.map(([r, label]) => {
+                const c = counts[`${u}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
+                const active = u === unit && r === selectedRoom;
+                const empty = c.p === 0 && c.v === 0 && c.n === 0 && c.pending === 0;
+                return (
+                  <td key={r}>
+                    <button
+                      type="button"
+                      aria-label={`Unit ${u} ${label}: ${c.p} photos, ${c.v} videos, ${c.n} voice notes`}
+                      aria-pressed={active}
+                      onClick={() => {
+                        setSelectedUnit(u);
+                        setSelectedRoom(r);
+                        setStatus('');
+                      }}
+                      className={`min-h-[36px] w-full rounded-lg border px-2 py-1.5 text-center transition ${
+                        active
+                          ? 'border-ink bg-ink font-medium text-white'
+                          : empty
+                            ? 'border-dashed border-line bg-paper text-ink-soft hover:border-ink'
+                            : 'border-line bg-warm-soft/70 font-medium text-ink hover:border-ink'
+                      }`}
+                    >
+                      {empty ? '—' : `${c.p}p${c.v ? ` · ${c.v}v` : ''} · ${c.n}n${c.pending ? ` (+${c.pending})` : ''}`}
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {cameraModal && (
+        <WalkthroughCamera
+          mode={cameraModal.mode}
+          unit={cameraModal.unit}
+          roomLabel={roomLabel(cameraModal.room)}
+          sharedAudioStream={cameraModal.sharedStream}
+          capturedPhotos={cameraCapturedPhotos}
+          voiceBanner={
+            activeVoiceUi && (
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-red-950/90 px-4 py-2 text-xs text-white">
+                <span>
+                  Voice active: <strong>Unit {activeVoiceUi.unitNumber} — {roomLabel(activeVoiceUi.room)}</strong> · {fmtClock(activeVoiceUi.elapsedMs)} · {activeVoiceUi.chunkCount} chunks saved
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void pauseActiveVoice('Paused from camera — audio safe.')}
+                    className="rounded-lg border border-white/30 px-2.5 py-1 font-medium"
+                  >
+                    Pause voice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void stopAndTranscribeActiveVoice()}
+                    className="rounded-lg bg-white px-2.5 py-1 font-semibold text-ink"
+                  >
+                    Stop & transcribe
+                  </button>
+                </div>
+              </div>
+            )
+          }
+          onPhotoCaptured={async (blob, fileName) => {
+            const item = await enqueueMediaItem({
+              dealId: deal.id,
+              userUid: me.uid,
+              authorRole: role,
+              authorName: me.name || roleLabel[role],
+              unitNumber: cameraModal.unit,
+              room: cameraModal.room,
+              kind: 'photo',
+              fileName,
+              mimeType: 'image/jpeg',
+              blob,
+            });
+            if (mountedRef.current) setLocalMedia((prev) => [item, ...prev]);
+          }}
+          onPhotoUndo={async (id) => {
+            await deleteMediaItem(id);
+            if (mountedRef.current) setLocalMedia((prev) => prev.filter((m) => m.id !== id));
+          }}
+          onPhotoRemove={async (id) => {
+            await deleteMediaItem(id);
+            if (mountedRef.current) setLocalMedia((prev) => prev.filter((m) => m.id !== id));
+          }}
+          onVideoRecorded={handleVideoRecorded}
+          onClose={() => (cameraModal.mode === 'photo' ? void closeMultiPhotoCamera() : closeVideoRecorder())}
+        />
+      )}
+
+      {/* Room-first mobile selector + desktop summary */}
       <Card className="!p-4">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-display text-xl font-semibold">Walkthrough inventory</h2>
-          <p className="text-xs text-ink-soft">
-            {startedRooms}/{totalRooms} rooms · {(photos || []).length} photos · {(notes || []).length} voice notes
-          </p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+            <span>
+              {startedRooms}/{totalRooms} rooms · {(photos || []).length} photos · {(videos || []).length} videos · {(notes || []).length} notes
+            </span>
+            {!online && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 font-medium text-amber-900">Offline</span>
+            )}
+          </div>
         </div>
+
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[540px] border-separate border-spacing-1 text-left text-xs">
-            <thead>
-              <tr>
-                <th className="w-16 px-2 py-1 font-medium text-ink-soft">Unit</th>
-                {ROOMS.map(([r, label]) => (
-                  <th key={r} className="px-2 py-1 font-medium text-ink-soft">{label}</th>
+        {isUsingMemoryFallback() && (
+          <p role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Browser storage is restricted in this session; unsaved recordings stay in memory until synced.
+          </p>
+        )}
+
+        {activeVoiceUi && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900">
+            <div className="min-w-0">
+              <p className="font-semibold">
+                Recording Unit {activeVoiceUi.unitNumber} — {roomLabel(activeVoiceUi.room)} ({fmtClock(activeVoiceUi.elapsedMs)})
+              </p>
+              <p className="text-xs text-red-800">
+                {activeVoiceUi.chunkCount} chunks ({fmtBytes(activeVoiceUi.totalBytes)}) saved locally · bound to Unit {activeVoiceUi.unitNumber} {roomLabel(activeVoiceUi.room)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(activeVoiceUi.unitNumber !== unit || activeVoiceUi.room !== selectedRoom) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedUnit(activeVoiceUi.unitNumber);
+                    setSelectedRoom(activeVoiceUi.room);
+                  }}
+                  className="min-h-[40px] rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-900"
+                >
+                  Jump to room
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void pauseActiveVoice('Paused by user — audio safe on device.')}
+                className="min-h-[40px] rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-900"
+              >
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={() => void stopAndTranscribeActiveVoice()}
+                className="min-h-[40px] rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Stop & transcribe
+              </button>
+            </div>
+          </div>
+        )}
+
+        {edit && totalPendingCount > 0 && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-warm bg-warm-soft/70 px-3 py-2 text-xs">
+            <span className="font-medium text-ink">
+              {totalPendingCount} pending item{totalPendingCount === 1 ? '' : 's'} saved on this device
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!online || syncingAll}
+                onClick={() => void syncAllPending()}
+                className="min-h-[36px] rounded-lg bg-ink px-3 py-1 font-medium text-white disabled:opacity-40"
+              >
+                {syncingAll ? 'Syncing…' : online ? 'Sync all pending' : 'Waiting for connection'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Unit selector (always visible, mobile-first) */}
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Previous unit"
+                disabled={unit <= 1}
+                onClick={() => setSelectedUnit((u) => Math.max(1, u - 1))}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-medium disabled:opacity-40"
+              >
+                ‹
+              </button>
+              <select
+                aria-label="Choose unit"
+                value={unit}
+                onChange={(e) => setSelectedUnit(Number(e.target.value))}
+                className="min-h-[44px] rounded-xl border border-line bg-white px-3 py-2 text-sm font-semibold"
+              >
+                {range(units).map((u) => (
+                  <option key={u} value={u}>
+                    Unit {u} ({unitTotals[u]?.total || 0} saved{unitTotals[u]?.pending ? `, +${unitTotals[u].pending} pending` : ''})
+                  </option>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {range(units).map((u) => (
-                <tr key={u}>
-                  <th className="px-2 py-1 font-semibold text-ink">Unit {u}</th>
-                  {ROOMS.map(([r, label]) => {
-                    const c = counts[`${u}:${r}`] || { p: 0, n: 0 };
-                    const active = u === unit && r === selectedRoom;
-                    const empty = c.p === 0 && c.n === 0;
-                    return (
-                      <td key={r}>
-                        <button
-                          type="button"
-                          aria-label={`Unit ${u} ${label}: ${c.p} photos, ${c.n} voice notes`}
-                          aria-pressed={active}
-                          onClick={() => { setSelectedUnit(u); setSelectedRoom(r); setNoteDraft(null); setStatus(''); }}
-                          className={`w-full rounded-lg border px-2 py-1.5 text-center transition ${
-                            active
-                              ? 'border-ink bg-ink font-medium text-white'
-                              : empty
-                                ? 'border-dashed border-line bg-paper text-ink-soft hover:border-ink'
-                                : 'border-line bg-warm-soft/70 font-medium text-ink hover:border-ink'
-                          }`}
-                        >
-                          {empty ? '—' : `${c.p}p · ${c.n}n`}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              </select>
+              <button
+                type="button"
+                aria-label="Next unit"
+                disabled={unit >= units}
+                onClick={() => setSelectedUnit((u) => Math.min(units, u + 1))}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-medium disabled:opacity-40"
+              >
+                ›
+              </button>
+            </div>
+            <span className="text-xs font-medium text-ink-soft">
+              {units === 10 ? '10 units active' : '9 units active'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Units">
+            {range(units).map((u) => {
+              const t = unitTotals[u] || { total: 0, pending: 0 };
+              const active = u === unit;
+              return (
+                <button
+                  key={u}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setSelectedUnit(u)}
+                  className={`min-h-[44px] rounded-xl border px-2 py-1.5 text-center text-xs font-medium transition sm:px-3 ${
+                    active
+                      ? 'border-ink bg-ink text-white'
+                      : t.total + t.pending > 0
+                        ? 'border-line bg-warm-soft/70 text-ink hover:border-ink'
+                        : 'border-line bg-paper text-ink-soft hover:border-ink'
+                  }`}
+                >
+                  Unit {u}
+                  {t.pending > 0 ? '*' : ''}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* All 5 named room choices — full labels, >= 44px tap targets, zero horizontal clipping */}
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-ink-soft">Room in Unit {unit}</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5" role="group" aria-label={`Rooms for Unit ${unit}`}>
+              {ROOMS.map(([r, label]) => {
+                const c = counts[`${unit}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
+                const active = r === selectedRoom;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setSelectedRoom(r)}
+                    className={`flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-3 py-2 text-left transition ${
+                      active
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line bg-paper text-ink hover:border-ink'
+                    }`}
+                  >
+                    <span className="text-sm font-semibold leading-tight">{label}</span>
+                    <span className={`text-[11px] ${active ? 'text-white/80' : 'text-ink-soft'}`}>
+                      {c.p}p · {c.v}v · {c.n}n{c.pending ? ` · ${c.pending} local` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </Card>
 
+      {/* Active Unit & Room Capture First */}
       <Card>
-        <CardTitle aside={<span className="text-xs text-ink-soft">Photos and voice notes only · owner + realtor</span>}>
+        <CardTitle
+          aside={
+            <span className="text-xs text-ink-soft">
+              Photos, videos & voice notes · {WHISPER_ENGINE_LABEL}
+            </span>
+          }
+        >
           Unit {unit} — {roomLabel(selectedRoom)}
         </CardTitle>
-        {preview && <p className="mb-3 text-xs text-ink-soft">Preview mode. Adding photos and voice notes works on a real sign-in.</p>}
-        {status && <p role="status" className="mb-3 text-sm text-ink-soft">{status}</p>}
+        {preview && (
+          <p className="mb-3 text-xs text-ink-soft">
+            Preview mode. Adding photos, videos, and voice notes works on a real sign-in.
+          </p>
+        )}
+        {status && (
+          <p role="status" className="mb-3 rounded-xl bg-paper px-3 py-2 text-sm text-ink">
+            {status}
+          </p>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
+          {/* Voice narration + raw transcript + playback */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium">Photos ({roomPhotos.length})</h3>
+              <h3 className="font-medium">
+                Voice notes ({roomNotes.length}
+                {roomPendingVideos.length + roomLocalSessions.length > 0 && roomLocalSessions.length > 0
+                  ? ` · ${roomLocalSessions.length} local`
+                  : ''})
+              </h3>
               {edit && (
                 <div className="flex flex-wrap gap-2">
-                  <label className="cursor-pointer rounded-xl bg-ink px-3 py-1.5 text-sm font-medium text-white hover:bg-ink-soft">
-                    Take photo
-                    <input
-                      aria-label={`Take photo for Unit ${unit} ${roomLabel(selectedRoom)}`}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
+                  {activeVoiceUi ? (
+                    <span className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
+                      Mic active on Unit {activeVoiceUi.unitNumber} {roomLabel(activeVoiceUi.room)}
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
                       disabled={busy}
-                      onChange={uploadPhotos}
-                      className="sr-only"
-                    />
-                  </label>
-                  <label className="cursor-pointer rounded-xl border border-line bg-white px-3 py-1.5 text-sm font-medium hover:bg-warm-soft">
-                    Upload photos
-                    <input
-                      aria-label={`Upload photos for Unit ${unit} ${roomLabel(selectedRoom)}`}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      disabled={busy}
-                      onChange={uploadPhotos}
-                      className="sr-only"
-                    />
-                  </label>
+                      onClick={() => void startVoiceSession(null)}
+                      className="!min-h-[44px]"
+                    >
+                      Record voice note
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
-            {photos === null ? (
-              <Empty>Loading…</Empty>
-            ) : roomPhotos.length === 0 ? (
-              <Empty>No photos for this room yet.</Empty>
-            ) : (
-              <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                {roomPhotos.map((p, i) => (
-                  <li key={p.id} className="overflow-hidden rounded-xl border border-line bg-white">
-                    {urls[p.storage_path] ? (
-                      <a href={urls[p.storage_path]} target="_blank" rel="noreferrer">
-                        <img
-                          src={urls[p.storage_path]}
-                          alt={`Unit ${unit} ${roomLabel(selectedRoom)} photo ${i + 1}`}
-                          loading="lazy"
-                          className="aspect-[4/3] w-full object-cover"
-                        />
-                      </a>
-                    ) : (
-                      <div className="flex aspect-[4/3] items-center justify-center bg-paper text-xs text-ink-soft">Loading…</div>
-                    )}
-                    <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-xs text-ink-soft">
-                      <span className="truncate">{authorTag(p)}</span>
-                      {edit && (role === 'owner' || p.author_uid === me.uid) && (
-                        <button type="button" disabled={busy} onClick={() => removePhoto(p)} className="shrink-0 underline hover:text-red-700">
-                          Remove
-                        </button>
+
+            {edit && (
+              <p className="text-xs text-ink-soft">
+                Audio chunks save on your device as you speak before transcription or switching rooms. Keep the screen awake while narrating; locks, calls, or app switches pause cleanly and keep all saved chunks.
+              </p>
+            )}
+
+            {/* Local pending / paused / transcribing / failed voice sessions for THIS room */}
+            {edit && roomLocalSessions.length > 0 && (
+              <ul className="space-y-3" aria-label="Pending voice notes">
+                {roomLocalSessions.map((s) => {
+                  const phase = whisperPhases[s.id];
+                  const isRecordingThis = activeVoiceUi?.sessionId === s.id;
+                  const audioUrl = localAudioUrls[s.id];
+                  const statusLabel =
+                    s.status === AUDIO_STATUS.RECORDING
+                      ? 'Recording'
+                      : s.status === AUDIO_STATUS.PAUSED
+                        ? 'Paused · audio safe'
+                        : s.status === AUDIO_STATUS.TRANSCRIBING
+                          ? phase || 'Transcribing with local Whisper…'
+                          : s.status === AUDIO_STATUS.READY
+                            ? 'Ready to sync'
+                            : s.status === AUDIO_STATUS.MODEL_FAILED
+                              ? 'Whisper needs retry · audio safe'
+                              : 'Sync failed · audio safe';
+
+                  return (
+                    <li key={s.id} className="space-y-2.5 rounded-xl border border-warm bg-paper p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-ink">
+                          Unit {s.unitNumber} {roomLabel(s.room)} · {s.chunkCount || 0} chunks ({fmtBytes(s.totalBytes)})
+                        </span>
+                        <span className="rounded-full bg-warm-soft px-2.5 py-0.5 font-medium text-ink">
+                          {statusLabel}
+                        </span>
+                      </div>
+
+                      {s.pauseReason && <p className="text-xs text-ink-soft">{s.pauseReason}</p>}
+                      {s.transcriptError && <p role="alert" className="text-xs text-red-700">{s.transcriptError}</p>}
+                      {s.syncError && <p role="alert" className="text-xs text-red-700">{s.syncError}</p>}
+
+                      {!isRecordingThis && audioUrl && (
+                        <audio src={audioUrl} controls preload="metadata" className="h-9 w-full" aria-label="Local voice note audio" />
                       )}
-                    </div>
-                  </li>
-                ))}
+
+                      {!isRecordingThis && (
+                        <>
+                          <label className="block text-xs font-medium text-ink">
+                            Raw transcript (edit if needed, then sync)
+                            <textarea
+                              aria-label="Voice note transcript"
+                              rows={3}
+                              maxLength={12000}
+                              value={s.rawTranscript || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setLocalSessions((prev) =>
+                                  prev.map((row) => (row.id === s.id ? { ...row, rawTranscript: val } : row))
+                                );
+                                void updateAudioSession(s.id, { rawTranscript: val });
+                              }}
+                              className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                            />
+                          </label>
+
+                          <div className="flex flex-wrap gap-2">
+                            {s.status === AUDIO_STATUS.PAUSED && !activeVoiceUi && (
+                              <Button
+                                type="button"
+                                kind="secondary"
+                                className="!min-h-[40px]"
+                                onClick={() => void startVoiceSession(s)}
+                              >
+                                Resume
+                              </Button>
+                            )}
+
+                            {(s.status === AUDIO_STATUS.PAUSED ||
+                              s.status === AUDIO_STATUS.MODEL_FAILED ||
+                              s.status === AUDIO_STATUS.READY ||
+                              s.status === AUDIO_STATUS.SYNC_FAILED) && (
+                              <Button
+                                type="button"
+                                kind="secondary"
+                                className="!min-h-[40px]"
+                                disabled={s.status === AUDIO_STATUS.TRANSCRIBING}
+                                onClick={() =>
+                                  void runWhisperOnSession(s.id, { overwriteExisting: Boolean(s.rawTranscript?.trim()) })
+                                }
+                              >
+                                {s.status === AUDIO_STATUS.MODEL_FAILED
+                                  ? 'Retry Whisper'
+                                  : s.rawTranscript?.trim()
+                                    ? 'Retranscribe'
+                                    : 'Transcribe with Whisper'}
+                              </Button>
+                            )}
+
+                            {Boolean(s.rawTranscript?.trim()) && (
+                              <Button
+                                type="button"
+                                className="!min-h-[40px]"
+                                disabled={s.status === AUDIO_STATUS.TRANSCRIBING || s.chunkCount === 0}
+                                onClick={() => void syncVoiceSession(s, false)}
+                              >
+                                {s.status === AUDIO_STATUS.SYNC_FAILED ? 'Retry sync' : 'Save voice note'}
+                              </Button>
+                            )}
+
+                            {!s.rawTranscript?.trim() && s.chunkCount > 0 && s.status !== AUDIO_STATUS.TRANSCRIBING && (
+                              <Button
+                                type="button"
+                                kind="secondary"
+                                className="!min-h-[40px]"
+                                onClick={() => void syncVoiceSession(s, true)}
+                              >
+                                Save audio backup
+                              </Button>
+                            )}
+
+                            <Button
+                              type="button"
+                              kind="secondary"
+                              className="!min-h-[40px] !text-red-700"
+                              onClick={async () => {
+                                if (!window.confirm('Discard this unsynced voice recording and audio?')) return;
+                                await deleteAudioSession(s.id);
+                                const cachedUrl = audioPreviewCacheRef.current.get(s.id);
+                                if (cachedUrl) {
+                                  URL.revokeObjectURL(cachedUrl);
+                                  audioPreviewCacheRef.current.delete(s.id);
+                                }
+                                setLocalSessions((prev) => prev.filter((x) => x.id !== s.id));
+                              }}
+                            >
+                              Discard
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
-          </div>
 
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium">Voice notes ({roomNotes.length})</h3>
-              {edit && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <DictationMic
-                    label={`Unit ${unit} ${roomLabel(selectedRoom)} voice note`}
-                    buttonText="Record voice note"
-                    disabled={busy}
-                    onText={(text, audio) => {
-                      setNoteDraft({ text, audio });
-                      setStatus('');
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {edit && noteDraft && (
-              <div className="space-y-2 rounded-xl border border-warm bg-paper p-3">
-                <p className="text-xs font-medium text-ink">Raw transcript (edit if needed, then save)</p>
-                <textarea
-                  aria-label="Voice note transcript"
-                  rows={3}
-                  maxLength={12000}
-                  value={noteDraft.text}
-                  onChange={(e) => setNoteDraft({ ...noteDraft, text: e.target.value })}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" disabled={busy || !noteDraft.text.trim()} onClick={saveVoiceNote}>Save voice note</Button>
-                  <Button type="button" kind="secondary" disabled={busy} onClick={() => setNoteDraft(null)}>Discard</Button>
-                </div>
-              </div>
-            )}
-
+            {/* Synced remote voice notes */}
             {notes === null ? (
               <Empty>Loading…</Empty>
-            ) : roomNotes.length === 0 ? (
+            ) : roomNotes.length === 0 && roomLocalSessions.length === 0 ? (
               <Empty>No voice notes for this room yet.</Empty>
             ) : (
               <ul className="space-y-2.5">
                 {roomNotes.map((n) => (
                   <li key={n.id} className="space-y-2 rounded-xl border border-line bg-paper p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
-                      <span className="font-medium text-ink">{authorTag(n)} · {when(n.created_at)}</span>
-                      {edit && (role === 'owner' || n.author_uid === me.uid) && (
-                        <button type="button" disabled={busy} onClick={() => removeNote(n)} className="underline hover:text-red-700">
-                          Remove
-                        </button>
-                      )}
+                      <span className="font-medium text-ink">
+                        {authorTag(n)} · {when(n.created_at)}
+                        {n.duration_sec ? ` · ${n.duration_sec}s` : ''}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {edit && (role === 'owner' || n.author_uid === me.uid) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              setEditingNoteId(n.id);
+                              setEditingNoteText(n.raw_transcript || '');
+                            }}
+                            className="underline hover:text-ink"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {edit && n.storage_path && urls[n.storage_path] && (role === 'owner' || n.author_uid === me.uid) && (
+                          <button
+                            type="button"
+                            disabled={Boolean(retranscribingId)}
+                            onClick={() => void retranscribeRemoteNote(n)}
+                            className="underline hover:text-ink"
+                          >
+                            {retranscribingId === n.id ? 'Retranscribing…' : 'Retranscribe'}
+                          </button>
+                        )}
+                        {edit && (role === 'owner' || n.author_uid === me.uid) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void removeRemoteNote(n)}
+                            className="underline hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {n.storage_path && urls[n.storage_path] && (
-                      <audio src={urls[n.storage_path]} controls preload="none" className="h-9 w-full" aria-label="Voice note audio" />
+
+                    {n.storage_path ? (
+                      urls[n.storage_path] ? (
+                        <audio src={urls[n.storage_path]} controls preload="none" className="h-9 w-full" aria-label="Voice note audio" />
+                      ) : (
+                        <p className="text-xs text-ink-soft">Loading audio…</p>
+                      )
+                    ) : (
+                      <p className="text-xs text-amber-800">Original audio file unavailable on this older note.</p>
                     )}
-                    <p className="whitespace-pre-wrap break-words text-sm">{n.raw_transcript}</p>
+
+                    {editingNoteId === n.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          aria-label="Edit voice note transcript"
+                          rows={3}
+                          maxLength={12000}
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value)}
+                          className="w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                        />
+                        <div className="flex gap-2">
+                          <Button type="button" disabled={busy} onClick={() => void saveEditedRemoteNote(n)}>
+                            Save text
+                          </Button>
+                          <Button type="button" kind="secondary" onClick={() => setEditingNoteId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : n.raw_transcript ? (
+                      <p className="whitespace-pre-wrap break-words text-sm">{n.raw_transcript}</p>
+                    ) : (
+                      <p className="text-xs italic text-ink-soft">
+                        Audio saved without transcript yet — tap Retranscribe or Edit.
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
+
+          {/* Photos & Videos */}
+          <div className="space-y-5">
+            {/* Photos section */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-medium">
+                  Photos ({roomPhotos.length}
+                  {roomPendingPhotos.length ? ` · ${roomPendingPhotos.length} pending` : ''})
+                </h3>
+                {edit && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={openMultiPhotoCamera}
+                      className="inline-flex min-h-[44px] items-center rounded-xl bg-ink px-3.5 py-2 text-sm font-medium text-white hover:bg-ink-soft disabled:opacity-50"
+                    >
+                      Take photos
+                    </button>
+                    <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-white px-3.5 py-2 text-sm font-medium hover:bg-warm-soft">
+                      Upload photos
+                      <input
+                        aria-label={`Upload photos for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={busy}
+                        onChange={(e) => {
+                          const files = [...(e.target.files || [])];
+                          e.target.value = '';
+                          void enqueueAndMaybeSyncFiles(files, 'photo');
+                        }}
+                        className="sr-only"
+                      />
+                    </label>
+                    <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-paper px-3 py-2 text-xs font-medium text-ink-soft hover:border-ink">
+                      Single camera
+                      <input
+                        aria-label={`Take photo for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        disabled={busy}
+                        onChange={(e) => {
+                          const files = [...(e.target.files || [])];
+                          e.target.value = '';
+                          void enqueueAndMaybeSyncFiles(files, 'photo');
+                        }}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {roomPendingPhotos.length > 0 && (
+                <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3" aria-label="Pending room photos">
+                  {roomPendingPhotos.map((m) => (
+                    <li key={m.id} className="overflow-hidden rounded-xl border border-warm bg-paper">
+                      <img src={m.previewUrl} alt={`Pending ${m.fileName}`} className="aspect-[4/3] w-full object-cover" />
+                      <div className="space-y-1 p-2 text-xs">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-medium text-ink">
+                            {m.status === MEDIA_STATUS.UPLOADING ? 'Uploading…' : m.status === MEDIA_STATUS.FAILED ? 'Failed' : 'Pending'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void deleteMediaItem(m.id).then(() => setLocalMedia((prev) => prev.filter((x) => x.id !== m.id)))}
+                            className="text-ink-soft underline hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        {m.error && <p className="text-[11px] text-red-700">{m.error}</p>}
+                        {m.status !== MEDIA_STATUS.UPLOADING && (
+                          <button
+                            type="button"
+                            onClick={() => void syncMediaItem(m)}
+                            className="w-full rounded-lg bg-ink px-2 py-1 text-[11px] font-medium text-white"
+                          >
+                            {m.status === MEDIA_STATUS.FAILED ? 'Retry upload' : 'Upload now'}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {photos === null ? (
+                <Empty>Loading…</Empty>
+              ) : roomPhotos.length === 0 && roomPendingPhotos.length === 0 ? (
+                <Empty>No photos for this room yet.</Empty>
+              ) : roomPhotos.length > 0 ? (
+                <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {roomPhotos.map((p, i) => (
+                    <li key={p.id} className="overflow-hidden rounded-xl border border-line bg-white">
+                      {urls[p.storage_path] ? (
+                        <a href={urls[p.storage_path]} target="_blank" rel="noreferrer">
+                          <img
+                            src={urls[p.storage_path]}
+                            alt={`Unit ${unit} ${roomLabel(selectedRoom)} photo ${i + 1}`}
+                            loading="lazy"
+                            className="aspect-[4/3] w-full object-cover"
+                          />
+                        </a>
+                      ) : (
+                        <div className="flex aspect-[4/3] items-center justify-center bg-paper text-xs text-ink-soft">Loading…</div>
+                      )}
+                      <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-xs text-ink-soft">
+                        <span className="truncate">{authorTag(p)}</span>
+                        {edit && (role === 'owner' || p.author_uid === me.uid) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void removeRemotePhoto(p)}
+                            className="shrink-0 underline hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+
+            {/* Videos section */}
+            <div className="space-y-3 border-t border-line pt-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-medium">
+                  Videos ({roomVideos.length}
+                  {roomPendingVideos.length ? ` · ${roomPendingVideos.length} pending` : ''})
+                </h3>
+                {edit && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void openVideoRecorder()}
+                      className="inline-flex min-h-[44px] items-center rounded-xl border border-ink bg-white px-3.5 py-2 text-sm font-medium text-ink hover:bg-warm-soft disabled:opacity-50"
+                    >
+                      Record video
+                    </button>
+                    <label className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl border border-line bg-white px-3.5 py-2 text-sm font-medium hover:bg-warm-soft">
+                      Upload video
+                      <input
+                        aria-label={`Upload video for Unit ${unit} ${roomLabel(selectedRoom)}`}
+                        type="file"
+                        accept="video/mp4,video/webm,video/quicktime,video/*"
+                        disabled={busy}
+                        onChange={(e) => {
+                          const files = [...(e.target.files || [])];
+                          e.target.value = '';
+                          void enqueueAndMaybeSyncFiles(files, 'video');
+                        }}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {edit && (
+                <p className="text-xs text-ink-soft">
+                  MP4, WebM, or MOV up to 50 MB (recommended under 2 min). Failed uploads stay queued on this device for retry.
+                </p>
+              )}
+
+              {roomPendingVideos.length > 0 && (
+                <ul className="space-y-2.5" aria-label="Pending room videos">
+                  {roomPendingVideos.map((v) => (
+                    <li key={v.id} className="space-y-2 rounded-xl border border-warm bg-paper p-3 text-xs">
+                      <video
+                        src={v.previewUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="aspect-video w-full rounded-lg bg-black"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-ink">
+                          {v.fileName} ({fmtBytes(v.sizeBytes)}) ·{' '}
+                          {v.status === MEDIA_STATUS.UPLOADING ? 'Uploading…' : v.status === MEDIA_STATUS.FAILED ? 'Failed' : 'Pending'}
+                        </span>
+                        <div className="flex gap-2">
+                          {v.status !== MEDIA_STATUS.UPLOADING && (
+                            <button
+                              type="button"
+                              onClick={() => void syncMediaItem(v)}
+                              className="rounded-lg bg-ink px-2.5 py-1 font-medium text-white"
+                            >
+                              {v.status === MEDIA_STATUS.FAILED ? 'Retry upload' : 'Upload now'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void deleteMediaItem(v.id).then(() => setLocalMedia((prev) => prev.filter((x) => x.id !== v.id)))}
+                            className="underline hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      {v.error && <p className="text-red-700">{v.error}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {videos === null ? (
+                <Empty>Loading…</Empty>
+              ) : roomVideos.length === 0 && roomPendingVideos.length === 0 ? (
+                <Empty>No videos for this room yet.</Empty>
+              ) : roomVideos.length > 0 ? (
+                <ul className="space-y-2.5">
+                  {roomVideos.map((v) => (
+                    <li key={v.id} className="space-y-2 rounded-xl border border-line bg-white p-3">
+                      {urls[v.storage_path] ? (
+                        <video
+                          src={urls[v.storage_path]}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="aspect-video w-full rounded-lg bg-black"
+                        />
+                      ) : (
+                        <div className="flex aspect-video items-center justify-center rounded-lg bg-paper text-xs text-ink-soft">
+                          Loading video…
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
+                        <span>
+                          {authorTag(v)} · {when(v.created_at)}
+                          {v.size_bytes ? ` · ${fmtBytes(v.size_bytes)}` : ''}
+                        </span>
+                        {edit && (role === 'owner' || v.author_uid === me.uid) && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void removeRemoteVideo(v)}
+                            className="underline hover:text-red-700"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
         </div>
+      </Card>
+
+      {/* Desktop full matrix (always shown on md+), Phone optional collapsible matrix */}
+      <Card className="!p-4 hidden md:block">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-display text-lg font-semibold">All units progress</h3>
+          <span className="text-xs text-ink-soft">Click any cell to jump to that unit & room</span>
+        </div>
+        {matrixTable}
+      </Card>
+
+      <Card className="!p-4 md:hidden">
+        <button
+          type="button"
+          aria-expanded={showMatrix}
+          onClick={() => setShowMatrix((x) => !x)}
+          className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="font-display text-lg font-semibold">All units progress</span>
+          <span className="text-xs font-medium text-ink-soft">{showMatrix ? 'Hide' : 'Show'}</span>
+        </button>
+        {showMatrix && <div className="mt-3">{matrixTable}</div>}
       </Card>
     </div>
   );

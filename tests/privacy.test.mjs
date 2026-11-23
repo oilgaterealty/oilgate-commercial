@@ -147,3 +147,33 @@ test('v5 migration only creates commercial_ objects and storage.objects policies
   }
   assert.doesNotMatch(v5, /\b(drop table|drop function|truncate|alter table (?!public\.commercial_))\b/i);
 });
+
+test('0010 migration scopes walkthrough videos to owner/realtor and touches only commercial_ + commercial-files', () => {
+  const v5m = readFileSync(new URL('../supabase/migrations/0010_v5_walkthrough_media.sql', import.meta.url), 'utf8');
+  for (const m of v5m.matchAll(/create (?:or replace )?(?:table|function|trigger|unique index|index) (?:if not exists )?(?:public\.)?(\w+)/gi)) {
+    assert.match(m[1], /^commercial_/, m[1]);
+  }
+  for (const m of v5m.matchAll(/create policy (\w+) on (?:public|storage)\.(\w+)/gi)) {
+    assert.match(m[1], /^commercial_/, m[1]);
+    assert.match(m[2], /^(commercial_|objects$)/, m[2]);
+  }
+  assert.match(v5m, /alter table public\.commercial_walkthrough_videos enable row level security/);
+  const vidPols = [...v5m.matchAll(/create policy [^;]+ on public\.commercial_walkthrough_videos[\s\S]*?;/gi)].map((m) => m[0]).join('\n');
+  assert.match(vidPols, /'owner'/);
+  assert.match(vidPols, /'realtor'/);
+  assert.doesNotMatch(vidPols, /'seller'|'reviewer'|'lender'|'viewer'/);
+  assert.match(v5m, /update storage\.buckets[\s\S]*where id = 'commercial-files'/i);
+  assert.doesNotMatch(v5m, /\b(drop table|drop function|truncate|alter table (?!public\.commercial_))\b/i);
+});
+
+test('walkthrough and dictation use local Transformers.js Whisper with no OpenAI hosted API', () => {
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]));
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  for (const f of walk(`${root}src`)) {
+    const s = readFileSync(f, 'utf8');
+    assert.doesNotMatch(s, /api\.openai\.com|openai\/v1\/audio/i, f);
+  }
+  const workerSrc = readFileSync(new URL('../src/lib/dictation-worker.js', import.meta.url), 'utf8');
+  assert.match(workerSrc, /@huggingface\/transformers/);
+  assert.match(workerSrc, /whisper-tiny\.en/);
+});
