@@ -661,7 +661,18 @@ export default function Walkthrough({ deal, me, role, preview }) {
     if (!active) return;
     const targetSessionId = active.sessionId;
     await pauseActiveVoice('Processing with local Whisper…', false);
-    await runWhisperOnSession(targetSessionId);
+    await Promise.race([
+      runWhisperOnSession(targetSessionId),
+      new Promise((r) => setTimeout(r, 90000)),
+    ]);
+    // Always push to the server: transcript if Whisper worked, audio backup if not.
+    try {
+      const { session: latest } = await getSessionSegments(targetSessionId);
+      if (latest && navigator.onLine) {
+        const hasText = !!(latest.rawTranscript || '').trim();
+        await syncVoiceSession(latest, !hasText);
+      }
+    } catch {}
   };
 
   const syncVoiceSession = async (session, allowAudioOnlyBackup = false) => {
@@ -980,6 +991,36 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
   };
 
+  const autoSyncRef = useRef(false);
+  useEffect(() => {
+    if (!edit) return undefined;
+    const tick = async () => {
+      if (!navigator.onLine || autoSyncRef.current || activeVoiceRef.current) return;
+      const media = localMediaRef.current.filter((m) => m.status !== MEDIA_STATUS.UPLOADING);
+      const notes = localSessionsRef.current.filter(
+        (x) => x.status === AUDIO_STATUS.READY || (x.status === AUDIO_STATUS.SYNC_FAILED && x.rawTranscript?.trim())
+      );
+      if (!media.length && !notes.length) return;
+      autoSyncRef.current = true;
+      try {
+        for (const m of [...media].reverse()) await syncMediaItem(m);
+        for (const x of [...notes].reverse()) await syncVoiceSession(x);
+      } catch {
+        // items stay on device; next tick retries
+      } finally {
+        autoSyncRef.current = false;
+      }
+    };
+    const t = setInterval(() => void tick(), 15000);
+    const onOn = () => void tick();
+    window.addEventListener('online', onOn);
+    void tick();
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('online', onOn);
+    };
+  }, [edit, syncMediaItem]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const syncAllPending = async () => {
     if (!edit || syncingAll || !navigator.onLine) return;
     setSyncingAll(true);
@@ -1201,7 +1242,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     onClick={() => void stopAndTranscribeActiveVoice()}
                     className="rounded-lg bg-white px-2.5 py-1 font-semibold text-ink"
                   >
-                    Stop & transcribe
+                    Stop & save
                   </button>
                 </div>
               </div>
@@ -1234,6 +1275,33 @@ export default function Walkthrough({ deal, me, role, preview }) {
           onClose={() => (cameraModal.mode === 'photo' ? void closeMultiPhotoCamera() : closeVideoRecorder())}
         />
       )}
+      {activeVoiceUi && !cameraModal && (
+        <>
+          <div className="h-24" aria-hidden="true" />
+          <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 bg-red-800 px-4 pt-3 text-white shadow-2xl" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+            <span className="min-w-0 truncate text-sm">
+              <strong>Recording</strong> {spaceLabel(activeVoiceUi.unitNumber)} {roomLabel(activeVoiceUi.room)} {fmtClock(activeVoiceUi.elapsedMs)}
+            </span>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => void pauseActiveVoice('Paused by user. Audio safe on device.')}
+                className="min-h-[44px] rounded-xl border border-white/50 px-3 text-sm font-medium"
+              >
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={() => void stopAndTranscribeActiveVoice()}
+                className="min-h-[44px] rounded-xl bg-white px-4 text-sm font-bold text-red-800"
+              >
+                Stop & save
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
 
       {/* Room-first mobile selector + desktop summary */}
       <Card className="!p-4">
@@ -1291,7 +1359,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 onClick={() => void stopAndTranscribeActiveVoice()}
                 className="min-h-[40px] rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white"
               >
-                Stop & transcribe
+                Stop & save
               </button>
             </div>
           </div>
@@ -1446,9 +1514,22 @@ export default function Walkthrough({ deal, me, role, preview }) {
               {edit && (
                 <div className="flex flex-wrap gap-2">
                   {activeVoiceUi ? (
-                    <span className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">
-                      Mic active on {spaceLabel(activeVoiceUi.unitNumber)} {roomLabel(activeVoiceUi.room)}
-                    </span>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void pauseActiveVoice('Paused by user. Audio safe on device.')}
+                        className="min-h-[44px] rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-900"
+                      >
+                        Pause
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void stopAndTranscribeActiveVoice()}
+                        className="min-h-[44px] rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold text-white"
+                      >
+                        Stop & save
+                      </button>
+                    </>
                   ) : (
                     <Button
                       type="button"
