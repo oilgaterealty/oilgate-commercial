@@ -5,7 +5,7 @@ import Shell, { Card, Button, Field } from '../components/Shell.jsx';
 const redirect = () => window.location.origin + window.location.pathname;
 const remember = () => { if (window.location.hash.length > 2) localStorage.setItem('returnTo', window.location.hash); };
 
-export default function SignIn() {
+export default function SignIn({ canRequestAccess, requestingAccess }) {
   const [email, setEmail] = useState('');
   const [state, setState] = useState('');
 
@@ -26,7 +26,7 @@ export default function SignIn() {
     <Shell>
       <div className="mx-auto max-w-md pt-6">
         <h1 className="font-display text-4xl font-semibold tracking-tight">Welcome</h1>
-        <p className="mt-2 text-ink-soft">Sign in to see the property page you were invited to.</p>
+        <p className="mt-2 text-ink-soft">{requestingAccess ? 'Sign in to verify your email before requesting access to Charlotte.' : 'Sign in to see the property page you were invited to.'}</p>
         <Card className="mt-6 space-y-4">
           <Button className="w-full" onClick={google}>Continue with Google</Button>
           <div className="flex items-center gap-3 text-xs text-ink-soft"><span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" /></div>
@@ -37,6 +37,7 @@ export default function SignIn() {
           {state && <p className="text-sm text-ink-soft">{state}</p>}
         </Card>
         <p className="mt-4 text-xs text-ink-soft">Only people who were added to a property can see it.</p>
+        {canRequestAccess && !requestingAccess && <a className="mt-3 inline-flex rounded-xl border border-line bg-white px-4 py-2 text-sm font-medium hover:bg-warm-soft" href="#/request-access">Request access</a>}
       </div>
     </Shell>
   );

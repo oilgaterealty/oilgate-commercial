@@ -6,6 +6,7 @@ import SignIn from './views/SignIn.jsx';
 import Home from './views/Home.jsx';
 import DealRoom from './views/DealRoom.jsx';
 import Join from './views/Join.jsx';
+import RequestAccess from './views/RequestAccess.jsx';
 import Shell, { Card, Empty } from './components/Shell.jsx';
 
 const rules = siteRules(SITE_KIND);
@@ -34,10 +35,11 @@ export default function App() {
 
   if (!configured) return <Shell><p className="text-ink-soft">This site isn't connected to its database yet.</p></Shell>;
   if (session === undefined) return <Shell><p className="text-ink-soft">Loading…</p></Shell>;
-  if (!session) return <SignIn />;
+  if (!session) return <SignIn canRequestAccess={rules.guestsAllowed && route.name !== 'join'} requestingAccess={route.name === 'request-access' && rules.guestsAllowed} />;
   if (isOwner === undefined) return <Shell session={session}><p className="text-ink-soft">Loading…</p></Shell>;
   if (isOwner && !rules.ownerAllowed) return <Closed session={session} text="You’re signed in as the buyer. Your page opens only at your private address." />;
   if (!isOwner && !rules.guestsAllowed) return <Closed session={session} text="There’s nothing here for this email." />;
+  if (!isOwner && rules.guestsAllowed && route.name === 'request-access') return <RequestAccess key={session.user.id} session={session} />;
   if (route.name === 'join') return <Join token={route.token} session={session} />;
   return route.name === 'deal'
     ? <DealRoom key={`${session.user.id}:${route.slug}`} slug={route.slug} tab={route.tab} sub={route.sub} session={session} />

@@ -17,6 +17,7 @@ import Offers from './Offers.jsx';
 import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
+import AccessRequests from '../components/AccessRequests.jsx';
 
 const CityRecords = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./DealPlan.jsx'));
@@ -103,6 +104,7 @@ function People({ deal }) {
           <p className="text-xs text-ink-soft">Nothing is emailed. They sign in with this exact email at the site link you send them, and see only their role’s page.</p>
         </form>
       </Card>
+      {deal.slug === 'charlotte' && <AccessRequests dealId={deal.id} onApproved={load} />}
       <RoleLinks deal={deal} onJoined={load} />
     </div>
   );

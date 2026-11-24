@@ -37,7 +37,7 @@ export default function Home({ session }) {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="grid gap-4 sm:grid-cols-2">
           {deals === null && <Empty>Loading…</Empty>}
-          {deals?.length === 0 && <Card><Empty>{owner ? 'No deals yet. Add the first one.' : 'You haven’t been added to a property yet. Ask the person who invited you to add this email.'}</Empty></Card>}
+          {deals?.length === 0 && <Card><Empty>{owner ? 'No deals yet. Add the first one.' : 'You haven’t been added to a property yet. Ask the person who invited you to add this email.'}</Empty>{!owner && <a className="mt-3 inline-flex rounded-xl border border-line px-4 py-2 text-sm font-medium hover:bg-warm-soft" href="#/request-access">Request access</a>}</Card>}
           {deals?.map((d) => (
             <a key={d.id} href={`#/d/${d.slug}`} className="group rounded-2xl border border-line bg-white p-5 transition hover:border-ink">
               <p className="text-xs uppercase tracking-wider text-warm">{d.status === 'active' ? 'Active' : d.status}</p>
