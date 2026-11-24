@@ -4,12 +4,14 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as ReactModule from 'react';
 import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import esbuild from 'esbuild';
 import { build as viteBuild } from 'vite';
 import { canAccessCityRecords, siteRules } from '../src/lib/site.js';
 import {
+  answerTone,
   collectRecordPaths,
   findVisibleSubtextViolations,
   normalizeCityRecords,
@@ -26,14 +28,19 @@ function loadCityRecordsView() {
     stdin: { contents: src, loader: 'jsx', resolveDir: join(root, 'src/components') },
     bundle: true,
     write: false,
+    external: ['react'],
     jsx: 'transform',
     jsxFactory: 'h',
     jsxFragment: 'Fragment',
     format: 'cjs',
   });
   const mod = { exports: {} };
-  const fn = new Function('exports', 'module', 'h', 'Fragment', outputFiles[0].text);
-  fn(mod.exports, mod, createElement, Fragment);
+  const fakeRequire = (id) => {
+    if (id === 'react') return ReactModule;
+    throw new Error(`Unexpected external require: ${id}`);
+  };
+  const fn = new Function('exports', 'module', 'require', 'h', 'Fragment', outputFiles[0].text);
+  fn(mod.exports, mod, fakeRequire, createElement, Fragment);
   return mod.exports.default;
 }
 
@@ -42,8 +49,10 @@ const SAMPLE_DATA = {
   summary: [
     {
       id: 'sum-units',
-      label: 'Legal unit count',
-      value: '10 units (County commercial card)',
+      label: 'Legal units',
+      answer: '10',
+      line: 'Built 1919 · 10,800 sq ft',
+      value: '10 units (County commercial card) · Certificate of Occupancy: Not online, needs request (Summit County Dept. of Building Standards)',
       files: [{ label: 'Commercial card PDF', path: 'deal/city-records/card.pdf' }],
       source: {
         sourceName: 'Summit County Fiscal Office Commercial Card',
@@ -56,6 +65,8 @@ const SAMPLE_DATA = {
     {
       id: 'sum-taxes',
       label: 'Taxes owed',
+      answer: '$0',
+      line: '2025 paid in full',
       value: '$0.00 due',
       files: [{ label: '2025 tax bill PDF', path: 'deal/city-records/tax.pdf' }],
       source: {
@@ -90,7 +101,7 @@ const SAMPLE_DATA = {
           id: 'deed-2021',
           sortDate: '2021-12-27',
           label: 'Deed transfer #23514',
-          value: 'YG Super Corp to 23C Properties LLC ($410,000)',
+          value: 'YG Super Corp to 23C Properties LLC ($410,000) · Instrument 56701234',
           files: [{ label: 'Sales PDF', path: 'deal/city-records/sales.pdf' }],
           source: {
             sourceName: 'Summit County Fiscal Office Sales Summary',
@@ -105,7 +116,7 @@ const SAMPLE_DATA = {
   ],
 };
 
-test('no source or verification text renders visibly without hover or tap', () => {
+test('collapsed default renders answer + line only; expanded reveals details, files, and info button; overlay shows on activeId', () => {
   const CityRecordsView = loadCityRecordsView();
   const signedUrls = {
     'deal/city-records/card.pdf': 'https://signed.example/card.pdf',
@@ -115,17 +126,30 @@ test('no source or verification text renders visibly without hover or tap', () =
 
   assert.deepEqual(findVisibleSubtextViolations(SAMPLE_DATA), []);
 
-  // Default state: activeId is null (not hovering or tapping anything).
+  // Default collapsed state: activeId is null, nothing expanded.
   const html = renderToStaticMarkup(
     createElement(CityRecordsView, { data: SAMPLE_DATA, signedUrls, activeId: null })
   );
 
-  // Required visible facts & file links ARE present.
-  assert.match(html, /Legal unit count/);
-  assert.match(html, /10 units \(County commercial card\)/);
-  assert.match(html, /\$0\.00 due/);
+  // 2-col phone / 3-col desktop grid and big bold answers + 1-line summary visible.
+  assert.match(html, /grid-cols-2/);
+  assert.match(html, /sm:grid-cols-3/);
+  assert.match(html, /text-2xl/);
+  assert.doesNotMatch(html, /truncate/);
+  assert.match(html, /Legal units/);
+  assert.match(html, />10</);
+  assert.match(html, /Built 1919 · 10,800 sq ft/);
+  assert.match(html, /\$0/);
+  assert.match(html, /2025 paid in full/);
   assert.match(html, /Ownership &amp; sale history/);
-  assert.match(html, /https:\/\/signed\.example\/card\.pdf/);
+  assert.match(html, /YG Super Corp to 23C Properties LLC \(\$410,000\)/);
+
+  // Details, PDF links, info button, and request notes MUST NOT appear collapsed.
+  assert.doesNotMatch(html, /10 units \(County commercial card\)/);
+  assert.doesNotMatch(html, /Instrument 56701234/);
+  assert.doesNotMatch(html, /https:\/\/signed\.example\/card\.pdf/);
+  assert.doesNotMatch(html, /Source details for/);
+  assert.doesNotMatch(html, /Certificate of Occupancy: Not online/);
 
   // Source / verification / subtext MUST NOT appear anywhere without hover or tap.
   assert.doesNotMatch(html, /role="tooltip"/);
@@ -142,7 +166,22 @@ test('no source or verification text renders visibly without hover or tap', () =
   assert.doesNotMatch(html, /<figcaption\b/i);
   assert.doesNotMatch(html, /\stitle=/i);
 
-  // Hover or tap state: activeId renders ONLY that item's overlay.
+  // Expanded card state (without activeId): reveals details, file pills, and ⓘ button, NO overlay.
+  const expandedHtml = renderToStaticMarkup(
+    createElement(CityRecordsView, {
+      data: SAMPLE_DATA,
+      signedUrls,
+      activeId: null,
+      expandedIds: ['sum-units'],
+    })
+  );
+  assert.match(expandedHtml, /col-span-full/);
+  assert.doesNotMatch(expandedHtml, /County commercial card/);
+  assert.match(expandedHtml, /https:\/\/signed\.example\/card\.pdf/);
+  assert.match(expandedHtml, /aria-label="Source details for Legal units"/);
+  assert.doesNotMatch(expandedHtml, /role="tooltip"/);
+
+  // Active overlay state: renders ONLY that item's SourceOverlay.
   const hoveredHtml = renderToStaticMarkup(
     createElement(CityRecordsView, { data: SAMPLE_DATA, signedUrls, activeId: 'sum-units' })
   );
@@ -172,14 +211,135 @@ test('agency records sort newest-first and paths extract cleanly', () => {
   ]);
 });
 
+test('organizer carries answer and line, deduplicates details, and isolates request notes to Not online yet', () => {
+  const input = {
+    summary: [
+      {
+        id: 'sum-units',
+        label: 'Legal units',
+        answer: '10',
+        line: 'Built 1919 · 10,800 sq ft',
+        value: '10 units (County commercial card) · Certificate of Occupancy: Not online, needs request (Summit County Dept. of Building Standards)',
+        files: [{ label: 'Card PDF', path: 'card.pdf' }],
+        source: { sourceName: 'County Card', documentDate: '2026-01-01', retrievedAt: '2026-11-24' },
+      },
+      {
+        id: 'sum-code',
+        label: 'Open code case',
+        answer: '1 open',
+        line: 'Exterior repairs',
+        value: '1 open',
+        files: [],
+      },
+    ],
+    agencies: [
+      {
+        agency: 'Summit County Fiscal Office',
+        items: [
+          {
+            id: 'sf-commercial-card',
+            label: 'Commercial card',
+            value: 'Parcel 6801234 (Alt 010203) · Class C Commercial, LUC 401 (Apartments 4-19 units), Structure 211 · 10 units · Year built 1919 · 10,800 gross SF · Lot 5,194 SF · Legal: BUCHTEL & WOLF LOT 12',
+            files: [{ label: 'Commercial PDF', path: 'sf-card.pdf' }],
+          },
+        ],
+      },
+      {
+        agency: 'Akron & Summit Building',
+        items: [
+          {
+            id: 'ak-co-unit-count-request',
+            label: 'Certificate of Occupancy & legal unit count (9 vs 10)',
+            value: 'Request from City of Akron & Summit County Building Standards',
+            files: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  const out = organizeCityRecords(input);
+  const units = out.summary.find((r) => r.id === 'sum-units');
+  assert.equal(units.answer, '10');
+  assert.equal(units.line, 'Built 1919 · 10,800 sq ft');
+
+  // Every factual detail preserved, no duplicates, no bare "10 units", no request notes.
+  assert.ok(!units.details.some((d) => /commercial card/i.test(d)));
+  assert.ok(units.details.includes('Parcel 6801234 (Alt 010203)'));
+  assert.ok(units.details.some((d) => d.includes('LUC 401')));
+  assert.ok(units.details.includes('10,800 gross SF'));
+  assert.ok(units.details.includes('Lot 5,194 SF'));
+  assert.ok(units.details.includes('Legal: BUCHTEL & WOLF LOT 12'));
+  assert.equal(units.details.filter((d) => d === '10 units').length, 0);
+  assert.equal(units.details.filter((d) => /not online|request/i.test(d)).length, 0);
+
+  // Code case restating only the answer drops duplicate detail.
+  const code = out.summary.find((r) => r.id === 'sum-code');
+  assert.equal(code.answer, '1 open');
+  assert.deepEqual(code.details, []);
+
+  // Offline group merges Certificate of Occupancy requests into ONE entry naming the office.
+  const offline = out.groups.find((g) => g.id === 'offline');
+  assert.ok(offline);
+  assert.equal(offline.items.length, 1);
+  assert.match(offline.items[0].label, /Certificate of Occupancy/i);
+  assert.equal(offline.items[0].value, 'Request from City of Akron & Summit County Building Standards');
+});
+
+test('older records without answer/line fall back to first plain fact segment and empty line', () => {
+  const out = organizeCityRecords({
+    summary: [
+      {
+        id: 'sum-owner',
+        label: 'Owner',
+        value: '23C Properties LLC · Acquired 2021-12-27 · Active Ohio LLC',
+      },
+    ],
+    agencies: [
+      {
+        agency: 'Fiscal Office',
+        items: [
+          {
+            id: 'legacy-parcel',
+            label: 'Parcel record',
+            value: 'Parcel 6801234 · 10,800 gross SF · Lot 5,194 SF',
+          },
+        ],
+      },
+    ],
+  });
+
+  const owner = out.summary.find((r) => r.id === 'sum-owner');
+  assert.equal(owner.answer, '23C Properties LLC');
+  assert.equal(owner.line, '');
+  assert.deepEqual(owner.details, ['Acquired 2021-12-27', 'Active Ohio LLC']);
+
+  const parcel = out.groups.flatMap((g) => g.items).find((r) => r.id === 'legacy-parcel');
+  assert.equal(parcel.answer, '10,800 gross SF');
+  assert.equal(parcel.line, '');
+  assert.deepEqual(parcel.details, ['Parcel 6801234', 'Lot 5,194 SF']);
+});
+
+test('answerTone marks open/owed amber and $0/none green', () => {
+  assert.equal(answerTone('Open code case', '1 open'), 'warn');
+  assert.equal(answerTone('Taxes owed', '$1,240 due'), 'warn');
+  assert.equal(answerTone('Taxes owed', '$0'), 'good');
+  assert.equal(answerTone('Taxes owed', '$0.00 due'), 'good');
+  assert.equal(answerTone('Liens', 'None found'), 'good');
+  assert.equal(answerTone('Legal units', '10'), 'neutral');
+  assert.equal(answerTone('Owner', '23C Properties LLC'), 'neutral');
+  assert.equal(answerTone('Open code case', '1'), 'warn');
+  assert.equal(answerTone('Open code case', '0'), 'neutral');
+});
+
 const TOPIC_FIXTURE = {
   summary: [
     ['sum-owner', 'Owner', '23C Properties LLC'],
-    ['sum-units', 'Legal unit count', '10 units'],
+    ['sum-units', 'Legal units', '10 units'],
     ['sum-taxes', 'Taxes owed', '$0 due'],
     ['sum-liens', 'Liens', 'No judgments found'],
-    ['sum-violations', 'Violations', 'One open housing case'],
-    ['sum-mortgages', 'Mortgages', 'Recorded mortgage search pending'],
+    ['sum-violations', 'Open code case', 'One open housing case'],
+    ['sum-mortgages', 'Open mortgage', 'Recorded mortgage search pending'],
   ].map(([id, label, value]) => ({ id, label, value })),
   agencies: Object.entries({
     'Summit County Fiscal Office': [
@@ -225,24 +385,33 @@ const TOPIC_FIXTURE = {
       ['other-oppzone-landbank', 'Opportunity zone / land bank', 'Outside the zone'],
       ['other-sheriff-sales', 'Sheriff sales', 'No scheduled sale'],
     ],
-  }).map(([agency, items]) => ({ agency, items: items.map(([id, label, value], index) => ({
-    id, label, value, sortDate: `2026-${String(index % 9 + 1).padStart(2, '0')}-01`,
-    files: [{ label: 'Record PDF', path: `${id}.pdf` }],
-    source: { sourceName: agency, sourceUrl: `https://official.example/${id}`, documentDate: '2026-01-01', retrievedAt: '2026-11-24' },
-  })) })),
+  }).map(([agency, items]) => ({
+    agency,
+    items: items.map(([id, label, value], index) => ({
+      id,
+      label,
+      value,
+      sortDate: `2026-${String((index % 9) + 1).padStart(2, '0')}-01`,
+      files: [{ label: 'Record PDF', path: `${id}.pdf` }],
+      source: { sourceName: agency, sourceUrl: `https://official.example/${id}`, documentDate: '2026-01-01', retrievedAt: '2026-11-24' },
+    })),
+  })),
 };
 const allRows = (data) => [...data.summary, ...data.groups.flatMap((group) => group.items)];
 const organizedFixture = () => organizeCityRecords(TOPIC_FIXTURE);
 
-test('topic organizer preserves specified order and collapses unavailable-only rows last', () => {
+test('topic organizer preserves specified order and places all request-only items in Not online yet', () => {
   const output = organizedFixture();
   assert.deepEqual(output.groups.map((group) => group.label), [
     'Ownership & sale history', 'Mortgages, liens & court cases', 'Taxes, value & assessments',
-    'Building, units & code', 'Zoning & location', 'Not online yet',
+    'Building, units & code', 'Zoning & location', 'Records to request',
   ]);
   for (const group of output.groups) assert.equal(group.count, group.items.length);
   const offline = output.groups.at(-1).items;
-  assert.deepEqual(offline.flatMap((row) => row.mergedIds).sort(), ['sf-recorded-docs-captcha', 'amc-captcha', 'ak-water-balance-request'].sort());
+  assert.deepEqual(
+    offline.flatMap((row) => row.mergedIds).sort(),
+    ['sf-recorded-docs-captcha', 'amc-captcha', 'ak-water-balance-request', 'ak-co-unit-count-request', 'ak-city-rental-file'].sort()
+  );
   for (const row of offline) {
     assert.match(row.value, /^Request from /);
     assert.doesNotMatch(row.value, /blocked|not online|not searchable/i);
@@ -259,24 +428,26 @@ test('every input id appears exactly once across tiles and groups, without mutat
   assert.deepEqual(TOPIC_FIXTURE, before);
 });
 
-test('unit count and rental families become one row each with all facts, files and sources', () => {
+test('unit count and rental families merge cleanly with all facts, files and sources without request notes', () => {
   const rows = allRows(organizedFixture());
   const units = rows.filter((row) => row.mergedIds.includes('sum-units'));
   assert.equal(units.length, 1);
-  assert.deepEqual(units[0].mergedIds, ['sum-units', 'sf-commercial-card', 'ak-co-unit-count-request']);
-  assert.match(units[0].value, /7,200 square feet/);
+  assert.deepEqual(units[0].mergedIds, ['sum-units', 'sf-commercial-card']);
+  assert.equal(units[0].answer, '10 units');
+  assert.deepEqual(units[0].details, ['7,200 square feet']);
   assert.doesNotMatch(units[0].value, /10 units · 10 units/);
-  assert.match(units[0].value, /Certificate of occupancy: Request from/);
-  assert.equal(units[0].files.length, 2);
-  assert.equal(units[0].sources.length, 2);
+  assert.doesNotMatch(units[0].value, /Request from/);
+  assert.equal(units[0].files.length, 1);
+  assert.equal(units[0].sources.length, 1);
+
   const rental = rows.filter((row) => row.mergedIds.includes('sf-rental-reg'));
   assert.equal(rental.length, 1);
-  assert.deepEqual([...rental[0].mergedIds].sort(), ['sf-rental-reg', 'sf-sa-rental-2010-2017', 'ak-city-rental-file'].sort());
-  assert.match(rental[0].value, /Registered in 2026/);
-  assert.match(rental[0].value, /\$600 assessed/);
-  assert.match(rental[0].value, /City rental file: Request from/);
-  assert.equal(rental[0].files.length, 3);
-  assert.equal(rental[0].sources.length, 3);
+  assert.deepEqual([...rental[0].mergedIds].sort(), ['sf-rental-reg', 'sf-sa-rental-2010-2017'].sort());
+  assert.equal(rental[0].answer, 'Registered in 2026');
+  assert.deepEqual(rental[0].details, ['$600 assessed during 2010–2017']);
+  assert.doesNotMatch(rental[0].value, /Request from/);
+  assert.equal(rental[0].files.length, 2);
+  assert.equal(rental[0].sources.length, 2);
 });
 
 test('identical normalized label and value merge transitively with explicit families', () => {
@@ -285,17 +456,25 @@ test('identical normalized label and value merge transitively with explicit fami
   fixture.agencies[0].items.push({ ...card, id: 'future-card', label: ' COMMERCIAL CARD! ', value: card.value.toUpperCase() });
   const units = allRows(organizeCityRecords(fixture)).find((row) => row.id === 'sum-units');
   assert.ok(units.mergedIds.includes('future-card'));
-  assert.equal(units.files.length, 2);
-  assert.equal(units.sources.length, 2);
+  assert.equal(units.files.length, 1);
+  assert.equal(units.sources.length, 1);
 });
 
 test('unknown ids use keyword fallback or Other and request status overrides topic', () => {
-  const output = organizeCityRecords({ agencies: [{ agency: 'Records Desk', items: [
-    { id: 'future-a', label: 'Mortgage release', value: 'Satisfied' },
-    { id: 'future-b', label: 'Boundary marker', value: 'Survey peg' },
-    { id: 'future-c', label: 'Tax certificate', value: 'Not online, needs request' },
-  ] }] });
-  assert.deepEqual(output.groups.map((group) => [group.id, group.items[0].id]), [['liens', 'future-a'], ['other', 'future-b'], ['offline', 'future-c']]);
+  const output = organizeCityRecords({
+    agencies: [{
+      agency: 'Records Desk',
+      items: [
+        { id: 'future-a', label: 'Mortgage release', value: 'Satisfied' },
+        { id: 'future-b', label: 'Boundary marker', value: 'Survey peg' },
+        { id: 'future-c', label: 'Tax certificate', value: 'Not online, needs request' },
+      ],
+    }],
+  });
+  assert.deepEqual(
+    output.groups.map((group) => [group.id, group.items[0].id]),
+    [['liens', 'future-a'], ['other', 'future-b'], ['offline', 'future-c']]
+  );
 });
 
 test('every topic sorts newest first, including merged records using latest member date', () => {
@@ -319,21 +498,31 @@ test('organizer output keeps forbidden provenance text out of all visible fields
   assert.match(allRows(output).find((row) => row.id === 'sf-tax-2025-paid').value, /\$8,400 paid/);
 });
 
-test('compact sections render counts, correct open states, dates and every merged overlay source', () => {
+test('compact sections cap visible rows at 5, render counts, dates, and expanded/overlay states cleanly', () => {
   const View = loadCityRecordsView();
   const output = organizedFixture();
   const signedUrls = Object.fromEntries(collectRecordPaths(TOPIC_FIXTURE).map((path) => [path, `https://signed.example/${path}`]));
   const html = renderToStaticMarkup(createElement(View, { data: TOPIC_FIXTURE, signedUrls }));
   assert.match(html, /What matters/);
-  assert.equal((html.match(/<details[^>]* open=""/g) || []).length, 3);
-  assert.match(html, /<details[^>]*><summary[^>]*>Not online yet/);
+  assert.equal((html.match(/<details[^>]* open=""/g) || []).length, 4);
+  assert.match(html, /<details[^>]*><summary[^>]*>Records to request/);
   assert.match(html, /<time dateTime="2026-/);
+  assert.match(html, /Show 2 more/);
   for (const group of output.groups) assert.ok(html.includes(`(${group.count})`));
   assert.doesNotMatch(html.replace(/\s(?:href|dateTime)="[^"]*"/g, ''), /https?:|Retrieved|Unverified|Source:/i);
+
   const rental = allRows(output).find((row) => row.id === 'sf-rental-reg');
-  const active = renderToStaticMarkup(createElement(View, { data: TOPIC_FIXTURE, signedUrls, activeId: rental.id }));
+  const expanded = renderToStaticMarkup(
+    createElement(View, { data: TOPIC_FIXTURE, signedUrls, expandedIds: [rental.id] })
+  );
+  assert.match(expanded, /\$600 assessed during 2010–2017/);
+  for (const file of rental.files) assert.ok(expanded.includes(signedUrls[file.path]));
+  assert.match(expanded, /aria-label="Source details for Rental registration &amp; assessments"/);
+
+  const active = renderToStaticMarkup(
+    createElement(View, { data: TOPIC_FIXTURE, signedUrls, activeId: rental.id })
+  );
   for (const source of rental.sources) assert.ok(active.includes(source.sourceUrl));
-  for (const file of rental.files) assert.ok(active.includes(signedUrls[file.path]));
   assert.equal((active.match(/role="tooltip"/g) || []).length, 1);
 });
 
@@ -388,16 +577,35 @@ test('City Records page never loads on the public site or for non-owner roles', 
   }
 });
 
-test('partly blocked records keep their real facts; fully blocked ones keep tucked-in numbers', async () => {
+test('partly blocked records extract request notes to offline while keeping real facts; fully blocked ones keep tucked-in numbers', async () => {
   const { organizeCityRecords } = await import('../src/lib/cityRecords.js');
   const out = organizeCityRecords({
-    summary: [{ id: 'sum-mortgages', label: 'Open mortgages', value: 'Blocked online by CAPTCHA (County Recorder) \u00b7 Tax bill mailing: C/O Example Bank', files: [] }],
-    agencies: [{ id: 'ak', agency: 'City Utilities', items: [{ id: 'ak-water-balance-request', label: 'Water balance', value: 'Not online, needs request (0 delinquent charges certified to taxes)', sortDate: '2026-11-24', files: [] }] }],
+    summary: [{
+      id: 'sum-mortgages',
+      label: 'Open mortgage',
+      value: 'Blocked online by CAPTCHA (County Recorder) \u00b7 Tax bill mailing: C/O Example Bank',
+      files: [],
+    }],
+    agencies: [{
+      id: 'ak',
+      agency: 'City Utilities',
+      items: [{
+        id: 'ak-water-balance-request',
+        label: 'Water balance',
+        value: 'Not online, needs request (0 delinquent charges certified to taxes)',
+        sortDate: '2026-11-24',
+        files: [],
+      }],
+    }],
   });
   const tile = out.summary.find((r) => r.mergedIds.includes('sum-mortgages'));
   assert.ok(tile, 'mortgage tile stays in What matters');
-  assert.match(tile.value, /Example Bank/);
+  assert.equal(tile.answer, 'Tax bill mailing: C/O Example Bank');
+  assert.doesNotMatch(tile.value, /CAPTCHA|Blocked/i);
+
   const offline = out.groups.find((g) => g.id === 'offline');
   const water = offline.items.find((r) => r.mergedIds.includes('ak-water-balance-request'));
   assert.match(water.value, /0 delinquent charges/);
+  const recorder = offline.items.find((r) => /Open mortgage/i.test(r.label));
+  assert.equal(recorder.value, 'Request from County Recorder');
 });
