@@ -40,6 +40,11 @@ function Money({ label, value, onChange, step = 25, suffix }) {
   );
 }
 
+export function AirbnbSwitch({ base, setBase }) {
+  const strUnits = Math.round(+val(base, 'strUnits')) || 0;
+  return <Segmented label="Units as Airbnb" options={strUnitOptions()} value={strUnits} onChange={(n) => setBase({ ...base, strUnits: n })} />;
+}
+
 // The three switches: units (9 or 10), rent, and how many units run as Airbnb.
 // Owner, realtor, reviewer and lender see them. Never the seller or viewers.
 export default function Switches({ base, setBase, owner }) {
@@ -55,7 +60,7 @@ export default function Switches({ base, setBase, owner }) {
         <Segmented label="Units" options={[[9, '9 units'], [10, '10 units']]} value={units} onChange={(u) => set({ units: u })} />
         {units === 10 && <Money label="Extra repair for the 10th unit" value={val(base, 'tenthUnitRepair')} step={500} onChange={(v) => set({ tenthUnitRepair: v })} />}
         <Money label="Rent per unit / month" value={val(base, 'rent')} onChange={(v) => set({ rent: v })} />
-        <Segmented label="Units as Airbnb" options={strUnitOptions()} value={strUnits} onChange={(n) => set({ strUnits: n })} />
+        <AirbnbSwitch base={base} setBase={setBase} />
       </div>
       {strUnits > 0 && (
         <div className="mt-3 text-sm">

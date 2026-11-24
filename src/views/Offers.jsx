@@ -8,6 +8,7 @@ import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, grade, money, pct } f
 import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
+import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
@@ -112,12 +113,13 @@ const NUMBERS = [
 ];
 
 // Same layout the seller sees: a letter, a plain name, one line, how it works, then the numbers.
-export function OptionCard({ o, i, e }) {
+export function OptionCard({ o, i, e, planHref }) {
   const p = plain(o.structure, e);
   return (
     <div className="rounded-3xl border-2 border-ink bg-white p-5">
       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-display text-lg text-white">{letterOf(o, i)}</span>
       <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
+      {planHref && <a href={planHref} className="mt-2 inline-flex min-h-9 items-center text-sm underline">Month by month</a>}
       <p className="mt-1 text-ink-soft">{p.glance}</p>
       <ol className="mt-4 space-y-2">{p.lines.map((s, n) => <li key={n} className="flex gap-3 text-sm"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-warm-soft text-xs">{n + 1}</span>{s}</li>)}</ol>
       <div className="mt-4 rounded-2xl bg-ink p-4 text-white">
@@ -194,7 +196,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
       </div>
       {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card>}
       {offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
-      {offers.length > 0 && view === 'cards' && <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4">{offers.map((x, i) => <OptionCard key={x.id} o={x} i={i} e={evals[x.id]} />)}</div>}
+      {offers.length > 0 && view === 'cards' && <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4">{offers.map((x, i) => <OptionCard key={x.id} o={x} i={i} e={evals[x.id]} planHref={role === 'owner' && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) ? `#/d/${deal.slug}/plans/${x.structure}` : null} />)}</div>}
 
       {showEdit && (
         <>

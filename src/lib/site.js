@@ -15,6 +15,8 @@ export const siteRules = (kind) => ({
 export const canAccessCityRecords = (kind, role, preview = false) =>
   Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);
 
+export const canAccessDealPlan = canAccessCityRecords;
+
 // Role links: #/join/<token>. 64 hex characters, made by the database.
 export const isLinkToken = (t) => /^[a-f0-9]{64}$/.test(t || '');
 export const roleLinkUrl = (token) => `${PUBLIC_SITE}#/join/${token}`;

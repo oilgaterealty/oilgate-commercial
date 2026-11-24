@@ -8,7 +8,7 @@ import { LenderBoard } from './LenderTerms.jsx';
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { PUBLIC_SITE, SITE_KIND, canAccessCityRecords, roleLinkUrl, siteRules } from '../lib/site.js';
+import { PUBLIC_SITE, SITE_KIND, canAccessCityRecords, canAccessDealPlan, roleLinkUrl, siteRules } from '../lib/site.js';
 import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -19,6 +19,7 @@ import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 
 const CityRecords = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./CityRecords.jsx'));
+const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./DealPlan.jsx'));
 
 const BASE_TABS = [
   ['overview', 'Overview'],
@@ -33,7 +34,7 @@ const BASE_TABS = [
   ['settings', 'Settings'],
 ];
 const TABS = siteRules(SITE_KIND).ownerAllowed
-  ? [...BASE_TABS.slice(0, 8), ['city-records', 'City records'], ...BASE_TABS.slice(8)]
+  ? [...BASE_TABS.slice(0, 2), ['plans', 'Plans'], ...BASE_TABS.slice(2, 8), ['city-records', 'City records'], ...BASE_TABS.slice(8)]
   : BASE_TABS;
 const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
@@ -309,6 +310,11 @@ export default function Owner({ deal: initial, me, tab }) {
         </div>
       )}
       {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
+      {active === 'plans' && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
+        <Suspense fallback={<Empty>Loading…</Empty>}>
+          <DealPlan key={deal.id} deal={deal} role="owner" />
+        </Suspense>
+      )}
       {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="owner" />}
       {active === 'tenants' && <Tenants deal={deal} me={me} role="owner" />}
       {active === 'comps' && <Comps deal={deal} me={me} role="owner" />}
