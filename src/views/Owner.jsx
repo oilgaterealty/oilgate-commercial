@@ -5,10 +5,10 @@ import Tenants from './Tenants.jsx';
 import Comps from './Comps.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import { LenderBoard } from './LenderTerms.jsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { PUBLIC_SITE, roleLinkUrl } from '../lib/site.js';
+import { PUBLIC_SITE, SITE_KIND, canAccessCityRecords, roleLinkUrl, siteRules } from '../lib/site.js';
 import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -18,7 +18,9 @@ import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 
-const TABS = [
+const CityRecords = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./CityRecords.jsx'));
+
+const BASE_TABS = [
   ['overview', 'Overview'],
   ['offers', 'Offers'],
   ['walkthrough', 'Walkthrough'],
@@ -30,6 +32,9 @@ const TABS = [
   ['seller-page', 'Seller page'],
   ['settings', 'Settings'],
 ];
+const TABS = siteRules(SITE_KIND).ownerAllowed
+  ? [...BASE_TABS.slice(0, 8), ['city-records', 'City records'], ...BASE_TABS.slice(8)]
+  : BASE_TABS;
 const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
 
@@ -310,6 +315,11 @@ export default function Owner({ deal: initial, me, tab }) {
       {active === 'photos' && <div className="space-y-5"><UnitGallery deal={deal} me={me} role="owner" /><Photos deal={deal} role="owner" me={me} /></div>}
       {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
+      {active === 'city-records' && CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
+        <Suspense fallback={<Empty>Loading…</Empty>}>
+          <CityRecords deal={deal} role="owner" />
+        </Suspense>
+      )}
       {active === 'seller-page' && <div className="space-y-5"><LoanPosition deal={deal} role="owner" /><SellerEditor deal={deal} onSaved={setDeal} /></div>}
       {active === 'settings' && <div className="space-y-6"><People deal={deal} /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Settings deal={deal} onSaved={setDeal} /><OwnerAlerts /></div><Notes deal={deal} me={me} /></div>}
     </div>
