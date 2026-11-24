@@ -96,13 +96,15 @@ export default function PhotoViewer({ items, index, onIndex, actions }) {
 export function ThumbOverlay({ buttons }) {
   if (!buttons || !buttons.length) return null;
   return (
-    <div data-thumb-overlay onClick={(e) => e.stopPropagation()}
-      className="absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1.5 pt-5 opacity-90 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+    // The bar itself lets taps through (pointer-events-none), so a tap anywhere on the photo opens it;
+    // only the small buttons catch their own taps.
+    <div data-thumb-overlay
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-1 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1.5 pt-5 opacity-90 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
       {buttons.map((b) => (
         <button key={b.key} type="button" title={b.label} aria-label={b.label} disabled={b.disabled}
           aria-pressed={b.pressed === undefined ? undefined : Boolean(b.pressed)}
           onClick={(e) => { e.stopPropagation(); e.preventDefault(); b.onClick(); }}
-          className={`flex h-8 min-w-8 items-center justify-center rounded-lg px-1.5 text-xs font-semibold shadow disabled:opacity-40 ${b.pressed ? 'bg-ink text-white ring-1 ring-white' : 'bg-white/90 text-ink hover:bg-white'}`}>
+          className={`pointer-events-auto flex h-8 min-w-8 items-center justify-center rounded-lg px-1.5 text-xs font-semibold shadow disabled:opacity-40 ${b.pressed ? 'bg-ink text-white ring-1 ring-white' : 'bg-white/90 text-ink hover:bg-white'}`}>
           <span aria-hidden="true">{b.icon}</span>
         </button>
       ))}

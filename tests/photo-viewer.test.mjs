@@ -79,7 +79,7 @@ test('every photo grid has a bottom overlay bar on its thumbnails', () => {
   assert.match(walk, /<ThumbOverlay buttons=\{photoButtons\(`l:\$\{m\.id\}`, null, true\)\} \/>/);
   assert.match(walk, /<ThumbOverlay buttons=\{photoButtons\(`p:\$\{p\.id\}`, p, true\)\} \/>/);
   const photos = read('src/components/Photos.jsx');
-  assert.equal((photos.match(/<ThumbOverlay /g) || []).length, 2); // strip + All photos grid
+  assert.equal((photos.match(/<ThumbOverlay /g) || []).length, 1); // All photos grid; the seller strip has no overlay (v6.4)
   const files = read('src/components/Files.jsx');
   assert.match(files, /export function PhotoGrid[\s\S]*<ThumbOverlay /);
   assert.match(files, /export function uploadShareButtons/);

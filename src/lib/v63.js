@@ -92,3 +92,34 @@ export function compsForView(comps, picks, view) {
   const ids = new Set((picks || []).filter((p) => p.picker_uid === view).map((p) => p.comp_id));
   return (comps || []).filter((c) => ids.has(c.id));
 }
+
+// v6.4: comps sort by any column. Blanks always go last, whichever direction.
+export const COMP_SORTS = [
+  ['address', 'Property'], ['units', 'Units'], ['sale_price', 'Sale price'], ['per_unit', 'Per unit'],
+  ['sale_date', 'Sold'], ['distance_mi', 'Distance'], ['source', 'Source'],
+];
+function sortValue(c, key) {
+  if (key === 'per_unit') return perUnitOf(c.sale_price, c.units);
+  if (key === 'units' || key === 'sale_price' || key === 'distance_mi') return num(c[key]);
+  if (key === 'sale_date') return c.sale_date ? String(c.sale_date) : null;
+  if (key === 'source') return compSource(c).toLowerCase() || null;
+  return String(c[key] || '').toLowerCase() || null;
+}
+export function sortComps(comps, key, dir = 'asc') {
+  if (!key) return comps || [];
+  const sign = dir === 'desc' ? -1 : 1;
+  return [...(comps || [])].sort((a, b) => {
+    const x = sortValue(a, key);
+    const y = sortValue(b, key);
+    if (x === null && y === null) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sign;
+  });
+}
+// "Apr 2026" for a full date; the year alone if that's all there is.
+export function soldLabel(date) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(date || ''));
+  if (!m) return yearOf(date) ? String(yearOf(date)) : '';
+  return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m[2] - 1]} ${m[1]}`;
+}

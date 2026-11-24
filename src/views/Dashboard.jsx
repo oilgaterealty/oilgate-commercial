@@ -23,16 +23,17 @@ function Tile({ label, children, sub, strong }) {
   );
 }
 
-// Owner types the number the seller is currently asking. Everyone else reads it.
-function CurrentOffer({ base, setBase, owner }) {
-  const v = base.askPrice;
-  if (!owner) return <Tile label="Current offer (seller’s number)" strong sub="Being discussed, not signed">{v ? money(+v) : 'Not set yet'}</Tile>;
+// The two offers lead the glance: the seller's number and ours. Owner types them; everyone else reads them.
+export const OFFER_TILES = [['askPrice', 'Seller’s offer'], ['ourOffer', 'Our offer']];
+function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Seller’s offer' }) {
+  const v = base[field];
+  if (!owner) return <Tile label={label} strong sub="Being discussed, not signed">{v ? money(+v) : 'Not set yet'}</Tile>;
   return (
     <div className="rounded-2xl bg-ink p-3 text-white">
-      <label htmlFor="ask" className="text-xs text-warm">Current offer (seller’s number)</label>
+      <label htmlFor={`offer-${field}`} className="text-xs text-warm">{label}</label>
       <div className="relative mt-1">
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-xl text-white/60">$</span>
-        <input id="ask" type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, askPrice: e.target.value === '' ? '' : +e.target.value })}
+        <input id={`offer-${field}`} type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, [field]: e.target.value === '' ? '' : +e.target.value })}
           className="w-full rounded-lg border border-white/20 bg-white/10 py-1 pl-6 pr-2 font-display text-xl font-semibold text-white outline-none focus:border-warm" />
       </div>
       <p className="mt-0.5 text-xs text-white/70">Being discussed, not signed. Only you can change it.</p>
@@ -79,8 +80,8 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
         <div className="space-y-5">
           <Card>
             <CardTitle aside={<a className="text-sm underline" href={`${root}/offers`}>Compare the offers</a>}>Deal at a glance</CardTitle>
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <CurrentOffer base={base} setBase={setBase} owner={owner} />
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
               <Tile label="Best cash flow" strong sub={best ? `${best.x.name} · whole building` : ''}>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
               <Tile label="Monthly rent / unit" sub={o.strUnits ? `${o.strUnits} unit${o.strUnits > 1 ? 's' : ''} as Airbnb` : 'Regular rentals'}>{money(o.b.rent)}</Tile>
               <Tile label="Status">{cap(deal.status)}</Tile>

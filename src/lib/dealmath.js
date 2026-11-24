@@ -41,7 +41,7 @@ export const STR_FIELDS = [
 export const KNOWN_BASE = ['taxes', 'insurance', 'utilities', 'admin', 'turns'];
 
 export const BASE_DEFAULTS = {
-  units: 0, tenthUnitRepair: 12000, rent: 0, vacancyPct: 7,
+  units: 0, tenthUnitRepair: 20000, rent: 0, vacancyPct: 7,
   strUnits: 0, strNightly: 0, strOccPct: 0, strFeesPct: 15, strCleaningPerStay: 0, strNightsPerStay: 3, strCostsMo: 0, taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 10, reservesPerUnit: 300, value: 0, rehab: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,

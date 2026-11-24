@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5Access, validComp } from '../lib/leaseUp.js';
 import { money, operating } from '../lib/dealmath.js';
 import { roleLabel } from '../lib/format.js';
-import { compSource, compsForView, milesLabel, perUnitOf, pickers, picksByComp, yearOf } from '../lib/v63.js';
+import { COMP_SORTS, compSource, compsForView, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
 import { buyerName, possessive } from '../lib/people.js';
@@ -14,13 +14,13 @@ const decimal = (v) => v.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
 
 // One comp, easy to scan: the four numbers that matter in bold, then where it came from.
 function CompFacts({ c }) {
-  const year = yearOf(c.sale_date);
+  const sold = soldLabel(c.sale_date);
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
       <div><dt className="text-xs text-ink-soft">Units</dt><dd className="text-lg font-semibold">{c.units}</dd></div>
       <div><dt className="text-xs text-ink-soft">Sale price</dt><dd className="text-lg font-semibold">{money(+c.sale_price)}</dd></div>
       <div><dt className="text-xs text-ink-soft">Per unit</dt><dd className="text-lg font-semibold">{money(pricePerUnit(c))}</dd></div>
-      <div><dt className="text-xs text-ink-soft">Sold</dt><dd className="text-lg font-semibold">{year || '—'}</dd></div>
+      <div><dt className="text-xs text-ink-soft">Sold</dt><dd className="text-lg font-semibold">{sold || 'Not found'}</dd></div>
     </dl>
   );
 }
@@ -45,6 +45,8 @@ export default function Comps({ deal, me, role, preview }) {
   const [sendStatus, setSendStatus] = useState('');
   const [showPreviewMsg, setShowPreviewMsg] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [sort, setSort] = useState({ key: null, dir: 'asc' }); // only changes this screen's order
+  const sortBy = (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: ['sale_price', 'per_unit', 'sale_date', 'units'].includes(key) ? 'desc' : 'asc' }));
 
   useEffect(() => {
     if (!access.comps) return;
@@ -73,6 +75,7 @@ export default function Comps({ deal, me, role, preview }) {
   const units = localUnits ?? modelUnits;
   const noi = base ? operating({ ...base, units }).noi : null;
   const allComps = [...(savedComps || []), ...localComps];
+  const shownComps = sortComps(allComps, sort.key, sort.dir);
   const people = canPick ? pickers(picks, me?.uid, (r) => roleLabel[r] || r) : [];
   const viewOn = people.some((p) => p.uid === view) ? view : 'all';
   const viewComps = compsForView(allComps, picks, viewOn);
@@ -289,9 +292,18 @@ export default function Comps({ deal, me, role, preview }) {
           <Empty>No comps entered yet.</Empty>
         ) : (
           <>
-            {/* Phone: one card per comp. */}
+            {/* Phone: a sort picker, then one card per comp. */}
+            <div className="mb-3 flex flex-wrap items-center gap-2 md:hidden">
+              <label htmlFor="comp-sort" className="text-sm text-ink-soft">Sort by</label>
+              <select id="comp-sort" value={sort.key || ''} onChange={(e) => setSort({ key: e.target.value || null, dir: ['sale_price', 'per_unit', 'sale_date', 'units'].includes(e.target.value) ? 'desc' : 'asc' })}
+                className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">
+                <option value="">As entered</option>
+                {COMP_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+              {sort.key && <button type="button" onClick={() => sortBy(sort.key)} className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">{sort.dir === 'asc' ? 'Low to high ↑' : 'High to low ↓'}</button>}
+            </div>
             <ul className="space-y-3 md:hidden">
-              {allComps.map((c) => (
+              {shownComps.map((c) => (
                 <li key={c.id} className={`space-y-3 rounded-2xl border border-line bg-white p-4 ${inView(c) ? '' : 'opacity-50'}`}>
                   <div>
                     <p className="text-base font-semibold break-words">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
@@ -312,11 +324,18 @@ export default function Comps({ deal, me, role, preview }) {
               <table className="w-full border-separate border-spacing-0 text-left text-base">
                 <thead>
                   <tr className="text-sm text-ink-soft">
-                    {['Property', 'Units', 'Sale price', 'Per unit', 'Sold', 'Distance', 'Source', ''].map((h) => <th key={h} className="border-b border-line px-3 py-3 font-medium">{h}</th>)}
+                    {COMP_SORTS.map(([k, h]) => (
+                      <th key={k} className="border-b border-line px-1 py-2 font-medium" aria-sort={sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                        <button type="button" onClick={() => sortBy(k)} className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2 hover:bg-warm-soft ${sort.key === k ? 'text-ink' : ''}`}>
+                          {h}<span aria-hidden="true" className="text-xs">{sort.key === k ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
+                        </button>
+                      </th>
+                    ))}
+                    <th className="border-b border-line px-3 py-3 font-medium"><span className="sr-only">Pick</span></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {allComps.map((c) => (
+                  {shownComps.map((c) => (
                     <tr key={c.id} className={`align-top ${inView(c) ? '' : 'opacity-50'}`}>
                       <td className="border-b border-line px-3 py-4">
                         <p className="font-semibold">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
@@ -326,7 +345,7 @@ export default function Comps({ deal, me, role, preview }) {
                       <td className="border-b border-line px-3 py-4 font-semibold">{c.units}</td>
                       <td className="border-b border-line px-3 py-4 font-semibold">{money(+c.sale_price)}</td>
                       <td className="border-b border-line px-3 py-4 font-semibold">{money(pricePerUnit(c))}</td>
-                      <td className="border-b border-line px-3 py-4 font-semibold">{yearOf(c.sale_date) || '—'}</td>
+                      <td className="border-b border-line px-3 py-4 font-semibold">{soldLabel(c.sale_date) || 'Not found'}</td>
                       <td className="border-b border-line px-3 py-4">{milesLabel(c.distance_mi) || '—'}</td>
                       <td className="max-w-[260px] border-b border-line px-3 py-4 text-sm text-ink-soft">{compSource(c) || '—'}</td>
                       <td className="border-b border-line px-3 py-4">

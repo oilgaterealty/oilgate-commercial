@@ -134,16 +134,15 @@ export default function Seller({ deal, me, preview }) {
 
   return (
     <div className="readable space-y-8">
-      <Cover rows={coverRows} />
+      <Cover rows={coverRows} compact />
 
       <div>
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>
-        {c.intro && <p className="mt-3 max-w-2xl text-lg text-ink-soft">{c.intro}</p>}
       </div>
 
       {(walk.length > 0 || walkVideos.length > 0) && (
         <section className="space-y-3">
-          <h2 className="font-display text-2xl font-semibold">Photos from our visit</h2>
+          <h2 className="font-display text-2xl font-semibold">Photos</h2>
           {walk.length > 0 && <PhotoStrip photos={walk} />}
           <WalkVideos videos={walkVideos} />
         </section>

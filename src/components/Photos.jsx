@@ -12,12 +12,12 @@ export const photosOf = (rows) => (rows || []).filter((r) => r.kind === 'photo' 
 export function PhotoStrip({ photos }) {
   const [view, setView] = useState(null);
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2" aria-label="Property photos">
+    <div className="flex gap-3 overflow-x-auto pb-2" aria-label="Property photos">
       {photos.length ? photos.map((p, j) => (
-        <div key={p.id} className="group relative shrink-0 overflow-hidden rounded-xl">
-          <button type="button" onClick={() => setView(j)} className="block cursor-zoom-in"><img src={p.url} alt={p.note || 'Open property photo'} className="h-20 w-28 object-cover" /></button>
-          <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }]} />
-        </div>
+        <button key={p.id} type="button" onClick={() => setView(j)} aria-label={`Open photo ${j + 1} of ${photos.length}`}
+          className="block shrink-0 cursor-zoom-in overflow-hidden rounded-2xl">
+          <img src={p.url} alt={p.note || 'Property photo'} loading="lazy" className="h-28 w-40 object-cover transition hover:scale-[1.02] sm:h-40 sm:w-56" />
+        </button>
       )) : <Empty>Photos will appear after the walkthrough.</Empty>}
       <PhotoViewer items={photos.map((p) => ({ url: p.url, alt: p.note || 'Property photo' }))} index={view} onIndex={setView} />
     </div>
@@ -25,14 +25,15 @@ export function PhotoStrip({ photos }) {
 }
 
 // One cover photo up top: the starred upload. No slideshow, no arrows, no thumbnail strip. Tap to open full screen.
-export function Cover({ rows, empty }) {
+// compact: a short banner (the seller page), about a quarter of the full cover's height.
+export function Cover({ rows, empty, compact }) {
   const p = coverOf(rows);
   const [open, setOpen] = useState(null);
   if (!p) return empty ? <p className="rounded-2xl bg-warm-soft/60 px-5 py-4 text-base text-ink-soft">{empty}</p> : null;
   return (
     <div className="overflow-hidden rounded-3xl bg-ink">
       <button type="button" onClick={() => setOpen(0)} aria-label="Open the cover photo" className="block w-full cursor-zoom-in">
-        <img src={p.url} alt={p.note || 'The property'} className="aspect-[16/9] max-h-[460px] w-full object-cover sm:aspect-[16/7]" />
+        <img src={p.url} alt={p.note || 'The property'} className={compact ? 'h-36 w-full object-cover sm:h-48' : 'aspect-[16/9] max-h-[460px] w-full object-cover sm:aspect-[16/7]'} />
       </button>
       <PhotoViewer items={[{ url: p.url, alt: p.note || 'The property' }]} index={open} onIndex={setOpen} />
     </div>
