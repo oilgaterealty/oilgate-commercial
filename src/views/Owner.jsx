@@ -8,6 +8,7 @@ import { LenderBoard } from './LenderTerms.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
+import { PUBLIC_SITE, roleLinkUrl } from '../lib/site.js';
 import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -39,7 +40,7 @@ function People({ deal }) {
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
-  const link = window.location.origin + window.location.pathname;
+  const link = PUBLIC_SITE;
   const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
@@ -65,7 +66,7 @@ function People({ deal }) {
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div>
                   <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
-                  <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}</p>
+                  <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}{r.link_id ? ' · joined with a link' : ''}</p>
                   {r.ntfy_topic && r.status === 'active' && <p className="mt-1 text-xs text-ink-soft">Alert topic: <code className="select-all">{r.ntfy_topic}</code></p>}
                 </div>
                 {r.status === 'active'
@@ -96,7 +97,72 @@ function People({ deal }) {
           <p className="text-xs text-ink-soft">Nothing is emailed. They sign in with this exact email at the site link you send them, and see only their role’s page.</p>
         </form>
       </Card>
+      <RoleLinks deal={deal} onJoined={load} />
     </div>
+  );
+}
+
+const LINK_ROLES = [['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['viewer', 'Viewer'], ['seller', 'Seller']];
+
+// One private link per person or role. Turning a link off also removes everyone who joined with it.
+function RoleLinks({ deal, onJoined }) {
+  const [links, setLinks] = useState(null);
+  const [f, setF] = useState({ role: 'lender', label: '' });
+  const [fresh, setFresh] = useState(null);
+  const [msg, setMsg] = useState('');
+  const load = () => supabase.from('commercial_role_links').select('id,role,label,created_at,expires_at,revoked_at,uses').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setLinks(data || []));
+  useEffect(() => { load(); }, [deal.id]);
+
+  const make = async (e) => {
+    e.preventDefault();
+    setMsg('');
+    const { data: token, error } = await supabase.rpc('commercial_create_role_link', { p_deal: deal.id, p_role: f.role, p_label: f.label.trim() });
+    if (error || !token) return setMsg('That link couldn’t be made. Try again.');
+    setFresh({ url: roleLinkUrl(token), label: f.label.trim() || roleLabel[f.role] });
+    setF({ ...f, label: '' });
+    load();
+  };
+  const turnOff = async (l) => {
+    if (!window.confirm(`Turn off the link for ${l.label || roleLabel[l.role]}? Anyone who joined with it loses access now.`)) return;
+    const { error } = await supabase.rpc('commercial_revoke_role_link', { p_link: l.id });
+    setMsg(error ? 'That link couldn’t be turned off. Try again.' : 'Link turned off.');
+    load(); onJoined?.();
+  };
+  const state = (l) => (l.revoked_at ? 'Off' : new Date(l.expires_at) < new Date() ? 'Expired' : 'On');
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardTitle>Private links</CardTitle>
+      <p className="-mt-2 mb-4 text-sm text-ink-soft">Each link opens one role’s page after the person signs in. A link works for 14 days to join; their access lasts until you turn it off.</p>
+      <form onSubmit={make} className="flex flex-wrap gap-2">
+        <select className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+          {LINK_ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <div className="min-w-48 flex-1"><Field placeholder="Who it’s for, e.g. Jake, lender" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></div>
+        <Button type="submit">Make link</Button>
+      </form>
+      {fresh && (
+        <div className="mt-3 rounded-xl border border-good/40 bg-good/5 p-3 text-sm">
+          <p className="font-medium">Link for {fresh.label}. It shows only once.</p>
+          <p className="mt-1 break-all font-mono text-xs select-all">{fresh.url}</p>
+          <button type="button" className="mt-2 rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
+        </div>
+      )}
+      {msg && <p className="mt-2 text-sm text-ink-soft">{msg}</p>}
+      {links === null ? <Empty>Loading…</Empty> : links.length === 0 ? <p className="mt-3 text-sm text-ink-soft">No links yet.</p> : (
+        <ul className="mt-3 divide-y divide-line">
+          {links.map((l) => (
+            <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+              <div>
+                <p className="text-sm font-medium">{l.label || roleLabel[l.role]} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[l.role]}</span></p>
+                <p className="text-xs text-ink-soft">{state(l)} · used {l.uses} {l.uses === 1 ? 'time' : 'times'} · made {when(l.created_at)}</p>
+              </div>
+              {!l.revoked_at && <Button kind="secondary" onClick={() => turnOff(l)}>Turn off</Button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
