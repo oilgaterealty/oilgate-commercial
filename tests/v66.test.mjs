@@ -64,3 +64,10 @@ test('no other oilgateai.com address appears anywhere in the code', () => {
   walk(root);
   assert.deepEqual(hits, []);
 });
+
+test('public site build blocks the owner page', () => {
+  const wf = readFileSync(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
+  assert.match(wf, /VITE_SITE_KIND: public/);
+  assert.equal(siteRules('public').ownerAllowed, false);
+  assert.equal(siteRules('public').guestsAllowed, true);
+});

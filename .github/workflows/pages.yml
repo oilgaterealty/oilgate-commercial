@@ -31,6 +31,8 @@ jobs:
       - name: Data lock check (nothing readable or writable without signing in)
         run: node scripts/live-security-check.mjs --data-only
       - name: Build (repo variables, if set, override .env.production)
+        env:
+          VITE_SITE_KIND: public
         run: |
           if [ -n "${{ vars.VITE_SUPABASE_URL }}" ]; then export VITE_SUPABASE_URL="${{ vars.VITE_SUPABASE_URL }}"; fi
           if [ -n "${{ vars.VITE_SUPABASE_ANON_KEY }}" ]; then export VITE_SUPABASE_ANON_KEY="${{ vars.VITE_SUPABASE_ANON_KEY }}"; fi
