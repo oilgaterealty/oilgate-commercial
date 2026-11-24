@@ -354,7 +354,7 @@ function mergeOfflineCandidates(pool) {
       (id) => id
     );
     const id = mergedIds[0] || cluster[0].id;
-    const value = [`Request from ${offices.join('; ')}`, ...extras].join('; ');
+    const value = [offices.join(' or '), ...extras].join('; ');
     const newest = sortRecordsNewestFirst(cluster)[0];
 
     mergedRows.push({
@@ -384,7 +384,7 @@ export function answerTone(label, answer) {
   const a = String(answer || '').trim();
   if (!a) return 'neutral';
   if (/^\$0(?:\.00)?(?:\s+(?:due|owed))?$/i.test(a)) return 'good';
-  if (/^(?:none(?:\s+found)?|no\s+(?:open|liens?|judgments?|mortgages?|violations?|cases?|active|scheduled|bor\b).*|0\s+open|clear|paid(?:\s+in\s+full)?|satisfied|closed)$/i.test(a)) {
+  if (/^(?:none(?:\s+(?:found|open))?|no\s+(?:open|liens?|judgments?|mortgages?|violations?|cases?|active|scheduled|bor\b).*|0\s+open|clear|paid(?:\s+in\s+full)?|satisfied|closed)$/i.test(a)) {
     return 'good';
   }
   if (/\b(?:open|overdue|delinquent|past\s+due|unpaid|outstanding|violation|foreclos\w*|pending|needs?\s+(?:a\s+)?(?:request|check)|unknown|not\s+online)\b/i.test(a)) {
@@ -423,11 +423,16 @@ export function organizeCityRecords(raw) {
 
     const sources = itemSources(item);
     const sortDate = item.sortDate || item.source?.documentDate || '';
+    // Hand-written display fields win: requestFrom makes the whole entry one request.
+    const forcedOffice = visibleText(item.requestFrom);
+    const title = visibleText(item.title);
 
-    if (offlineOnly) {
-      const reqs = requestSegments.length
-        ? requestSegments
-        : [{ label: visibleText(item.label), office: item.requestAt || 'the issuing office', extras: [] }];
+    if (forcedOffice || offlineOnly) {
+      const reqs = forcedOffice
+        ? [{ label: title || visibleText(item.label), office: forcedOffice, extras: [] }]
+        : requestSegments.length
+          ? requestSegments
+          : [{ label: title || visibleText(item.label), office: item.requestAt || 'the issuing office', extras: [] }];
       reqs.forEach((req, idx) => {
         offlinePool.push({
           id: idx === 0 ? item.id : `offline:${item.id}:${idx}`,
@@ -449,6 +454,7 @@ export function organizeCityRecords(raw) {
         factSegments,
         sortDate,
       });
+      if (item.skipRequest) continue;
       requestSegments.forEach((req, idx) => {
         offlinePool.push({
           id: `offline:${item.id}:${idx}`,
@@ -495,14 +501,18 @@ export function organizeCityRecords(raw) {
   for (const members of families.values()) {
     const lead = members.find((item) => item.isSummary) || members[0];
     const ordered = [lead, ...members.filter((item) => item !== lead)];
-    const rowLabel = MERGE_BY_ID[lead.id] === 'rental' ? 'Rental registration & assessments' : visibleText(lead.label);
+    const titled = ordered.find((item) => visibleText(item.title));
+    const rowLabel = titled
+      ? visibleText(titled.title)
+      : MERGE_BY_ID[lead.id] === 'rental' ? 'Rental registration & assessments' : visibleText(lead.label);
     const allSegments = ordered.flatMap((item) => item.factSegments);
 
     let answer = '';
     let line = '';
-    if (lead.explicitAnswer) {
-      answer = lead.explicitAnswer;
-      line = lead.explicitLine || '';
+    const answered = ordered.find((item) => item.explicitAnswer);
+    if (answered) {
+      answer = answered.explicitAnswer;
+      line = answered.explicitLine || '';
     } else {
       const plainSeg = allSegments.find((seg) => !CODE_PREFIX_RE.test(seg));
       answer = plainSeg || allSegments[0] || '';

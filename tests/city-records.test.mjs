@@ -283,7 +283,7 @@ test('organizer carries answer and line, deduplicates details, and isolates requ
   assert.ok(offline);
   assert.equal(offline.items.length, 1);
   assert.match(offline.items[0].label, /Certificate of Occupancy/i);
-  assert.equal(offline.items[0].value, 'Request from City of Akron & Summit County Building Standards');
+  assert.equal(offline.items[0].value, 'City of Akron & Summit County Building Standards');
 });
 
 test('older records without answer/line fall back to first plain fact segment and empty line', () => {
@@ -413,7 +413,7 @@ test('topic organizer preserves specified order and places all request-only item
     ['sf-recorded-docs-captcha', 'amc-captcha', 'ak-water-balance-request', 'ak-co-unit-count-request', 'ak-city-rental-file'].sort()
   );
   for (const row of offline) {
-    assert.match(row.value, /^Request from /);
+    assert.doesNotMatch(row.value, /^Request from /);
     assert.doesNotMatch(row.value, /blocked|not online|not searchable/i);
     assert.doesNotMatch(row.value, /\n/);
   }
@@ -505,8 +505,8 @@ test('compact sections cap visible rows at 5, render counts, dates, and expanded
   const html = renderToStaticMarkup(createElement(View, { data: TOPIC_FIXTURE, signedUrls }));
   assert.match(html, /What matters/);
   assert.equal((html.match(/<details[^>]* open=""/g) || []).length, 4);
-  assert.match(html, /<details[^>]*><summary[^>]*>Records to request/);
-  assert.match(html, /<time dateTime="2026-/);
+  assert.match(html, /<details[^>]*><summary[^>]*><span>Records to request/);
+  assert.doesNotMatch(html, /<time/);
   assert.match(html, /Show 2 more/);
   for (const group of output.groups) assert.ok(html.includes(`(${group.count})`));
   assert.doesNotMatch(html.replace(/\s(?:href|dateTime)="[^"]*"/g, ''), /https?:|Retrieved|Unverified|Source:/i);
@@ -607,5 +607,5 @@ test('partly blocked records extract request notes to offline while keeping real
   const water = offline.items.find((r) => r.mergedIds.includes('ak-water-balance-request'));
   assert.match(water.value, /0 delinquent charges/);
   const recorder = offline.items.find((r) => /Open mortgage/i.test(r.label));
-  assert.equal(recorder.value, 'Request from County Recorder');
+  assert.equal(recorder.value, 'County Recorder');
 });

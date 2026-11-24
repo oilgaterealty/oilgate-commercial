@@ -268,10 +268,13 @@ export default function CityRecordsView({
           <details
             key={group.id}
             open={['ownership', 'liens', 'taxes', 'offline'].includes(group.id)}
-            className="rounded-xl border border-line bg-white px-3 sm:px-4"
+            className="group rounded-xl border border-line bg-white px-3 sm:px-4"
           >
-            <summary className="cursor-pointer py-3 text-base font-semibold text-ink">
-              {group.label} <span className="ml-2 tabular-nums">({group.count})</span>
+            <summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between gap-3 py-2 text-lg font-semibold text-ink [&::-webkit-details-marker]:hidden">
+              <span>
+                {group.label} <span className="ml-1 tabular-nums text-ink-soft">({group.count})</span>
+              </span>
+              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5 shrink-0 text-ink transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 5 5 5-5" /></svg>
             </summary>
             <ul className="divide-y divide-line pb-2">
               {visibleItems.map((item) => {
@@ -287,9 +290,8 @@ export default function CityRecordsView({
                   >
                     {group.id === 'offline' ? (
                       <div>
-                        <div className="break-words text-sm text-ink">
-                          <strong className="font-semibold">{item.label}:</strong> {item.value}
-                        </div>
+                        <div className="break-words text-base font-semibold text-ink">{item.label}</div>
+                        <div className="mt-0.5 break-words text-sm text-ink">Ask {item.value}</div>
                         {expanded && showFooter && (
                           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                             <FileLinks files={item.files} signedUrls={signedUrls} />
@@ -299,29 +301,17 @@ export default function CityRecordsView({
                       </div>
                     ) : (
                       <div>
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                          <span className="text-sm font-semibold text-ink sm:w-52 sm:shrink-0">
-                            {item.label}
-                          </span>
-                          <div className="flex min-w-0 flex-1 items-baseline justify-between gap-2">
-                            <span className={`break-words text-sm font-medium ${TONE_TEXT[tone]}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="break-words text-sm font-medium text-ink-soft">{item.label}</div>
+                            <div className={`mt-0.5 break-words text-base font-semibold leading-snug ${TONE_TEXT[tone]}`}>
                               {item.answer}
-                            </span>
-                            <span className="flex shrink-0 items-center gap-2">
-                            {/^\d{4}-\d{2}-\d{2}/.test(item.sortDate) && (
-                              <time
-                                dateTime={item.sortDate.slice(0, 10)}
-                                className="shrink-0 text-xs tabular-nums text-ink-soft"
-                              >
-                                {item.sortDate.slice(0, 10)}
-                              </time>
-                            )}
-                            {canExpand(item) && <Chevron open={expanded} />}
-                            </span>
+                            </div>
                           </div>
+                          {canExpand(item) && <Chevron open={expanded} />}
                         </div>
                         {expanded && (item.details?.length > 0 || showFooter) && (
-                          <div className="mt-2 space-y-2 border-t border-line/70 pt-2 sm:pl-56">
+                          <div className="mt-2 space-y-2 border-t border-line/70 pt-2">
                             <DetailsList
                               listKey={`row:${item.id}`}
                               details={item.details}
@@ -348,7 +338,7 @@ export default function CityRecordsView({
                 <button
                   type="button"
                   onClick={() => toggleList(listKey)}
-                  className="text-xs font-semibold text-ink-soft underline underline-offset-2 hover:text-ink"
+                  className="inline-flex min-h-[44px] items-center rounded-lg border border-line bg-paper px-4 text-sm font-semibold text-ink hover:border-ink active:scale-[0.97]"
                 >
                   {showAll ? 'Show fewer' : `Show ${hiddenCount} more`}
                 </button>
