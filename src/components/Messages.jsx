@@ -2,10 +2,10 @@ import { DictatedField } from './Dictation.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { buyerName, buyerTag, sellerTag, sellerName } from '../lib/people.js';
+import { buyerName, buyerTag, sellerTag, sellerName, authorLabel } from '../lib/people.js';
 import { Card, CardTitle, Button, Empty } from './Shell.jsx';
 
-// Finds (or opens) the person's own conversation with the owner and posts into it.
+// Finds (or opens) the person's own conversation with the buyer (owner) and posts into it.
 export async function sendToOwner(deal, me, role, body, topic) {
   const { data: id, error: opening } = await supabase.rpc('commercial_open_own_thread', { p_deal: deal.id });
   if (opening) return opening;
@@ -118,7 +118,7 @@ export function InboxSummary({ deal, me, role, preview }) {
                 <a className="text-sm underline" href={`${root}/messages?with=${s.key}`}>{s.last ? 'Reply' : 'Write'}</a>
               </div>
               {owner && <p className="text-xs text-ink-soft">{who(s, owner)}</p>}
-              {s.last ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{s.last.body}</p><p className="mt-0.5 text-xs text-ink-soft">{s.last.author_name || roleLabel[s.last.author_role]} · {when(s.last.created_at)}</p></> : <p className="mt-1 text-sm text-ink-soft">No messages yet.</p>}
+              {s.last ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{s.last.body}</p><p className="mt-0.5 text-xs text-ink-soft">{authorLabel(s.last)} · {when(s.last.created_at)}</p></> : <p className="mt-1 text-sm text-ink-soft">No messages yet.</p>}
             </li>
           ))}
         </ul>
@@ -187,7 +187,7 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${mine ? 'bg-ink text-white' : 'bg-warm-soft'}`}>
-                <p className={`mb-0.5 text-xs ${mine ? 'text-white/70' : 'text-ink-soft'}`}>{m.author_name || roleLabel[m.author_role]} · {when(m.created_at)}{m.topic ? ` · ${m.topic}` : ''}</p>
+                <p className={`mb-0.5 text-xs ${mine ? 'text-white/70' : 'text-ink-soft'}`}>{authorLabel(m)} · {when(m.created_at)}{m.topic ? ` · ${m.topic}` : ''}</p>
                 <p className="whitespace-pre-wrap">{m.body}</p>
               </div>
             </div>

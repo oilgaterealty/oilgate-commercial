@@ -72,7 +72,7 @@ test('nothing on the phone is dropped or uploaded twice, and the count is exact'
 test('the camera switches space, room and photo/video without closing', () => {
   assert.match(cam, /onTargetChange\?\.\(Number\(e\.target\.value\), room\)/);
   assert.match(cam, /onModeChange\?\.\(k\)/);
-  assert.match(cam, /videoBitsPerSecond: 2_500_000/);
+  assert.match(cam, /VIDEO_BITRATE/); // v6.3: 480p at ~750 kbps (src/lib/videoPost.js)
   const stop = cam.slice(cam.indexOf('recorder.onstop'), cam.indexOf('recorder.start('));
   assert.doesNotMatch(stop, /onClose/);
   assert.match(walk, /onTargetChange=\{setCameraTarget\}/);

@@ -4,6 +4,7 @@ import { STAGES, stageMove, unitCount, v5Access, canChangeLead, suggestionDiff }
 import { roleLabel } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
+import StrategyIdeas from './StrategyIdeas.jsx';
 
 const BLANK = { name: '', phone: '', email: '', notes: '' };
 const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
@@ -74,7 +75,7 @@ function SuggestForm({ lead, disabled, onSend, onCancel }) {
   const none = Object.keys(changes).length === 0;
   return (
     <form className="space-y-2 rounded-lg bg-paper p-2" onSubmit={(e) => { e.preventDefault(); if (!none) onSend(changes, note.trim()); }}>
-      <p className="text-xs font-medium">Suggest a change. The owner accepts or rejects it.</p>
+      <p className="text-xs font-medium">Suggest a change. The buyer accepts or turns it down.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <Field aria-label="Suggested name" maxLength={140} value={f.name} onChange={set('name')} />
         <Field aria-label="Suggested phone" maxLength={60} value={f.phone} onChange={set('phone')} />
@@ -189,7 +190,7 @@ export default function Tenants({ deal, me, role, preview }) {
     setStatus('');
     try {
       const { error } = await supabase.from('commercial_tenant_suggestions').insert({ deal_id: deal.id, lead_id: lead.id, changes, note, author_uid: me.uid, author_role: 'realtor', author_name: me.name || '' });
-      setStatus(error ? 'Suggestion not sent. Try again.' : 'Suggestion sent to the owner.');
+      setStatus(error ? 'Suggestion not sent. Try again.' : 'Suggestion sent to the buyer.');
       if (!error) { setSuggestingId(null); setRefresh((r) => r + 1); }
     } finally {
       setPending(false);
@@ -261,9 +262,10 @@ export default function Tenants({ deal, me, role, preview }) {
 
       {edit && (
         <Card className="!p-4">
-          <CardTitle aside={<span className="text-xs text-ink-soft">Private · owner + realtor · nothing is sent to leads</span>}>
-            Add lead
+          <CardTitle aside={<span className="text-xs text-ink-soft">Private · buyer + realtor · nothing is sent to leads</span>}>
+            Add a lead
           </CardTitle>
+          {role === 'realtor' && <p className="-mt-2 mb-3 text-sm text-ink-soft">Leads you add are yours to edit or delete. For the buyer’s leads, use “Suggest change”.</p>}
           <LeadForm key={formKey} disabled={pending} onSave={(v) => saveLead(v)} />
         </Card>
       )}
@@ -398,6 +400,8 @@ export default function Tenants({ deal, me, role, preview }) {
           </div>
         )}
       </Card>
+
+      {access.ideas && <StrategyIdeas deal={deal} me={me} role={role} preview={preview} />}
     </div>
   );
 }

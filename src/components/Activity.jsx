@@ -4,17 +4,19 @@ import { when } from '../lib/format.js';
 import { actorLabel, activityText } from '../lib/people.js';
 import { Card, CardTitle, Empty } from './Shell.jsx';
 
-export default function Activity({ deal, title = 'Activity', kinds }) {
+// actors: only lines done by these roles (e.g. ['owner'] for buyer-side activity). The database decides what each role may read.
+export default function Activity({ deal, title = 'Activity', kinds, actors, empty = 'Nothing yet.' }) {
   const [rows, setRows] = useState(null);
   const load = async () => {
     let q = supabase.from('commercial_activity').select('*').eq('deal_id', deal.id).order('created_at', { ascending: false }).limit(60);
     if (kinds) q = q.in('kind', kinds);
+    if (actors) q = q.in('actor_role', actors);
     const { data } = await q;
     setRows(data || []);
   };
   useEffect(() => {
     load();
-    const sub = supabase.channel(`a-${deal.id}-${(kinds || []).join()}`)
+    const sub = supabase.channel(`a-${deal.id}-${(kinds || []).join()}-${(actors || []).join()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_activity', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
@@ -23,7 +25,7 @@ export default function Activity({ deal, title = 'Activity', kinds }) {
     <Card>
       <CardTitle>{title}</CardTitle>
       {rows === null && <Empty>Loading…</Empty>}
-      {rows?.length === 0 && <Empty>Nothing yet.</Empty>}
+      {rows?.length === 0 && <Empty>{empty}</Empty>}
       <ol className="space-y-3">
         {rows?.map((a) => (
           <li key={a.id} className="flex gap-3 text-sm">

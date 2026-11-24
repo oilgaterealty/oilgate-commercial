@@ -132,7 +132,8 @@ test('v5 comps tab and tables are hidden from lender, seller and viewer', () => 
     assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
   }
   const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
-  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\]\] : \[\['overview', 'Overview'\], \['comps', 'Comps'\], \['messages', 'Messages'\]\]/);
+  // v6.3: reviewer and viewer also get a per-unit Photos tab; Comps stays off for the viewer.
+  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\], \['photos', 'Photos'\]\] : \[\['overview', 'Overview'\], \['photos', 'Photos'\], \['comps', 'Comps'\], \['messages', 'Messages'\]\]/);
   assert.match(rev, /!viewer && active === 'comps'/);
 });
 

@@ -3,12 +3,15 @@ import { supabase } from '../lib/supabase.js';
 import { when } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
+import { canDeleteIdea, canEditIdea } from '../lib/v63.js';
 
 const BLANK = { title: '', notes: '' };
 
-// Owner-only private strategy cards. Never rendered for any other role or preview.
-export default function StrategyIdeas({ deal, role, preview }) {
-  const allowed = role === 'owner' && !preview;
+// Strategy cards, shown under Tenants. The buyer (owner) adds, edits and deletes any card; the realtor reads all,
+// adds her own and deletes only her own. Never rendered for any other role or in a "See as" preview.
+export default function StrategyIdeas({ deal, me, role, preview }) {
+  const allowed = (role === 'owner' || role === 'realtor') && !preview;
+  const owner = role === 'owner';
   const [rows, setRows] = useState(null);
   const [form, setForm] = useState(BLANK);
   const [editingId, setEditingId] = useState(null);
@@ -43,9 +46,9 @@ export default function StrategyIdeas({ deal, role, preview }) {
     try {
       const payload = { title: form.title.trim(), notes: form.notes.trim(), updated_at: new Date().toISOString() };
       const q = supabase.from('commercial_strategy_ideas');
-      const res = editingId
+      const res = editingId && owner
         ? await q.update(payload).eq('id', editingId).eq('deal_id', deal.id).select('id').maybeSingle()
-        : await q.insert({ ...payload, deal_id: deal.id }).select('id').maybeSingle();
+        : await q.insert({ ...payload, deal_id: deal.id, author_uid: me?.uid, author_role: role, author_name: me?.name || '' }).select('id').maybeSingle();
       if (res.error || !res.data) {
         setStatus('Could not save. Check your connection.');
         return;
@@ -76,11 +79,13 @@ export default function StrategyIdeas({ deal, role, preview }) {
   return (
     <div className="space-y-5">
       <Card>
-        <CardTitle aside={<span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">Owner only</span>}>
+        <CardTitle aside={<span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">Buyer + realtor</span>}>
           Strategy ideas
         </CardTitle>
-        <p className="-mt-2 mb-4 text-xs text-ink-soft">
-          Private to you. Never visible to the realtor, reviewer, lender, seller or viewer, and never sent or posted anywhere.
+        <p className="-mt-2 mb-4 text-sm text-ink-soft">
+          {owner
+            ? 'Only you and the realtor see these. She can add ideas and delete her own; you can change any card.'
+            : 'Only you and the buyer see these. Add an idea any time; you can delete the ones you added.'}
         </p>
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
 
@@ -137,23 +142,27 @@ export default function StrategyIdeas({ deal, role, preview }) {
                     {r.notes && <p className="whitespace-pre-wrap break-words text-sm text-ink-soft">{r.notes}</p>}
                   </div>
                   <div className="flex items-center justify-between gap-2 border-t border-line pt-2 text-xs text-ink-soft">
-                    <span>{when(r.updated_at || r.created_at)}</span>
+                    <span>{r.author_role === 'realtor' ? `${r.author_name || 'Realtor'} · ` : ''}{when(r.updated_at || r.created_at)}</span>
                     <div className="flex gap-3">
-                      <button
-                        type="button"
-                        className="underline hover:text-ink"
-                        onClick={() => { setEditingId(r.id); setForm({ title: r.title, notes: r.notes || '' }); }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={pending}
-                        className="underline hover:text-red-700"
-                        onClick={() => remove(r)}
-                      >
-                        Delete
-                      </button>
+                      {canEditIdea(role) && (
+                        <button
+                          type="button"
+                          className="underline hover:text-ink"
+                          onClick={() => { setEditingId(r.id); setForm({ title: r.title, notes: r.notes || '' }); }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDeleteIdea(role, r, me?.uid) && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          className="underline hover:text-red-700"
+                          onClick={() => remove(r)}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 </li>

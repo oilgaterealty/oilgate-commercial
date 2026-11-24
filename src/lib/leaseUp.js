@@ -29,6 +29,10 @@ export function v5Access(role) {
     tenants: owner || realtor,
     comps: owner || realtor || reviewer,
     strategy: owner,
+    // v6.3: strategy ideas live under Tenants; the realtor reads all, adds and deletes her own.
+    ideas: owner || realtor,
+    // v6.3: per-unit photos and videos for everyone except the seller.
+    unitPhotos: owner || realtor || reviewer || role === 'lender' || role === 'viewer' || role === 'guest',
     editWalkthrough: owner || realtor,
     editTenants: owner || realtor,
     saveComps: owner,
@@ -38,14 +42,14 @@ export function v5Access(role) {
 // Walkthrough always covers 10 units plus shared areas (spaces 11-16 use the single room 'general').
 export const WALK_UNITS = 10;
 export const WALK_AREAS = [
-  [11, 'Common area 1'],
-  [12, 'Common area 2'],
-  [13, 'Common area 3'],
+  [11, 'Front stairwell (units 1-3)'],
+  [12, 'Front stairwell (units 4-10)'],
+  [13, 'Back stairwell (units 1-3)'],
   [14, 'Exterior'],
   [15, 'Storage'],
   [17, 'Laundry room'],
   [18, 'Utility room (gas & electric)'],
-  [16, 'Catch-all'],
+  [16, 'Back stairwell (units 4-10)'],
 ];
 export const AREA_ROOMS = [['general', 'Photos & notes']];
 export const WALK_SPACES = [...Array.from({ length: WALK_UNITS }, (_, i) => i + 1), ...WALK_AREAS.map(([n]) => n)];
@@ -53,7 +57,7 @@ export const LAST_SPACE = WALK_SPACES[WALK_SPACES.length - 1];
 export const spaceLabel = (n) => (n <= WALK_UNITS ? `Unit ${n}` : WALK_AREAS.find(([k]) => k === n)?.[1] || `Area ${n}`);
 export const roomsFor = (n) => (n <= WALK_UNITS ? ROOMS : AREA_ROOMS);
 export const roomFits = (n, room) => roomsFor(n).some(([k]) => k === room);
-// Step through spaces in the order shown (Catch-all stays last), not by number.
+// Step through spaces in the order shown (space 16 stays last), not by number.
 export const stepSpace = (n, dir) => {
   const i = WALK_SPACES.indexOf(n);
   return WALK_SPACES[Math.min(WALK_SPACES.length - 1, Math.max(0, (i < 0 ? 0 : i) + dir))];

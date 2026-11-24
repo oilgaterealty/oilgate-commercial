@@ -35,7 +35,8 @@ export default function DealRoom({ slug, tab, sub, session }) {
     })();
   }, [slug, session.user.email, viewing]);
 
-  setDealNames(state.deal);
+  // Names follow who is looking: the seller (and "See as seller") never gets the buyer's name.
+  setDealNames(state.deal, viewing && state.role === 'owner' && PREVIEWABLE.includes(sub) ? sub : state.role);
   const me = { uid: session.user.id, email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' && state.deal ? buyerName(state.deal) : '') };
 
   if (state.loading) return <Shell session={session}><Empty>Loading…</Empty></Shell>;

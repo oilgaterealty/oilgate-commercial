@@ -4,6 +4,7 @@ import { supabase, BUCKET } from '../lib/supabase.js';
 import { when, bytes, roleLabel } from '../lib/format.js';
 import { Card, CardTitle, Button, Empty } from './Shell.jsx';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
+import { seenByLabel } from '../lib/v63.js';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt';
 const MAX = 20 * 1024 * 1024;
@@ -118,7 +119,12 @@ export function FileList({ rows, canShare, owner, onChange }) {
   if (!rows.length) return <Empty>Nothing uploaded yet.</Empty>;
   const remove = async (r) => {
     if (!window.confirm(`Delete ${r.file_name}?`)) return;
-    await supabase.from('commercial_uploads').delete().eq('id', r.id);
+    if (r.storage_path) {
+      const { error } = await supabase.storage.from(BUCKET).remove([r.storage_path]);
+      if (error) { window.alert(`${r.file_name} could not be deleted. Try again.`); return; }
+    }
+    const { error } = await supabase.from('commercial_uploads').delete().eq('id', r.id);
+    if (error) window.alert(`${r.file_name} was only partly deleted. Try again.`);
     onChange?.();
   };
   // Photos open in the in-app viewer; documents (PDF, Word, Excel) still open in a new tab.
@@ -134,8 +140,9 @@ export function FileList({ rows, canShare, owner, onChange }) {
           <div className="min-w-0 flex-1">
             {r.kind === 'photo' && r.url
               ? <button type="button" onClick={() => open(r)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{r.file_name}</button>
-              : <a href={r.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium hover:underline">{r.file_name}</a>}
-            <p className="text-xs text-ink-soft">{roleLabel[r.uploaded_by_role]} · {when(r.created_at)} · {bytes(r.size_bytes)}{r.note ? ` · ${r.note}` : ''}</p>
+              : <a href={r.url} target="_blank" rel="noreferrer" className="block break-words text-sm font-medium underline-offset-2 hover:underline">{r.file_name}</a>}
+            <p className="text-xs text-ink-soft">{r.kind === 'photo' ? 'Photo' : 'Document'} · from {roleLabel[r.uploaded_by_role] || 'the team'} · {when(r.created_at)} · {bytes(r.size_bytes)}{r.note ? ` · ${r.note}` : ''}</p>
+            {(canShare || owner) && <p className="text-xs font-medium text-ink">{seenByLabel(r)}</p>}
           </div>
           {canShare && <ShareChips r={r} owner={owner} onChange={onChange} />}
           {owner && <button onClick={() => remove(r)} className="text-xs text-ink-soft hover:text-red-700">Delete</button>}

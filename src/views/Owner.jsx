@@ -3,7 +3,8 @@ import { setDealNames } from '../lib/people.js';
 import Walkthrough from './Walkthrough.jsx';
 import Tenants from './Tenants.jsx';
 import Comps from './Comps.jsx';
-import StrategyIdeas from './StrategyIdeas.jsx';
+import UnitGallery from '../components/UnitGallery.jsx';
+import { LenderBoard } from './LenderTerms.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
@@ -22,7 +23,6 @@ const TABS = [
   ['walkthrough', 'Walkthrough'],
   ['tenants', 'Tenants'],
   ['comps', 'Comps'],
-  ['strategy', 'Strategy ideas'],
   ['photos', 'Photos'],
   ['messages', 'Messages'],
   ['files', 'Files'],
@@ -82,11 +82,11 @@ function People({ deal }) {
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
           <select className="w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-            <option value="realtor">Realtor: deal, offers, photos, messages, files</option>
+            <option value="realtor">Realtor: deal, offers, walkthrough, tenants, messages, files</option>
             <option value="seller">Seller: the seller page only</option>
-            <option value="reviewer">Reviewer: offers and files you share</option>
-            <option value="lender">Lender: offers and files you share</option>
-            <option value="viewer">Viewer: photos and shared files, read-only</option>
+            <option value="reviewer">Reviewer: unit photos, comps, and offers and files you share</option>
+            <option value="lender">Lender: the plan, unit photos, and every lender’s terms</option>
+            <option value="viewer">Viewer: cover photo, unit photos and an overview, read only</option>
           </select>
           {err && <p className="text-sm text-red-700">{err}</p>}
           <Button type="submit" className="w-full">Invite</Button>
@@ -128,13 +128,13 @@ function SellerEditor({ deal, onSaved }) {
   return (
     <Card>
       <CardTitle>What the seller reads</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only what’s on this card, plus photos you mark for the seller. Keep every line true. Your offers math never shows here. <a className="underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a></p>
+      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only this card, the starred cover photo, and walkthrough photos and videos you mark “Share with seller”. Keep every line true, plain and kind. Your offer math never shows here. <a className="underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a></p>
       <div className="space-y-4">
         <Field value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
         <DictatedField as="textarea" className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
         <div className="space-y-3 rounded-2xl border border-line p-4">
           <p className="text-sm font-medium">The options the seller can pick from</p>
-          <Field value={c.options_title || ''} placeholder="Section title, e.g. Three ways we could do this" onChange={(e) => setC({ ...c, options_title: e.target.value })} />
+          <Field value={c.options_title || ''} placeholder="Section title, e.g. Ways this could work for you" onChange={(e) => setC({ ...c, options_title: e.target.value })} />
           <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={c.options_note || ''} placeholder="Note shown above the options" onChange={(e) => setC({ ...c, options_note: e.target.value })} />
           <div className="grid gap-4 lg:grid-cols-3">
             {(c.options || []).map((o, i) => {
@@ -156,8 +156,8 @@ function SellerEditor({ deal, onSaved }) {
           <Button kind="secondary" onClick={() => setC({ ...c, options: [...(c.options || []), { key: String.fromCharCode(65 + (c.options || []).length), title: '', tagline: '', steps: [], you_get: [] }] })}>Add an option</Button>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
-          {block('carry_now', 'What you carry now')}
-          {block('with_us', 'What you’d have with us')}
+          {block('carry_now', 'Today (what the seller has now)')}
+          {block('with_us', 'After the sale (what the seller would have)')}
         </div>
         <div className="flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{saved}</span></div>
       </div>
@@ -183,7 +183,7 @@ function Settings({ deal, onSaved }) {
       <div className="grid gap-3 md:grid-cols-2">
         <Field value={d.title} placeholder="Name" onChange={(e) => setD({ ...d, title: e.target.value })} />
         <Field value={d.address} placeholder="Address" onChange={(e) => setD({ ...d, address: e.target.value })} />
-        <label className="text-xs text-ink-soft">Buyer name (shown as “Name · Buyer”)<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
+        <label className="text-xs text-ink-soft">Buyer name (shown as “Name · Buyer”; the seller only ever sees “Buyer”)<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
         <label className="text-xs text-ink-soft">Seller name<Field value={d.seller_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, seller_name: e.target.value })} /></label>
         <Field value={folder} placeholder="Google Drive folder link" onChange={(e) => setFolder(e.target.value)} />
         <select className="rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
@@ -232,14 +232,16 @@ export default function Owner({ deal: initial, me, tab }) {
       </div>
 
       {active === 'overview' && (
-        <Dashboard deal={deal} me={me} role="owner" />
+        <div className="space-y-5">
+          <Dashboard deal={deal} me={me} role="owner" />
+          <LenderBoard deal={deal} me={me} role="owner" />
+        </div>
       )}
       {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
       {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="owner" />}
       {active === 'tenants' && <Tenants deal={deal} me={me} role="owner" />}
       {active === 'comps' && <Comps deal={deal} me={me} role="owner" />}
-      {active === 'strategy' && <StrategyIdeas deal={deal} role="owner" />}
-      {active === 'photos' && <Photos deal={deal} role="owner" me={me} />}
+      {active === 'photos' && <div className="space-y-5"><UnitGallery deal={deal} me={me} role="owner" /><Photos deal={deal} role="owner" me={me} /></div>}
       {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
       {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
       {active === 'seller-page' && <div className="space-y-5"><LoanPosition deal={deal} role="owner" /><SellerEditor deal={deal} onSaved={setDeal} /></div>}

@@ -49,7 +49,7 @@ test('viewer has a bottom action bar fed by the caller, with pressed state', () 
   assert.match(v, /aria-pressed=\{a\.pressed === undefined \? undefined : Boolean\(a\.pressed\)\}/);
   const walk = read('src/views/Walkthrough.jsx');
   assert.match(walk, /actions=\{viewerActions\}/);
-  assert.match(walk, /label: 'Move to…'/);
+  assert.match(walk, /label: 'Move this one'/);
   assert.match(walk, /key: 'select', icon: '✓', label: 'Select', pressed: picked\.has\(k\)/);
   assert.match(walk, /label: 'Share with seller'/);
   assert.match(walk, /label: 'Share with lender'/);

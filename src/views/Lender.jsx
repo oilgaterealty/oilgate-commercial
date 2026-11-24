@@ -5,7 +5,8 @@ import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads } from '../components/Files.jsx';
-import { Hero, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
+import { Cover, photosOf } from '../components/Photos.jsx';
+import UnitGallery from '../components/UnitGallery.jsx';
 import { Card, CardTitle, Empty, Tabs, Button } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
@@ -43,12 +44,10 @@ function Stat({ label, value, sub }) {
 
 // The lender's page: one plan, stated plainly, with the few switches a lender would test.
 export default function Lender({ deal, me, preview, tab }) {
-  const tabs = [['overview', 'The plan'], ['messages', 'Messages']];
+  const tabs = [['overview', 'The plan'], ['photos', 'Photos'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   const [rows] = useUploads(deal);
-  const walk = useSharedWalkPhotos(deal, 'lender');
-  const walkVideos = useSharedWalkVideos(deal, 'lender');
-  const photos = [...photosOf(preview ? seenBy('lender', rows) : rows || []), ...walk];
+  const photos = photosOf(preview ? seenBy('lender', rows) : rows || []);
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [pickUnits, setUnits] = useState(null);
   const [pickStr, setStr] = useState(null);
@@ -92,6 +91,7 @@ export default function Lender({ deal, me, preview, tab }) {
     <div className="space-y-5">
       <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`} />
       {active === 'messages' && <Messages deal={deal} me={me} role="lender" preview={preview} />}
+      {active === 'photos' && <UnitGallery deal={deal} me={me} role="lender" preview={preview} />}
       {active === 'overview' && (
         <>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
@@ -120,8 +120,7 @@ export default function Lender({ deal, me, preview, tab }) {
                 {floor && <p className="mt-3 text-sm text-white/80">Lowest case you can set here ({money(floor.r)} rent, {floor.s ? `${floor.s} Airbnb` : 'no Airbnb'}, {floor.u} units): {money(floor.e.keepMonthly)}/mo left after the payment, rent covers it {times(floor.e.dscr)}.</p>}
               </section>
 
-              {photos.length > 0 && <Hero photos={photos} />}
-              <WalkVideos videos={walkVideos} />
+              <Cover rows={photos} />
 
               <Card>
                 <CardTitle>The numbers</CardTitle>

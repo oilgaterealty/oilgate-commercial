@@ -6,7 +6,8 @@ import { operating, money, pct } from '../lib/dealmath.js';
 import { Card, CardTitle, Empty, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
-import { Hero, photosOf } from '../components/Photos.jsx';
+import { Cover, photosOf } from '../components/Photos.jsx';
+import UnitGallery from '../components/UnitGallery.jsx';
 import Offers from './Offers.jsx';
 import { seenBy } from '../lib/visibility.js';
 
@@ -47,15 +48,16 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
-  const tabs = viewer ? [['overview', 'Overview']] : [['overview', 'Overview'], ['comps', 'Comps'], ['messages', 'Messages']];
+  const tabs = viewer ? [['overview', 'Overview'], ['photos', 'Photos']] : [['overview', 'Overview'], ['photos', 'Photos'], ['comps', 'Comps'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div className="space-y-5">
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {!viewer && active === 'comps' && <Comps deal={deal} me={me} role={role} preview={preview} />}
+      {active === 'photos' && <UnitGallery deal={deal} me={me} role={viewer ? 'viewer' : role} preview={preview} />}
       {active === 'overview' && (
         <>
-          {photos.length > 0 && <Hero photos={photos} />}
+          <Cover rows={photos} />
           <Facts deal={deal} numbers={!viewer} />
           {!viewer && (
             <section>
@@ -66,7 +68,8 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>
-              {viewer ? <Empty>Ask {buyerName()} for purchase information.</Empty> : docs.length ? <FileList rows={docs} /> : <Empty>Nothing shared yet.</Empty>}
+              {/* Read only: no sharing, moving, reordering or deleting controls for reviewer or viewer. */}
+              {viewer ? <Empty>Ask {buyerName()} for purchase details.</Empty> : docs.length ? <FileList rows={docs} canShare={false} owner={false} /> : <Empty>Nothing shared with you yet.</Empty>}
             </Card>
             {!viewer && (
               <Card>

@@ -14,7 +14,8 @@ test('no name is hardcoded in the app: buyer and seller come from the deal', () 
     assert.doesNotMatch(readFileSync(f, 'utf8'), /LaVante/, f);
   }
   assert.equal(buyerTag({ buyer_name: "LaVante'" }), "LaVante' · Buyer");
-  assert.equal(sellerTag({ seller_name: '' }), 'Seller: not named yet');
+  // v6.3: "Seller not named yet" only on the owner's own page (covered in v63.test.mjs).
+  assert.equal(sellerTag({ seller_name: '' }), 'Seller');
   assert.equal(sellerTag({ seller_name: 'Pat' }), 'Pat · Seller');
   assert.equal(possessive("LaVante'"), "LaVante's");
   assert.match(v6, /add column if not exists buyer_name text not null default 'LaVante'''/);
@@ -79,5 +80,6 @@ test('v6 migration touches only commercial_ objects and storage policies', () =>
 
 test('comps carry their source', () => {
   assert.match(v6, /add column if not exists source text not null default ''/);
-  assert.match(readFileSync('src/views/Comps.jsx', 'utf8'), /Source: \{r\.source\}/);
+  // v6.3: the source shows through compSource (AI-found comps say so; broker comps show their source text).
+  assert.match(readFileSync('src/views/Comps.jsx', 'utf8'), /Source: \{compSource\(c\)\}/);
 });

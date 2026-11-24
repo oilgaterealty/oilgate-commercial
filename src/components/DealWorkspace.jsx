@@ -21,7 +21,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
   const [pending, setPending] = useState('');
   const load = async () => {
     const r = await supabase.from('commercial_work_items').select('*').eq('deal_id', deal.id).eq('kind', kind).order('created_at', { ascending: false });
-    setError(r.error ? 'Working material is unavailable. Please refresh or contact the owner.' : '');
+    setError(r.error ? 'This list didn’t load. Please refresh, or message the buyer.' : '');
     setRows((r.data || []).filter(x => !preview || (x.audience.includes(role) && x.author_role === 'owner')));
   };
   useEffect(() => { load(); }, [deal.id, kind, role, preview]);
@@ -47,7 +47,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
   };
   return <Card><CardTitle>{title}</CardTitle>
     {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
-    {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The owner can publish relevant findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{rows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
+    {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The buyer posts findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{rows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
       {kind === 'task' && <input type="checkbox" aria-label={`Complete ${r.body}`} checked={r.done} disabled={Boolean(pending) || preview || (role !== 'owner' && r.author_role !== 'owner' && r.author_email !== me.email)} onChange={() => toggle(r)} />}
       <div className="min-w-0"><p className={`whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><p className="mt-1 text-xs text-ink-soft">{r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}{role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}</p></div>
     </li>)}</ul>}

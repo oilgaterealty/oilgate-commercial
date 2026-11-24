@@ -57,7 +57,7 @@ export default function Home({ session }) {
               <Button type="submit" className="w-full">Create deal page</Button>
               {msg && <p className="text-sm text-ink-soft">{msg}</p>}
             </form>
-            <p className="mt-3 text-xs text-ink-soft">Each deal gets the same owner, realtor and seller pages. Nobody sees it until you add them.</p>
+            <p className="mt-3 text-xs text-ink-soft">Each deal gets the same buyer, realtor and seller pages. Nobody sees it until you add them.</p>
           </Card>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { buyerTag, sellerTag } from '../lib/people.js';
+import { buyerTag, sellerTag, viewingRole } from '../lib/people.js';
 import { supabase } from '../lib/supabase.js';
 import { DictatedField } from './Dictation.jsx';
 
@@ -35,7 +35,7 @@ export function PropertyHead({ deal }) {
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
       <a href={`#/d/${deal.slug}`} className="font-display text-2xl font-semibold tracking-tight break-words sm:text-4xl">{deal.title}</a>
       {city && <span className="text-xs uppercase tracking-[0.16em] text-warm sm:text-sm sm:tracking-[0.18em]">{city}</span>}
-      <span className="w-full text-xs text-ink-soft">{buyerTag(deal)} · {sellerTag(deal)}</span>
+      <span className="w-full text-sm text-ink-soft">{viewingRole() === 'seller' ? sellerTag(deal) : `${buyerTag(deal)} · ${sellerTag(deal)}`}</span>
     </div>
   );
 }

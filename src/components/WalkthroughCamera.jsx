@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaCoordinator } from '../lib/mediaCoordinator.js';
 import { Button } from './Shell.jsx';
+import { VIDEO_480P, VIDEO_BITRATE } from '../lib/videoPost.js';
 
 const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
 const VIDEO_AUTO_STOP_BYTES = 47 * 1024 * 1024;
@@ -70,8 +71,8 @@ export default function WalkthroughCamera({
       }
       const videoPreferred =
         mode === 'video'
-          ? { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+          ? { facingMode: { ideal: 'environment' }, ...VIDEO_480P }
+          :{ facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
 
       try {
         if (mode === 'video') {
@@ -189,8 +190,8 @@ export default function WalkthroughCamera({
     ].find((t) => MediaRecorder.isTypeSupported?.(t));
 
     try {
-      // ~2.5 Mbps keeps a 2-minute clip near 40 MB on a phone.
-      const recorder = new MediaRecorder(stream, { ...(codec ? { mimeType: codec } : {}), videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 96_000 });
+      // 480p at ~750 kbps keeps a 2-minute clip near 12 MB, so shared storage stays lean.
+      const recorder = new MediaRecorder(stream, { ...(codec ? { mimeType: codec } : {}), ...VIDEO_BITRATE });
       recorderRef.current = recorder;
       chunksRef.current = [];
       bytesRef.current = 0;

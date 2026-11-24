@@ -69,11 +69,11 @@ export function MoveOneDialog({ fromUnit, fromRoom, busy, onMove, onCancel }) {
   }, [unit, room]);
   const same = unit === fromUnit && room === fromRoom;
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label="Move photo to" onClick={onCancel}
+    <div role="dialog" aria-modal="true" aria-label="Move this one to" onClick={onCancel}
       className="fixed inset-0 z-[110] flex items-end justify-center bg-black/50 p-3 sm:items-center">
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md space-y-3 rounded-2xl bg-white p-4 shadow-xl">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold">Move this photo to…</p>
+          <p className="text-sm font-semibold">Move this one to…</p>
           <button type="button" onClick={onCancel} className="min-h-[40px] rounded-lg border border-line px-3 text-xs font-medium">Cancel</button>
         </div>
         <MoveTarget unit={unit} room={room} setUnit={setUnit} setRoom={setRoom} idPrefix="move-one"

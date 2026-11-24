@@ -29,6 +29,8 @@ import { Button, Card, CardTitle, Empty } from '../components/Shell.jsx';
 import WalkthroughCamera from '../components/WalkthroughCamera.jsx';
 import MoveBar, { MoveOneDialog } from '../components/WalkMoveBar.jsx';
 import PhotoViewer, { ThumbOverlay } from '../components/PhotoViewer.jsx';
+import { processVideo } from '../lib/videoPost.js';
+import { VideoExtras } from '../components/UnitGallery.jsx';
 
 const PHOTO_EXT = {
   'image/jpeg': 'jpg',
@@ -906,7 +908,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
               author_name: item.authorName || me.name || roleLabel[role],
             };
 
-      const ins = await supabase.from(table).insert(row);
+      const ins = await supabase.from(table).insert(row).select('id').maybeSingle();
       if (ins.error) {
         await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
         const failed = await updateMediaItem(item.id, {
@@ -919,15 +921,38 @@ export default function Walkthrough({ deal, me, role, preview }) {
         return false;
       }
 
+      // Keep the clip in memory for the after-save steps (frames + transcript) before the phone copy is cleared.
+      const savedBlob = item.blob;
       await deleteMediaItem(item.id);
       if (mountedRef.current) {
         setLocalMedia((prev) => prev.filter((m) => m.id !== item.id));
         setRefresh((r) => r + 1);
       }
+      if (item.kind === 'video' && ins.data?.id) void afterVideoSaved(ins.data.id, savedBlob);
       return true;
     },
     [deal.id, edit, me.name, me.uid, role]
   );
+
+  // After a video saves: three small still frames and a transcript, made on this device, stored on the video row.
+  async function afterVideoSaved(videoId, blob) {
+    const table = supabase.from('commercial_walkthrough_videos');
+    await table.update({ transcript_status: 'pending' }).eq('id', videoId).eq('deal_id', deal.id);
+    try {
+      await processVideo(blob, {
+        uploadFrame: async (jpg) => {
+          const p = storagePathFor(deal.id, me.uid, 'jpg');
+          const up = await supabase.storage.from(BUCKET).upload(p, jpg, { contentType: 'image/jpeg' });
+          return up.error ? null : p;
+        },
+        transcribe: async (b) => (await transcribeAudio(b)).text,
+        save: (result) => supabase.from('commercial_walkthrough_videos').update(result).eq('id', videoId).eq('deal_id', deal.id),
+      });
+    } catch {
+      await supabase.from('commercial_walkthrough_videos').update({ transcript_status: 'failed' }).eq('id', videoId).eq('deal_id', deal.id);
+    }
+    if (mountedRef.current) setRefresh((r) => r + 1);
+  }
 
   const enqueueAndMaybeSyncFiles = async (files, kind, targetUnit = unit, targetRoom = selectedRoom) => {
     if (!edit || !files.length) return;
@@ -1241,7 +1266,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
     const list = [];
     if (withOpen) list.push({ key: 'open', icon: '⤢', label: 'Open', onClick: () => setViewKey(k) });
     if (movable.has(k)) {
-      list.push({ key: 'move', icon: '⇄', label: 'Move to…', disabled: moving, onClick: () => setMoveOne(k) });
+      list.push({ key: 'move', icon: '⇄', label: 'Move this one', disabled: moving, onClick: () => setMoveOne(k) });
       list.push({ key: 'select', icon: '✓', label: 'Select', pressed: picked.has(k), onClick: () => selectOne(k) });
     }
     if (row && role === 'owner' && !preview) {
@@ -2283,6 +2308,11 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           {v.status === MEDIA_STATUS.UPLOADING ? 'Uploading…' : v.status === MEDIA_STATUS.FAILED ? 'Failed' : 'Pending'}
                         </span>
                         <div className="flex gap-2">
+                          {!selecting && movable.has(`l:${v.id}`) && (
+                            <button type="button" disabled={moving} onClick={() => setMoveOne(`l:${v.id}`)} className="rounded-lg border border-line bg-white px-2.5 py-1 font-medium">
+                              ⇄ Move this one
+                            </button>
+                          )}
                           {v.status !== MEDIA_STATUS.UPLOADING && (
                             <button
                               type="button"
@@ -2334,6 +2364,11 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           {authorTag(v)} · {when(v.created_at)}
                           {v.size_bytes ? ` · ${fmtBytes(v.size_bytes)}` : ''}
                         </span>
+                        {!selecting && movable.has(`v:${v.id}`) && (
+                          <button type="button" disabled={moving} onClick={() => setMoveOne(`v:${v.id}`)} className="inline-flex min-h-[40px] items-center rounded-lg border border-line bg-white px-3 font-medium text-ink hover:border-ink">
+                            ⇄ Move this one
+                          </button>
+                        )}
                         {edit && (role === 'owner' || v.author_uid === me.uid) && (
                           <button
                             type="button"
@@ -2351,6 +2386,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(v.share_lender)} onChange={() => void toggleShare(v, 'share_lender', 'video')} />Share with lender</label>
                         </div>
                       )}
+                      <VideoExtras video={v} />
                     </li>
                   ))}
                 </ul>
