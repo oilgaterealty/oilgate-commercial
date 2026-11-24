@@ -25,6 +25,10 @@ export const BASE_FIELDS = [
   ['refiReserve', 'Cash the bank holds back at refinance', '$'],
 ];
 
+// How many units can be switched to Airbnb (the switch shows each of these).
+export const STR_UNIT_CHOICES = [0, 1, 2, 3];
+export const strUnitOptions = () => STR_UNIT_CHOICES.map((n) => [n, n === 0 ? 'None' : `${n} unit${n > 1 ? 's' : ''}`]);
+
 // Short-term rental (Airbnb) assumptions. Defaults are placeholders; each deal's real numbers live in its private row.
 export const STR_FIELDS = [
   ['strNightly', 'Nightly rate', '$'],

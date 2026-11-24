@@ -1,6 +1,6 @@
 import { buyerName, possessive } from '../lib/people.js';
 import { useState } from 'react';
-import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly, strUnitOptions } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
 import { Button } from './Shell.jsx';
 import { checkedLabel } from '../lib/v63.js';
@@ -55,7 +55,7 @@ export default function Switches({ base, setBase, owner }) {
         <Segmented label="Units" options={[[9, '9 units'], [10, '10 units']]} value={units} onChange={(u) => set({ units: u })} />
         {units === 10 && <Money label="Extra repair for the 10th unit" value={val(base, 'tenthUnitRepair')} step={500} onChange={(v) => set({ tenthUnitRepair: v })} />}
         <Money label="Rent per unit / month" value={val(base, 'rent')} onChange={(v) => set({ rent: v })} />
-        <Segmented label="Units as Airbnb" options={[[0, 'None'], [1, '1 unit'], [2, '2 units']]} value={strUnits} onChange={(n) => set({ strUnits: n })} />
+        <Segmented label="Units as Airbnb" options={strUnitOptions()} value={strUnits} onChange={(n) => set({ strUnits: n })} />
       </div>
       {strUnits > 0 && (
         <div className="mt-3 text-sm">

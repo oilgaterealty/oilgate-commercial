@@ -1,6 +1,6 @@
 import { buyerName } from '../lib/people.js';
 import { useMemo, useState } from 'react';
-import { evaluate, money } from '../lib/dealmath.js';
+import { evaluate, money, STR_UNIT_CHOICES, strUnitOptions } from '../lib/dealmath.js';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
@@ -73,7 +73,7 @@ export default function Lender({ deal, me, preview, tab }) {
   const floor = useMemo(() => {
     if (!plan) return null;
     let worst = null;
-    for (const r of RENTS) for (const s of [0, 1, 2]) for (const u of [9, 10]) {
+    for (const r of RENTS) for (const s of STR_UNIT_CHOICES) for (const u of [9, 10]) {
       const x = evaluate(plan.structure, plan.inputs, { ...base, units: u, strUnits: s, rent: r });
       if (!worst || x.keepMonthly < worst.e.keepMonthly) worst = { e: x, r, s, u };
     }
@@ -81,7 +81,7 @@ export default function Lender({ deal, me, preview, tab }) {
   }, [plan, base]);
 
   const randomize = () => {
-    const r = pick(RENTS), s = pick([0, 1, 2]), u = pick([9, 10]);
+    const r = pick(RENTS), s = pick(STR_UNIT_CHOICES), u = pick([9, 10]);
     setRent(r); setStr(s); setUnits(u);
     const x = evaluate(plan.structure, plan.inputs, { ...base, units: u, strUnits: s, rent: r });
     setLastRandom(`${money(r)} rent, ${s ? `${s} Airbnb unit${s > 1 ? 's' : ''}` : 'no Airbnb'}, ${u} units: ${money(x.keepMonthly)}/mo left after the payment, rent covers it ${times(x.dscr)}.`);
@@ -108,7 +108,7 @@ export default function Lender({ deal, me, preview, tab }) {
                 </div>
                 <div className="mt-6 flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-white/15 pt-4">
                   <Segmented label="Units" options={[[9, '9 units'], [10, '10 units']]} value={units} onChange={setUnits} />
-                  <Segmented label="Units as Airbnb" options={[[0, 'None'], [1, '1 unit'], [2, '2 units']]} value={str} onChange={setStr} />
+                  <Segmented label="Units as Airbnb" options={strUnitOptions()} value={str} onChange={setStr} />
                   <label className="text-xs text-white/60">Rent per unit
                     <select value={rent} onChange={(ev) => setRent(+ev.target.value)} className="mt-1 block rounded-full bg-white px-3 py-1 text-sm text-ink">
                       {RENTS.map((r) => <option key={r} value={r}>{money(r)}/mo</option>)}
