@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
 import { Button } from './Shell.jsx';
+import { checkedLabel } from '../lib/v63.js';
 
 const val = (base, k) => (base[k] ?? BASE_DEFAULTS[k]);
 const num = (v) => (v === '' ? '' : +v);
@@ -61,6 +62,7 @@ export default function Switches({ base, setBase, owner }) {
           {hasStr
             ? <p>Each Airbnb unit brings in about <strong>{money(s.net)}/mo</strong> after fees and costs, against {money(+val(base, 'rent'))}/mo as a regular rental. {money(+val(base, 'strNightly'))} a night, {Math.round(+val(base, 'strOccPct'))}% of nights booked.</p>
             : <p className="text-ink-soft">No Airbnb numbers entered yet, so Airbnb units show no income.</p>}
+          {owner && base.strCheckedAt && <p className="mt-1 text-xs font-semibold text-ink-soft">Airbnb numbers last checked {checkedLabel(base.strCheckedAt)}</p>}
           {owner && base.strSource && <p className="mt-1 text-xs text-ink-soft">Source: {base.strSource}</p>}
           <button type="button" onClick={() => setDetails(!details)} className="mt-1 text-xs underline">{details ? 'Hide Airbnb numbers' : 'Change Airbnb numbers'}</button>
           {details && (
@@ -86,7 +88,7 @@ const LABEL = { ...Object.fromEntries([...BASE_FIELDS, ...STR_FIELDS].map(([k, l
 export function whatIfMessage(original, base, offers) {
   const lines = ['What-if from the deal page (nothing was saved):'];
   for (const k of Object.keys({ ...original.base, ...base })) {
-    if (['strSource', 'planOffer', 'askPrice', 'ourOffer'].includes(k) || original.base[k] === base[k]) continue;
+    if (['strSource', 'strCheckedAt', 'planOffer', 'askPrice', 'ourOffer'].includes(k) || original.base[k] === base[k]) continue;
     lines.push(`- ${LABEL[k] || k}: ${original.base[k] ?? 'blank'} → ${base[k]}`);
   }
   for (const o of offers) {

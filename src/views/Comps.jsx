@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5Access, validComp } from '../lib/leaseUp.js';
 import { money, operating } from '../lib/dealmath.js';
 import { roleLabel } from '../lib/format.js';
-import { COMP_SORTS, compSource, compsForView, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
+import { COMP_SORTS, checkedLabel, compSource, compsForView, latestCompDate, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
 import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
 import { buyerName, possessive } from '../lib/people.js';
@@ -286,6 +286,7 @@ export default function Comps({ deal, me, role, preview }) {
       <Card>
         <CardTitle aside={<span className="text-sm text-ink-soft">{allComps.length} comp{allComps.length === 1 ? '' : 's'}{canPick ? ' · pick the ones you trust' : ''}</span>}>Comparable sales</CardTitle>
         {status && <p role="status" className="mb-3 text-sm text-ink-soft">{status}</p>}
+        {latestCompDate(savedComps) && <p className="mb-3 text-xs font-semibold text-ink-soft">Comp list last updated {checkedLabel(latestCompDate(savedComps))}</p>}
         {savedComps === null ? (
           <Empty>Loading…</Empty>
         ) : allComps.length === 0 ? (

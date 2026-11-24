@@ -118,6 +118,19 @@ export function sortComps(comps, key, dir = 'asc') {
   });
 }
 // "Apr 2026" for a full date; the year alone if that's all there is.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "Nov 24, 2026" from any ISO date or timestamp; '' when missing.
+export function checkedLabel(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ''));
+  return m ? `${MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}` : '';
+}
+
+// Newest created_at among saved comps: when the comp list was last updated.
+export function latestCompDate(comps) {
+  return (comps || []).map((c) => String(c?.created_at || '')).filter(Boolean).sort().pop() || '';
+}
+
 export function soldLabel(date) {
   const m = /^(\d{4})-(\d{2})/.exec(String(date || ''));
   if (!m) return yearOf(date) ? String(yearOf(date)) : '';
