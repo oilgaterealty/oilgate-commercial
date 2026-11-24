@@ -1,3 +1,5 @@
+import { organizeCityRecords } from '../lib/cityRecords.js';
+
 function FileLinks({ files, signedUrls }) {
   if (!files?.length) return null;
   return (
@@ -22,14 +24,15 @@ function FileLinks({ files, signedUrls }) {
   );
 }
 
-function SourceOverlay({ source }) {
-  if (!source) return null;
+function SourceOverlay({ sources }) {
+  if (!sources?.length) return null;
   return (
     <div
       role="tooltip"
       onClick={(e) => e.stopPropagation()}
-      className="absolute left-0 right-0 top-full z-30 mt-1.5 max-w-md rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-lg"
+      className="absolute left-0 right-0 top-full z-30 max-h-72 max-w-md overflow-y-auto break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-lg"
     >
+      {sources.map((source, index) => <div key={index} className="border-white/20 py-2 first:pt-0 last:pb-0 [&+div]:border-t">
       <div className="font-medium">
         {source.sourceUrl ? (
           <a
@@ -53,6 +56,7 @@ function SourceOverlay({ source }) {
           Unverified
         </span>
       )}
+      </div>)}
     </div>
   );
 }
@@ -72,10 +76,9 @@ export default function CityRecordsView({
   onLeave,
   onToggle,
 }) {
-  const summary = data?.summary || [];
-  const agencies = data?.agencies || [];
+  const { summary, groups } = organizeCityRecords(data);
 
-  if (!summary.length && !agencies.length) {
+  if (!summary.length && !groups.length) {
     return (
       <SectionCard>
         <p className="text-sm text-ink-soft">No city records.</p>
@@ -93,6 +96,7 @@ export default function CityRecordsView({
     },
     onClick: () => onToggle?.(item.id),
     onKeyDown: (e) => {
+      if (e.target !== e.currentTarget) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         onToggle?.(item.id);
@@ -105,45 +109,52 @@ export default function CityRecordsView({
   return (
     <div className="space-y-4">
       {summary.length > 0 && (
-        <SectionCard title="Summary">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        <SectionCard title="What matters">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {summary.map((item) => (
               <div
                 key={item.id}
                 {...handlers(item)}
                 className="relative cursor-pointer rounded-xl border border-line bg-paper/60 p-3 outline-none transition hover:border-ink focus-visible:ring-2 focus-visible:ring-warm"
               >
-                <div className="text-xs font-medium text-ink-soft">{item.label}</div>
+                <div className="text-sm font-semibold text-ink">{item.label}</div>
                 <div className="mt-0.5 break-words text-sm font-medium text-ink">{item.value}</div>
                 <FileLinks files={item.files} signedUrls={signedUrls} />
-                {activeId === item.id && <SourceOverlay source={item.source} />}
+                {activeId === item.id && <SourceOverlay sources={item.sources} />}
               </div>
             ))}
           </div>
         </SectionCard>
       )}
 
-      {agencies.map((ag) => (
-        <SectionCard key={ag.id || ag.agency} title={ag.agency}>
-          <ul className="divide-y divide-line">
-            {(ag.items || []).map((item) => (
+      {groups.map((group) => (
+        <details key={group.id} open={['ownership', 'liens', 'taxes'].includes(group.id)} className="rounded-xl border border-line bg-white px-3 sm:px-4">
+          <summary className="cursor-pointer py-3 text-base font-semibold text-ink">
+            {group.label} <span className="ml-2 tabular-nums">({group.count})</span>
+          </summary>
+          <ul className="divide-y divide-line pb-2">
+            {group.items.map((item) => (
               <li
                 key={item.id}
                 {...handlers(item)}
                 className="relative cursor-pointer rounded-lg py-2.5 outline-none first:pt-0 last:pb-0 focus-visible:ring-2 focus-visible:ring-warm"
               >
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                  <span className="shrink-0 text-sm font-medium text-ink sm:w-64">{item.label}</span>
+                {group.id === 'offline' ? <>
+                  <div className="break-words text-sm text-ink"><strong className="font-semibold">{item.label}:</strong> {item.value}</div>
+                  <FileLinks files={item.files} signedUrls={signedUrls} />
+                </> : <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                  <span className="text-sm font-semibold text-ink sm:w-52 sm:shrink-0">{item.label}</span>
                   <div className="min-w-0 flex-1">
                     <div className="break-words text-sm text-ink">{item.value}</div>
+                    {/^\d{4}-\d{2}-\d{2}/.test(item.sortDate) && <time dateTime={item.sortDate.slice(0, 10)} className="text-sm text-ink">{item.sortDate.slice(0, 10)}</time>}
                     <FileLinks files={item.files} signedUrls={signedUrls} />
                   </div>
-                </div>
-                {activeId === item.id && <SourceOverlay source={item.source} />}
+                </div>}
+                {activeId === item.id && <SourceOverlay sources={item.sources} />}
               </li>
             ))}
           </ul>
-        </SectionCard>
+        </details>
       ))}
     </div>
   );

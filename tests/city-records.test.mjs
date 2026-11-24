@@ -13,6 +13,7 @@ import {
   collectRecordPaths,
   findVisibleSubtextViolations,
   normalizeCityRecords,
+  organizeCityRecords,
   sortRecordsNewestFirst,
 } from '../src/lib/cityRecords.js';
 
@@ -21,15 +22,17 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
 
 function loadCityRecordsView() {
   const src = read('src/components/CityRecordsView.jsx');
-  const { code } = esbuild.transformSync(src, {
-    loader: 'jsx',
+  const { outputFiles } = esbuild.buildSync({
+    stdin: { contents: src, loader: 'jsx', resolveDir: join(root, 'src/components') },
+    bundle: true,
+    write: false,
     jsx: 'transform',
     jsxFactory: 'h',
     jsxFragment: 'Fragment',
     format: 'cjs',
   });
   const mod = { exports: {} };
-  const fn = new Function('exports', 'module', 'h', 'Fragment', code);
+  const fn = new Function('exports', 'module', 'h', 'Fragment', outputFiles[0].text);
   fn(mod.exports, mod, createElement, Fragment);
   return mod.exports.default;
 }
@@ -121,7 +124,7 @@ test('no source or verification text renders visibly without hover or tap', () =
   assert.match(html, /Legal unit count/);
   assert.match(html, /10 units \(County commercial card\)/);
   assert.match(html, /\$0\.00 due/);
-  assert.match(html, /Summit County Fiscal Office/);
+  assert.match(html, /Ownership &amp; sale history/);
   assert.match(html, /https:\/\/signed\.example\/card\.pdf/);
 
   // Source / verification / subtext MUST NOT appear anywhere without hover or tap.
@@ -167,6 +170,171 @@ test('agency records sort newest-first and paths extract cleanly', () => {
     'deal/city-records/tax.pdf',
     'deal/city-records/sales.pdf',
   ]);
+});
+
+const TOPIC_FIXTURE = {
+  summary: [
+    ['sum-owner', 'Owner', '23C Properties LLC'],
+    ['sum-units', 'Legal unit count', '10 units'],
+    ['sum-taxes', 'Taxes owed', '$0 due'],
+    ['sum-liens', 'Liens', 'No judgments found'],
+    ['sum-violations', 'Violations', 'One open housing case'],
+    ['sum-mortgages', 'Mortgages', 'Recorded mortgage search pending'],
+  ].map(([id, label, value]) => ({ id, label, value })),
+  agencies: Object.entries({
+    'Summit County Fiscal Office': [
+      ['sf-recorded-docs-captcha', 'Recorded instruments', 'Blocked online by CAPTCHA'],
+      ['sf-tax-2025-paid', '2025 taxes', '$8,400 paid'],
+      ['sf-valuation-2026', '2026 valuation', '$310,000 assessed'],
+      ['sf-tax-2026-summary', '2026 taxes', '$8,800 billed'],
+      ['sf-sa-2026', '2026 assessments', '$240 charged'],
+      ['sf-commercial-card', 'Commercial card', '10 units; 7,200 square feet'],
+      ['sf-rental-reg', 'Rental registration', 'Registered in 2026'],
+      ['sf-bor-bta', 'Valuation appeals', 'No BOR or BTA appeals'],
+      ['sf-deed-2021', '2021 deed', '23C acquired for $410,000'],
+      ['sf-sa-2019-junk', 'Junk vehicle assessment', '$400 assessed in 2019'],
+      ['sf-sa-2012-utility', 'Utility assessment', '$900 delinquent sewer in 2012'],
+      ['sf-deed-2012-23c', '2012 transfer', '23C acquired for $108,000'],
+      ['sf-deed-2012-sheriff', 'Sheriff deed', 'Bank acquired in 2012'],
+      ['sf-sa-rental-2010-2017', 'Rental registration assessments', '$600 assessed during 2010–2017'],
+      ['sf-deed-2005', '2005 deed', 'Prior owner purchased'],
+      ['sf-deed-1994', '1994 deed', 'Earlier owner purchased'],
+    ],
+    'Akron and Summit Building Department': [
+      ['ak-zoning-gis', 'Zoning', 'Apartment use permitted'],
+      ['ak-epa-water-line', 'Water service line', 'Copper service line'],
+      ['ak-violation-2023-open', 'Open housing violation', 'Exterior repairs outstanding'],
+      ['scbs-permit-po2200103', 'Permit PO2200103', 'Roof replacement approved'],
+      ['ak-violation-2018-closed', 'Closed housing violation', 'Repairs completed'],
+      ['scbs-govwell-dashboards', 'Enforcement cases', 'Two closed cases'],
+      ['ak-grass-311', 'Grass / 311', 'No active mowing order'],
+      ['ak-co-unit-count-request', 'Certificate of occupancy', 'Not online, needs request'],
+      ['ak-city-rental-file', 'City rental file', 'Not online, needs request'],
+      ['ak-water-balance-request', 'Water balance', 'Not searchable online'],
+    ],
+    'Summit Clerk': [
+      ['clerk-23c-civil', 'Civil cases', 'Two civil cases'],
+      ['clerk-23c-crim-appeals', 'Criminal and appeals', 'No cases found'],
+      ['clerk-2008-foreclosure', '2008 foreclosure', 'Closed in 2012'],
+    ],
+    'Akron Municipal Court': [['amc-captcha', 'Municipal cases', 'Blocked online by CAPTCHA']],
+    'Ohio Secretary of State': [['sos-entity-ucc', 'Owner entity and UCC', '23C is active; UCC search pending']],
+    'Other official offices': [
+      ['other-fema', 'Flood zone', 'Zone X'],
+      ['other-nrhp', 'Historic register', 'No listing'],
+      ['other-oppzone-landbank', 'Opportunity zone / land bank', 'Outside the zone'],
+      ['other-sheriff-sales', 'Sheriff sales', 'No scheduled sale'],
+    ],
+  }).map(([agency, items]) => ({ agency, items: items.map(([id, label, value], index) => ({
+    id, label, value, sortDate: `2026-${String(index % 9 + 1).padStart(2, '0')}-01`,
+    files: [{ label: 'Record PDF', path: `${id}.pdf` }],
+    source: { sourceName: agency, sourceUrl: `https://official.example/${id}`, documentDate: '2026-01-01', retrievedAt: '2026-11-24' },
+  })) })),
+};
+const allRows = (data) => [...data.summary, ...data.groups.flatMap((group) => group.items)];
+const organizedFixture = () => organizeCityRecords(TOPIC_FIXTURE);
+
+test('topic organizer preserves specified order and collapses unavailable-only rows last', () => {
+  const output = organizedFixture();
+  assert.deepEqual(output.groups.map((group) => group.label), [
+    'Ownership & sale history', 'Mortgages, liens & court cases', 'Taxes, value & assessments',
+    'Building, units & code', 'Zoning & location', 'Not online yet',
+  ]);
+  for (const group of output.groups) assert.equal(group.count, group.items.length);
+  const offline = output.groups.at(-1).items;
+  assert.deepEqual(offline.flatMap((row) => row.mergedIds).sort(), ['sf-recorded-docs-captcha', 'amc-captcha', 'ak-water-balance-request'].sort());
+  for (const row of offline) {
+    assert.match(row.value, /^Request from /);
+    assert.doesNotMatch(row.value, /blocked|not online|not searchable/i);
+    assert.doesNotMatch(row.value, /\n/);
+  }
+});
+
+test('every input id appears exactly once across tiles and groups, without mutating data', () => {
+  const before = structuredClone(TOPIC_FIXTURE);
+  const expected = [...before.summary, ...before.agencies.flatMap((agency) => agency.items)].map((row) => row.id).sort();
+  const actual = allRows(organizedFixture()).flatMap((row) => row.mergedIds).sort();
+  assert.equal(expected.length, 41);
+  assert.deepEqual(actual, expected);
+  assert.deepEqual(TOPIC_FIXTURE, before);
+});
+
+test('unit count and rental families become one row each with all facts, files and sources', () => {
+  const rows = allRows(organizedFixture());
+  const units = rows.filter((row) => row.mergedIds.includes('sum-units'));
+  assert.equal(units.length, 1);
+  assert.deepEqual(units[0].mergedIds, ['sum-units', 'sf-commercial-card', 'ak-co-unit-count-request']);
+  assert.match(units[0].value, /7,200 square feet/);
+  assert.doesNotMatch(units[0].value, /10 units · 10 units/);
+  assert.match(units[0].value, /Certificate of occupancy: Request from/);
+  assert.equal(units[0].files.length, 2);
+  assert.equal(units[0].sources.length, 2);
+  const rental = rows.filter((row) => row.mergedIds.includes('sf-rental-reg'));
+  assert.equal(rental.length, 1);
+  assert.deepEqual([...rental[0].mergedIds].sort(), ['sf-rental-reg', 'sf-sa-rental-2010-2017', 'ak-city-rental-file'].sort());
+  assert.match(rental[0].value, /Registered in 2026/);
+  assert.match(rental[0].value, /\$600 assessed/);
+  assert.match(rental[0].value, /City rental file: Request from/);
+  assert.equal(rental[0].files.length, 3);
+  assert.equal(rental[0].sources.length, 3);
+});
+
+test('identical normalized label and value merge transitively with explicit families', () => {
+  const fixture = structuredClone(TOPIC_FIXTURE);
+  const card = fixture.agencies[0].items.find((item) => item.id === 'sf-commercial-card');
+  fixture.agencies[0].items.push({ ...card, id: 'future-card', label: ' COMMERCIAL CARD! ', value: card.value.toUpperCase() });
+  const units = allRows(organizeCityRecords(fixture)).find((row) => row.id === 'sum-units');
+  assert.ok(units.mergedIds.includes('future-card'));
+  assert.equal(units.files.length, 2);
+  assert.equal(units.sources.length, 2);
+});
+
+test('unknown ids use keyword fallback or Other and request status overrides topic', () => {
+  const output = organizeCityRecords({ agencies: [{ agency: 'Records Desk', items: [
+    { id: 'future-a', label: 'Mortgage release', value: 'Satisfied' },
+    { id: 'future-b', label: 'Boundary marker', value: 'Survey peg' },
+    { id: 'future-c', label: 'Tax certificate', value: 'Not online, needs request' },
+  ] }] });
+  assert.deepEqual(output.groups.map((group) => [group.id, group.items[0].id]), [['liens', 'future-a'], ['other', 'future-b'], ['offline', 'future-c']]);
+});
+
+test('every topic sorts newest first, including merged records using latest member date', () => {
+  for (const group of organizedFixture().groups) {
+    assert.deepEqual(group.items, sortRecordsNewestFirst(group.items));
+  }
+  const fixture = structuredClone(TOPIC_FIXTURE);
+  fixture.agencies[0].items.find((item) => item.id === 'sf-rental-reg').sortDate = '2027-03-01';
+  const building = organizeCityRecords(fixture).groups.find((group) => group.id === 'building');
+  assert.equal(building.items[0].id, 'sf-rental-reg');
+  assert.equal(building.items[0].sortDate, '2027-03-01');
+});
+
+test('organizer output keeps forbidden provenance text out of all visible fields', () => {
+  const fixture = structuredClone(TOPIC_FIXTURE);
+  fixture.agencies[0].items[1].value += '; Source: official register. Retrieved 2026-11-24. https://official.example/secret';
+  fixture.agencies[0].items[1].label += ' (unverified)';
+  fixture.agencies[0].items[1].files[0].label = 'https://official.example/file';
+  const output = organizeCityRecords(fixture);
+  assert.deepEqual(findVisibleSubtextViolations(output), []);
+  assert.match(allRows(output).find((row) => row.id === 'sf-tax-2025-paid').value, /\$8,400 paid/);
+});
+
+test('compact sections render counts, correct open states, dates and every merged overlay source', () => {
+  const View = loadCityRecordsView();
+  const output = organizedFixture();
+  const signedUrls = Object.fromEntries(collectRecordPaths(TOPIC_FIXTURE).map((path) => [path, `https://signed.example/${path}`]));
+  const html = renderToStaticMarkup(createElement(View, { data: TOPIC_FIXTURE, signedUrls }));
+  assert.match(html, /What matters/);
+  assert.equal((html.match(/<details[^>]* open=""/g) || []).length, 3);
+  assert.match(html, /<details[^>]*><summary[^>]*>Not online yet/);
+  assert.match(html, /<time dateTime="2026-/);
+  for (const group of output.groups) assert.ok(html.includes(`(${group.count})`));
+  assert.doesNotMatch(html.replace(/\s(?:href|dateTime)="[^"]*"/g, ''), /https?:|Retrieved|Unverified|Source:/i);
+  const rental = allRows(output).find((row) => row.id === 'sf-rental-reg');
+  const active = renderToStaticMarkup(createElement(View, { data: TOPIC_FIXTURE, signedUrls, activeId: rental.id }));
+  for (const source of rental.sources) assert.ok(active.includes(source.sourceUrl));
+  for (const file of rental.files) assert.ok(active.includes(signedUrls[file.path]));
+  assert.equal((active.match(/role="tooltip"/g) || []).length, 1);
 });
 
 test('City Records page never loads on the public site or for non-owner roles', async () => {
@@ -218,4 +386,18 @@ test('City Records page never loads on the public site or for non-owner roles', 
     else process.env.VITE_SITE_KIND = prevKind;
     rmSync(outDir, { recursive: true, force: true });
   }
+});
+
+test('partly blocked records keep their real facts; fully blocked ones keep tucked-in numbers', async () => {
+  const { organizeCityRecords } = await import('../src/lib/cityRecords.js');
+  const out = organizeCityRecords({
+    summary: [{ id: 'sum-mortgages', label: 'Open mortgages', value: 'Blocked online by CAPTCHA (County Recorder) \u00b7 Tax bill mailing: C/O Example Bank', files: [] }],
+    agencies: [{ id: 'ak', agency: 'City Utilities', items: [{ id: 'ak-water-balance-request', label: 'Water balance', value: 'Not online, needs request (0 delinquent charges certified to taxes)', sortDate: '2026-11-24', files: [] }] }],
+  });
+  const tile = out.summary.find((r) => r.mergedIds.includes('sum-mortgages'));
+  assert.ok(tile, 'mortgage tile stays in What matters');
+  assert.match(tile.value, /Example Bank/);
+  const offline = out.groups.find((g) => g.id === 'offline');
+  const water = offline.items.find((r) => r.mergedIds.includes('ak-water-balance-request'));
+  assert.match(water.value, /0 delinquent charges/);
 });
