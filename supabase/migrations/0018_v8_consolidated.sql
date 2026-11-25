@@ -315,11 +315,12 @@ begin
   foreach p in array p_participants loop
     select role into pr from commercial_members where deal_id = p_deal and email = p and status = 'active';
     if pr is null then return false; end if;
-    if r = 'owner' then continue; end if;
-    if pr <> r and p <> me then return false; end if;
+    if r = 'owner' or p = me then continue; end if;
+    if r = 'realtor' and pr in ('seller','lender','realtor') then continue; end if;
+    return false;
   end loop;
   if not public.commercial_lender_route_ok(p_deal, p_participants) then return false; end if;
-  return true;
+  return r = 'owner' or me = any(p_participants);
 end $$;
 
 -- 5. Lender City Records (read-only settings + storage PDFs) and Lender Terms (bridge / dscr / both, own-row RLS).
