@@ -7,8 +7,8 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
 import { canAccessDealPlan } from '../src/lib/site.js';
-import { monthlyPlan, normalizePlan, rentStrategy, derivations } from '../src/lib/dealplan.js';
-import { money } from '../src/lib/dealmath.js';
+import { monthlyPlan, normalizePlan, rentStrategy, derivations, ordinal } from '../src/lib/dealplan.js';
+import { money, valueSummary } from '../src/lib/dealmath.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -25,7 +25,7 @@ test('Plans is owner-only, blocked in previews, and lazy-loaded outside public b
   assert.match(view, /if \(!canAccessDealPlan\(SITE_KIND, role, preview\)\) return null/);
   assert.match(view, /from\('commercial_settings'\)\.select\('value'\)\.eq\('key', `deal_plan:\$\{deal\.slug\}`\)\.maybeSingle\(\)/);
   assert.match(view, /normalizePlan\(row\.value\)/);
-  assert.match(view, /monthlyPlan\(selected\.structure, selected\.inputs, model\.base, state\.plan\)/);
+  assert.match(view, /monthlyPlan\(selected\.structure, selected\.inputs, planBase, state\.plan\)/);
   assert.match(view, /derivations\(result\)/);
   assert.match(view, /useDealModel\(deal, \{ owner: true \}\)/);
   assert.match(view, /route\.sub \|\| 'master_lease'/);
@@ -52,9 +52,9 @@ function loadView() {
   const mod = { exports: {} };
   const Card = ({ children }) => React.createElement('section', null, children);
   const CardTitle = ({ children }) => React.createElement('h2', null, children);
-  const fn = new Function('module', 'exports', 'h', 'Fragment', 'useEffect', 'useId', 'useRef', 'useState', 'createPortal', 'money', 'rentStrategy', 'derivations', 'Card', 'CardTitle', 'AirbnbSwitch', code);
+  const fn = new Function('module', 'exports', 'h', 'Fragment', 'useEffect', 'useId', 'useRef', 'useState', 'createPortal', 'money', 'rentStrategy', 'derivations', 'Card', 'CardTitle', 'AirbnbSwitch', 'ordinal', 'valueSummary', code);
   fn(mod, mod.exports, React.createElement, React.Fragment, React.useEffect, React.useId, React.useRef, React.useState,
-    () => { throw new Error('An unopened overlay must not mount'); }, money, rentStrategy, derivations, Card, CardTitle, () => null);
+    () => { throw new Error('An unopened overlay must not mount'); }, money, rentStrategy, derivations, Card, CardTitle, () => null, ordinal, valueSummary);
   return mod.exports.DealPlanView;
 }
 
@@ -70,7 +70,10 @@ test('actual Plans markup renders math, skips empty stages, and hides sources an
     const html = renderToStaticMarkup(React.createElement(DealPlanView, { result, base, offers, selected, setBase() {}, onSelect() {} }));
     assert.match(html, /Month-by-month cash flow/);
     assert.match(html, /Database rent option/);
-    assert.match(html, /Unit 5/);
+    assert.match(html, /1st Unit 5/);
+    assert.match(html, /2nd Unit 8/);
+    assert.match(html, /Unit 10 rehab/);
+    assert.doesNotMatch(html, /as-is|Pending lender underwriting|Stabilized 10 units \(pending approvals\)/i);
     assert.match(html, /Net per unit\/mo/);
     assert.ok(html.includes(money(result.totals.sellerTotal)));
     for (const secret of ['PRIVATE_TAX_SOURCE', 'PRIVATE_SCHEDULE_SOURCE', 'PRIVATE_COST_DETAIL']) assert.ok(!html.includes(secret), secret);

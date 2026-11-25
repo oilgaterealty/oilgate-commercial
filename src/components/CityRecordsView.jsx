@@ -91,7 +91,7 @@ function SourceOverlay({ sources }) {
     <div
       role="tooltip"
       onClick={(e) => e.stopPropagation()}
-      className="absolute left-0 right-0 top-full z-30 max-h-72 max-w-md overflow-y-auto break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-lg"
+      className="absolute left-0 top-full z-30 w-[min(480px,calc(100vw-24px))] break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-lg"
     >
       {sources.map((source, index) => (
         <div key={index} className="border-white/20 py-2 first:pt-0 last:pb-0 [&+div]:border-t">

@@ -224,3 +224,216 @@ export function grade(metric, v) {
 
 export const money = (v) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : (v < 0 ? '−$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US'));
 export const pct = (v, d = 0) => (v === null || !Number.isFinite(v) ? '—' : (v * 100).toFixed(d) + '%');
+
+// Exact median $/unit from valid comps, scaled to the property's unit count.
+export function compsMedian(comps = [], units = 0) {
+  const perUnits = (comps || [])
+    .filter((c) => Number.isFinite(+c?.units) && +c.units > 0 && Number.isFinite(+c?.sale_price) && +c.sale_price > 0)
+    .map((c) => +c.sale_price / +c.units)
+    .sort((a, b) => a - b);
+  if (!perUnits.length) return { count: 0, perUnit: null, total: null };
+  const mid = Math.floor(perUnits.length / 2);
+  const perUnit = perUnits.length % 2 === 1 ? perUnits[mid] : (perUnits[mid - 1] + perUnits[mid]) / 2;
+  const n = Math.round(+units || 0);
+  return { count: perUnits.length, perUnit, total: n > 0 ? perUnit * n : null };
+}
+
+// Income value (NOI / cap rate) is primary; comps median is secondary. Math and valueSource stay in overlays.
+export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {}) {
+  const unitCount = Math.round(+units || +base.units || 0);
+  const capRate = Number.isFinite(+base.valueCapRate) && +base.valueCapRate > 0 ? +base.valueCapRate : 9;
+  const noiAnnual = Number.isFinite(+noi) ? +noi : 0;
+  const incomeFromNoi = noiAnnual > 0 ? noiAnnual / (capRate / 100) : null;
+  const savedVal = Number.isFinite(+base.value) && +base.value > 0 ? +base.value : null;
+  const income = base.valueBasis === 'income' && savedVal !== null ? savedVal : (incomeFromNoi ?? savedVal);
+  const incomePerUnit = income !== null && unitCount > 0 ? income / unitCount : null;
+
+  let compsCalc = compsMedian(comps, unitCount);
+  if (compsCalc.count === 0 && (+base.compsPerUnit > 0 || +base.compsValue > 0)) {
+    const perUnit = +base.compsPerUnit > 0 ? +base.compsPerUnit : (unitCount > 0 ? +base.compsValue / unitCount : null);
+    const total = +base.compsValue > 0 ? +base.compsValue : (unitCount > 0 && perUnit !== null ? perUnit * unitCount : null);
+    compsCalc = { count: Math.round(+base.compsCount || 0), perUnit, total };
+  }
+
+  const incomeLine = income !== null
+    ? (incomePerUnit !== null ? `Value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Value by income: ${money(income)}`)
+    : 'Value by income: —';
+  const compsLine = compsCalc.total !== null
+    ? (compsCalc.perUnit !== null ? `By comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `By comps: ${money(compsCalc.total)}`)
+    : null;
+
+  const incomeOverlay = [];
+  if (noiAnnual > 0) {
+    const computed = noiAnnual / (capRate / 100);
+    incomeOverlay.push(`${money(noiAnnual)} yearly NOI ÷ ${capRate}% cap rate = ${money(computed)}${unitCount > 0 ? ` (${money(computed / unitCount)}/unit across ${unitCount} units)` : ''}.`);
+  }
+  if (savedVal !== null && (noiAnnual <= 0 || Math.abs(savedVal - noiAnnual / (capRate / 100)) >= 500)) {
+    incomeOverlay.push(`Saved value on file: ${money(savedVal)}${unitCount > 0 ? ` (${money(savedVal / unitCount)}/unit)` : ''}.`);
+  }
+  if (base.valueSource) incomeOverlay.push(`Source: ${String(base.valueSource)}`);
+
+  const compsOverlay = compsCalc.total !== null
+    ? [`${money(compsCalc.perUnit)} median/unit × ${unitCount} units = ${money(compsCalc.total)}${compsCalc.count ? ` (from ${compsCalc.count} comps)` : ''}.`]
+    : [];
+
+  return {
+    units: unitCount,
+    capRate,
+    noiAnnual,
+    income,
+    incomePerUnit,
+    compsCount: compsCalc.count,
+    compsPerUnit: compsCalc.perUnit,
+    compsTotal: compsCalc.total,
+    valueSource: base.valueSource ? String(base.valueSource) : '',
+    incomeLine,
+    compsLine,
+    incomeOverlay,
+    compsOverlay,
+  };
+}
+
+// Snapshot story for non-owner roles (never imports dealplan).
+export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } = {}) {
+  const o = evalResult.operating;
+  const b = o.b;
+  const x = evalResult.inputs;
+  const val = valueSummary({ base: { ...b, ...base }, noi: o.noi, units: b.units, comps });
+  const rentMo = o.egi / 12;
+  const runningMo = (o.mgmt + o.fixed + o.reserves) / 12;
+  const paymentMo = evalResult.sellerMonthly ?? (o.cashFlow / 12 - evalResult.keepMonthly);
+  const fullLeft = evalResult.keepMonthly;
+
+  const advances = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : 0;
+  const closingCost = structure === 'master_lease' ? x.exerciseClosing : structure === 'partnership' ? x.closing : 0;
+  const sellerPayoffEst = structure === 'master_lease'
+    ? x.optionPrice + x.sellerAdvances
+    : structure === 'wrap'
+      ? x.note
+      : structure === 'partnership'
+        ? x.buyout + x.sellerAdvances
+        : x.price;
+  const refiLeft = structure === 'cash' ? null : o.refiNet - sellerPayoffEst - closingCost;
+  const maxSellerAtRefi = structure === 'cash' ? null : o.refiNet - closingCost;
+  const afterLeft = structure === 'cash' ? fullLeft : o.cashFlow / 12 - o.refiPayment;
+
+  const sellerLine = structure === 'cash'
+    ? `Paid ${money(x.price)} at closing`
+    : `${money(evalResult.sellerMonthly)}/mo once full`;
+  const sellerOverlay = structure === 'master_lease'
+    ? [`${money(x.payment)} full payment when all ${b.units} units rent (${x.creditPct}% credited toward the ${money(x.optionPrice)} locked price).`]
+    : structure === 'partnership'
+      ? [`${money(x.stepUp)} full payment once all ${b.units} units rent.`]
+      : structure === 'wrap'
+        ? [`${money(x.note)} owed × ${x.rate}% ÷ 12 = ${money(evalResult.sellerMonthly)}/mo${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'} (seller loan terms are estimates).`]
+        : [`${money(x.price)} paid at closing; bank payment ${money(paymentMo)}/mo (${x.downPct}% down, ${x.rate}% / ${x.years} yrs).`];
+
+  const rehabItems = [];
+  const baseRehab = Math.max(0, b.rehab - o.extraRepair);
+  if (baseRehab > 0) rehabItems.push(`Rent-ready budget: ${money(baseRehab)}`);
+  if (o.extraRepair > 0) rehabItems.push(`Unit 10 rehab: ${money(o.extraRepair)}`);
+  if (!rehabItems.length) rehabItems.push(`Total rehab budget: ${money(b.rehab)}`);
+
+  const steps = [
+    {
+      num: 1,
+      title: 'Take over',
+      lines: [
+        { label: 'Seller gets', value: sellerLine, overlay: sellerOverlay },
+        {
+          label: 'Seller fronts',
+          value: money(advances),
+          overlay: [advances > 0 ? `${money(advances)} fronted by the seller and paid back at the refinance.` : 'No upfront advance from the seller.'],
+        },
+      ],
+    },
+    {
+      num: 2,
+      title: 'Rehab',
+      lines: [
+        { label: 'Total rehab', value: money(b.rehab), overlay: [...rehabItems, `Total: ${money(b.rehab)}.`] },
+      ],
+    },
+    {
+      num: 5,
+      title: 'Full',
+      lines: [
+        { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
+        { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
+        { label: structure === 'cash' ? 'Bank payment' : 'Seller payment', value: `${money(paymentMo)}/mo`, overlay: sellerOverlay },
+        {
+          label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month`,
+          value: `${money(fullLeft)}/mo`,
+          tone: fullLeft >= 0 ? 'pass' : 'fail',
+          overlay: [`${money(rentMo)} rent − ${money(runningMo)} running costs − ${money(paymentMo)} payment = ${money(fullLeft)}/mo.`],
+        },
+      ],
+    },
+    {
+      num: 6,
+      title: 'Refinance',
+      lines: structure === 'cash'
+        ? [
+            { label: val.incomeLine, value: '', overlay: val.incomeOverlay },
+            ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
+            { label: 'Loan', value: `${money(x.price * (1 - x.downPct / 100))} at closing`, overlay: [`Straight bank purchase loan from day 1.`] },
+          ]
+        : [
+            { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms and Unit 10 needs its zoning certificate; the math still runs on today’s numbers.'] },
+            ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
+            { label: 'Loan', value: money(o.refiLoan), overlay: [`${money(o.refiLoan)} (${o.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − fees & holdback = ${money(o.refiNet)} net.`] },
+            { label: 'Pays seller', value: money(sellerPayoffEst), overlay: [`Estimated payoff ${money(sellerPayoffEst)} before monthly credits.`] },
+            { label: 'Closing', value: money(closingCost), overlay: [`Closing costs at refinance: ${money(closingCost)}.`] },
+            {
+              label: refiLeft >= 0 ? `You take home ${money(refiLeft)}` : `You bring ${money(-refiLeft)}`,
+              value: '',
+              big: true,
+              tone: refiLeft >= 0 ? 'pass' : 'fail',
+              overlay: [`${money(o.refiNet)} net loan − ${money(sellerPayoffEst)} seller − ${money(closingCost)} closing = ${money(refiLeft)}.`],
+            },
+          ],
+    },
+    {
+      num: 7,
+      title: 'After',
+      lines: [
+        {
+          label: afterLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-afterLeft)} a month after every bill`,
+          value: `${money(afterLeft)}/mo`,
+          tone: afterLeft >= 0 ? 'pass' : 'fail',
+          overlay: [`${money(rentMo)} rent − ${money(runningMo)} running costs − ${money(structure === 'cash' ? paymentMo : o.refiPayment)} bank payment = ${money(afterLeft)}/mo.`],
+        },
+      ],
+    },
+  ];
+
+  return {
+    headline: {
+      moneyIn: {
+        label: 'Your money in',
+        value: evalResult.cashIn > 0 ? money(evalResult.cashIn) : '$0',
+        overlay: [evalResult.cashIn > 0 ? `${money(evalResult.cashIn)} buyer cash in.` : '$0 buyer cash in upfront.'],
+      },
+      cashOut: {
+        label: 'Cash out at refinance',
+        value: structure === 'cash' ? 'No refinance' : (refiLeft >= 0 ? money(refiLeft) : `Bring ${money(-refiLeft)}`),
+        positive: structure === 'cash' ? null : refiLeft >= 0,
+        overlay: structure === 'cash'
+          ? ['Straight bank loan from closing; no refinance planned.']
+          : [`${money(o.refiNet)} net loan − ${money(sellerPayoffEst)} seller − ${money(closingCost)} closing = ${money(refiLeft)}.`],
+      },
+      sellerTotal: {
+        label: 'Seller gets at payoff',
+        value: money(sellerPayoffEst),
+        overlay: [`${money(sellerPayoffEst)} at closing/refinance, plus monthly payments along the way.`],
+      },
+      maxSellerAtRefi: {
+        label: 'Most the seller can get at refi with $0 from you',
+        value: maxSellerAtRefi !== null ? money(maxSellerAtRefi) : '—',
+        overlay: maxSellerAtRefi !== null ? [`${money(o.refiNet)} net loan − ${money(closingCost)} closing = ${money(maxSellerAtRefi)}.`] : [],
+      },
+    },
+    steps,
+    value: val,
+  };
+}

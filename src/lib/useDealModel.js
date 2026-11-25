@@ -27,7 +27,7 @@ export function useDealModel(deal, { owner, onlyShared } = {}) {
       } else if (!owner) {
         list = list.slice(0, 1).map(({ note: _n, ...rest }) => rest);
       }
-      const loadedBase = { units: 9, ...b.data?.base };
+      const loadedBase = { units: 10, ...b.data?.base };
       setOffers(list);
       setBaseState(loadedBase);
       original.current = { list, base: loadedBase };

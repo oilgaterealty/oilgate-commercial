@@ -37,7 +37,7 @@ export default function LeadGuest({ deal, preview }) {
           </div>
           <div>
             <dt className="text-ink-soft">Units</dt>
-            <dd className="font-semibold">9 units as-is (10th unit after rehab, pending approvals)</dd>
+            <dd className="font-semibold">10 units (Unit 10 needs its zoning certificate)</dd>
           </div>
         </dl>
       </Card>

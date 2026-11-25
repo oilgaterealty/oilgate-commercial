@@ -1,13 +1,13 @@
 import { buyerName } from '../lib/people.js';
 import { Suspense, lazy, useMemo, useState } from 'react';
-import { evaluate, money, STR_UNIT_CHOICES, strUnitOptions } from '../lib/dealmath.js';
+import { buildLeadStory, evaluate, money, STR_UNIT_CHOICES, strUnitOptions, valueSummary } from '../lib/dealmath.js';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
-import { Card, CardTitle, Empty, Tabs, Button } from '../components/Shell.jsx';
+import { Card, CardTitle, Empty, Tabs, Button, OverlayTrigger } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
 import LenderTerms from './LenderTerms.jsx';
@@ -72,6 +72,8 @@ export default function Lender({ deal, me, preview, tab }) {
   const plan = offers?.[0] || null;
   const e = plan && evaluate(plan.structure, plan.inputs, b);
   const o = e?.operating;
+  const val = o ? valueSummary({ base: b, noi: o.noi, units: o.b.units }) : null;
+  const story = e ? buildLeadStory(plan.structure, e, { base: b }) : null;
 
   const floor = useMemo(() => {
     if (!plan) return null;
@@ -116,10 +118,19 @@ export default function Lender({ deal, me, preview, tab }) {
                 <h2 className="mt-1 font-display text-3xl font-semibold">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</h2>
                 <p className="mt-2 max-w-3xl text-white/80">{plain(plan.structure, e).glance}</p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <div><p className="text-xs text-white/60">Left each month after the payment</p><p className="font-display text-4xl font-semibold">{money(e.keepMonthly)}</p></div>
+                  <div>
+                    <p className="text-xs text-white/60">{e.keepMonthly < 0 ? 'Short each month' : 'Left over each month after every bill'}</p>
+                    <p className="font-display text-4xl font-semibold">{money(e.keepMonthly < 0 ? -e.keepMonthly : e.keepMonthly)}</p>
+                  </div>
                   <div><p className="text-xs text-white/60">Rent covers the payment</p><p className="font-display text-4xl font-semibold">{times(e.dscr)}</p></div>
                   <div><p className="text-xs text-white/60">Bank loan at refinance</p><p className="font-display text-4xl font-semibold">{money(o.refiLoan)}</p></div>
                 </div>
+                {val && (
+                  <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/90">
+                    <OverlayTrigger lines={val.incomeOverlay} className="font-medium text-white">{val.incomeLine}</OverlayTrigger>
+                    {val.compsLine && <OverlayTrigger lines={val.compsOverlay} className="text-white/75">{val.compsLine}</OverlayTrigger>}
+                  </div>
+                )}
                 <div className="mt-6 flex flex-wrap items-end gap-x-6 gap-y-3 border-t border-white/15 pt-4">
                   <Segmented label="Units" options={[[9, '9 units'], [10, '10 units']]} value={units} onChange={setUnits} />
                   <Segmented label="Units as Airbnb" options={strUnitOptions()} value={str} onChange={setStr} />
@@ -139,16 +150,41 @@ export default function Lender({ deal, me, preview, tab }) {
               <Card>
                 <CardTitle>The numbers</CardTitle>
                 <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <Stat label="Units" value={o.b.units} sub={str ? `${str} as Airbnb` : 'All long-term rentals'} />
+                  <Stat label="Units" value={o.b.units} sub={str ? `${str} as Airbnb` : 'All long-term tenants'} />
                   <Stat label="Rent per unit" value={`${money(o.b.rent)}/mo`} />
                   <Stat label="Yearly profit before payments" value={money(o.noi)} />
                   <Stat label="Monthly payment" value={money(debtOf(e))} />
-                  <Stat label="Value after repairs" value={money(o.b.value)} />
-                  <Stat label="Repair budget" value={money(o.b.rehab)} sub={o.extraRepair ? `Includes ${money(o.extraRepair)} for the 10th unit` : undefined} />
+                  <Stat label="Value by income" value={money(val?.income ?? o.b.value)} sub={val?.incomePerUnit ? `${money(val.incomePerUnit)}/unit` : undefined} />
+                  <Stat label="Repair budget" value={money(o.b.rehab)} />
                   <Stat label="Total cost" value={money(e.allIn)} sub={o.b.value ? `${Math.round((e.allIn / o.b.value) * 100)}% of value` : undefined} />
                   <Stat label="Rented units to break even" value={breakEvenCount(e)} />
                 </dl>
-                <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm">{plain(plan.structure, e).lines.map((t, i) => <li key={i}>{t}</li>)}</ol>
+                {story && (
+                  <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                    {story.steps.map((step, idx) => (
+                      <li key={step.num} className="flex gap-3">
+                        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{idx + 1}</span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="text-sm font-semibold text-ink">{step.title}</div>
+                          {step.lines?.map((line, lIdx) => (
+                            <div key={lIdx} className={line.big ? `font-display text-xl font-semibold ${line.tone === 'pass' ? 'text-good' : line.tone === 'fail' ? 'text-red-700' : ''}` : 'flex flex-wrap justify-between gap-2 text-sm'}>
+                              {line.big ? (
+                                <OverlayTrigger lines={line.overlay}>{line.label}</OverlayTrigger>
+                              ) : line.value ? (
+                                <>
+                                  <span className="text-ink-soft">{line.label}</span>
+                                  <OverlayTrigger lines={line.overlay} className="font-semibold text-ink">{line.value}</OverlayTrigger>
+                                </>
+                              ) : (
+                                <OverlayTrigger lines={line.overlay}>{line.label}</OverlayTrigger>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </Card>
             </>
           )}

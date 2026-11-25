@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useHashRoute } from '../lib/useHashRoute.js';
-import { monthlyPlan, rentStrategy, derivations, normalizePlan } from '../lib/dealplan.js';
-import { money } from '../lib/dealmath.js';
+import { monthlyPlan, rentStrategy, derivations, normalizePlan, ordinal } from '../lib/dealplan.js';
+import { money, valueSummary } from '../lib/dealmath.js';
 import { AirbnbSwitch } from '../components/Switches.jsx';
 import { Card, CardTitle, Empty } from '../components/Shell.jsx';
 
@@ -18,12 +18,23 @@ export function PlanOverlay({ children, lines = [], label, className = '' }) {
   const open = () => {
     clearTimeout(timer.current);
     const r = trigger.current.getBoundingClientRect();
-    const width = Math.min(336, window.innerWidth - 24);
-    setPosition({ width, left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
-      ...(r.bottom < window.innerHeight - 260 ? { top: r.bottom + 6 } : { bottom: Math.max(12, window.innerHeight - r.top + 6) }) });
+    const width = Math.min(480, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - width - 12));
+    setPosition({ width, left, top: r.bottom + window.scrollY + 6 });
   };
   const close = () => { if (!pinned) timer.current = setTimeout(() => setPosition(null), 120); };
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!position || !popup.current || !trigger.current) return;
+    const h = popup.current.offsetHeight;
+    const r = trigger.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 12;
+    const spaceAbove = r.top - 12;
+    const wantTop = h > spaceBelow && spaceAbove > spaceBelow
+      ? Math.max(12, r.top + window.scrollY - h - 6)
+      : r.bottom + window.scrollY + 6;
+    if (Math.abs(wantTop - position.top) > 1) setPosition((prev) => (prev ? { ...prev, top: wantTop } : prev));
+  }, [position]);
   useEffect(() => {
     if (!position) return;
     const outside = (e) => {
@@ -53,7 +64,7 @@ export function PlanOverlay({ children, lines = [], label, className = '' }) {
     </button>
     {position && createPortal(<div ref={popup} id={id} role="tooltip" style={position}
       onMouseEnter={() => clearTimeout(timer.current)} onMouseLeave={close}
-      className="fixed z-50 max-h-60 overflow-y-auto break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-xl">
+      className="absolute z-50 break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-xl">
       {details.map((line, i) => <div className="py-1.5 first:pt-0 last:pb-0" key={i}>{line}</div>)}
     </div>, document.body)}
   </>;
@@ -63,7 +74,7 @@ const stageNames = { vacant: 'Fixing up', partial: 'Filling up', full: 'Full', a
 const stageColors = { vacant: 'bg-amber-50', partial: 'bg-orange-50', full: 'bg-emerald-50', after: 'bg-sky-50' };
 const tone = (value) => value < 0 ? 'text-red-700' : 'text-ink';
 
-export function DealPlanView({ result, base, offers, selected, onSelect, setBase }) {
+export function DealPlanView({ result, base, offers, selected, onSelect, setBase, comps = [] }) {
   const explanations = derivations(result);
   const explain = (...titles) => explanations.filter(([title]) => titles.includes(title)).map(([title, text]) => `${title}: ${text}`);
   const sources = Object.entries(result.plan.sources).map(([key, value]) => `${key}: ${String(value)}`);
@@ -72,15 +83,26 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
     `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance, utilities, admin and turns divided by 12; Airbnb costs are per active unit.`];
   const strategy = rentStrategy(base, result.plan);
   const { exit, totals, eligibility } = result;
-  const planUnits = +base.units >= 10 ? 10 : 9;
+  const val = valueSummary({ base: { ...result.operating.b, ...base }, noi: result.full.noi * 12, units: result.units.length || result.operating.b.units, comps });
   const unit10Rehab = base.tenthUnitRepair ?? result.operating.b.tenthUnitRepair;
+  const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership' ? result.inputs.sellerAdvances : 0;
+  const coverParts = [];
+  if (advancesStart > 0 && result.rows.some((r) => r.fromPool > 0)) coverParts.push('the seller’s upfront money');
+  if (totals.peakLender > 0) coverParts.push('the rehab loan');
+  const coveredBy = coverParts.length ? coverParts.join(' and ') : 'your cash';
+  const fullSellerPay = result.structure === 'master_lease' ? result.inputs.payment : result.structure === 'partnership' ? result.inputs.stepUp : null;
   const eligibilityText = !eligibility ? '' : eligibility.status === 'not_stabilized'
     ? `Not stabilized until month ${eligibility.stabilizedMonth}`
     : eligibility.status === 'seasoning_short'
       ? `Short on seasoning (${eligibility.monthsStabilizedAtRefi}/${eligibility.seasoningRequired} mo)`
       : eligibility.status === 'eligible'
         ? 'Confirmed'
-        : 'Pending lender underwriting';
+        : 'No lender has confirmed yet';
+  const stageSellerLine = (stage) => {
+    if (stage.key === 'after' && exit) return `Seller paid off at month ${exit.month} refinance (${money(exit.sellerPayoff)}).`;
+    if (fullSellerPay !== null) return `${money(fullSellerPay)} full payment × ${stage.renting} of ${result.units.length} units renting = ${money(stage.seller)}/mo.`;
+    return null;
+  };
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap gap-2" aria-label="Plan options">
@@ -88,20 +110,12 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
           onClick={() => onSelect(offer)} className={`min-h-10 rounded-full border px-4 py-2 text-sm ${offer.id === selected.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>{offer.name}</button>)}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Plan unit count">
-          {[[9, '9 units (as-is)'], [10, '10 units (after rehab)']].map(([u, lbl]) => (
-            <button key={u} type="button" aria-pressed={planUnits === u} onClick={() => setBase({ ...base, units: u })}
-              className={`min-h-9 rounded-full px-3 py-1 text-xs font-medium transition ${planUnits === u ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>{lbl}</button>
-          ))}
-        </div>
-        {planUnits === 10 && (
-          <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
-            <span>Unit 10 rehab</span>
-            <input type="number" min={0} step={1000} aria-label="Unit 10 rehab estimate" value={unit10Rehab}
-              onChange={(e) => setBase({ ...base, tenthUnitRepair: e.target.value === '' ? 0 : +e.target.value })}
-              className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
-          </label>
-        )}
+        <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
+          <span>Unit 10 rehab</span>
+          <input type="number" min={0} step={1000} aria-label="Unit 10 rehab estimate" value={unit10Rehab}
+            onChange={(e) => setBase({ ...base, tenthUnitRepair: e.target.value === '' ? 0 : +e.target.value })}
+            className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
+        </label>
       </div>
     </div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -112,11 +126,13 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
           <span>{stage.renting} of {result.units.length}</span>
         </div>
         <PlanOverlay className="mt-3 block font-display text-xl font-semibold" label={`${stageNames[stage.key]} seller payment details`}
-          lines={[...sellerDetails, stage.key === 'full' && explain('Rent once full').join(' '), stage.sellerGap !== null && `Seller after their own loan: ${money(stage.sellerGap)}/mo`, ...sources]}>
+          lines={[stageSellerLine(stage), ...sellerDetails, stage.key === 'full' && explain('Rent once full').join(' '), stage.sellerGap !== null && `Seller after their own loan: ${money(stage.sellerGap)}/mo`, ...sources]}>
           Seller gets {money(stage.seller)}/mo
         </PlanOverlay>
         <PlanOverlay className={`mt-1 block text-sm font-medium ${tone(stage.keeps)}`} lines={stage.key === 'full' ? explain('Rent once full') : [`Rent ${money(stage.collected)} less operating expenses, reserves, seller, bank and interest.`, ...explain('Bank payment')]}>
-          You keep {money(stage.keeps)}/mo
+          {stage.keeps < 0
+            ? `Short ${money(-stage.keeps)} a month${stage.key === 'vacant' || stage.key === 'partial' ? ` while fixing up (covered by ${coveredBy})` : ''}`
+            : `Left over each month after every bill: ${money(stage.keeps)}/mo`}
         </PlanOverlay>
       </Card>)}
     </div>
@@ -126,11 +142,12 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
         <div className="flex justify-between gap-2"><span>Seller paid</span><PlanOverlay lines={explain('Buy price', 'Buyout', 'Seller payment')}>{money(exit.sellerPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Short-term loan paid off</span><PlanOverlay lines={explain('Short-term lender')}>{money(exit.lenderPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Closing</span><PlanOverlay lines={explain('Refinance')}>{money(exit.closing)}</PlanOverlay></div>
-        <div className={`flex justify-between gap-2 font-semibold ${tone(exit.left)}`}><span>{exit.left < 0 ? 'You bring' : 'Left for you'}</span><PlanOverlay lines={explain('Refinance', 'Buyer cash')}>{exit.left > 0 ? '+' : ''}{money(exit.left)}</PlanOverlay></div>
-        <div className="flex justify-between gap-2"><span>Lender eligibility</span><PlanOverlay lines={explain('Lender eligibility')}>{eligibilityText}</PlanOverlay></div>
-        {result.units.length >= 10 && (
-          <div className="flex justify-between gap-2"><span>ARV basis</span><PlanOverlay lines={explain('10-unit ARV case')}>Stabilized 10 units (pending approvals)</PlanOverlay></div>
-        )}
+        <div className={`flex justify-between gap-2 font-semibold ${tone(exit.left)}`}><span>{exit.left < 0 ? 'You bring' : 'You take home'}</span><PlanOverlay lines={explain('Refinance', 'Buyer cash')}>{exit.left > 0 ? '+' : ''}{money(exit.left)}</PlanOverlay></div>
+        <div className="flex justify-between gap-2"><span>Lender status</span><PlanOverlay lines={explain('Lender eligibility')}>{eligibilityText}</PlanOverlay></div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <PlanOverlay className="font-medium" lines={[...val.incomeOverlay, ...explain('10-unit value')]}>{val.incomeLine}</PlanOverlay>
+          {val.compsLine && <PlanOverlay className="text-ink-soft" lines={val.compsOverlay}>{val.compsLine}</PlanOverlay>}
+        </div>
       </div>
       <div className="mt-3 rounded-xl bg-warm-soft p-3 text-sm font-semibold"><PlanOverlay lines={explain('Refinance', 'Buy price', 'Buyout')}>Most the seller can get at the refinance with $0 from you: {money(exit.maxSellerPayoff)}</PlanOverlay></div>
     </Card>}
@@ -150,8 +167,8 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
       <div className="overflow-x-auto rounded-2xl" tabIndex={0} role="region" aria-label="Month-by-month cash flow">
         <table className="w-full min-w-[1240px] border-collapse text-right text-xs tabular-nums">
           <thead className="bg-ink text-white"><tr>
-            {['Month', 'Units renting', 'Rent in', 'Running costs', 'Seller', 'Bank', 'Loan interest', 'One-time costs', 'Paid by', 'You keep', 'Running total'].map((label, i) => <th scope="col" key={label} className={`px-3 py-3 ${i === 0 ? 'sticky left-0 z-10 bg-ink text-left' : ''}`}>
-              {label === 'Running costs' ? <PlanOverlay lines={runningDetails}>{label}</PlanOverlay> : label}
+            {['Month', 'Units renting', 'Rent in', 'Running costs', 'Seller', 'Bank', 'Loan interest', 'One-time costs', 'Paid by', 'Left over', 'Running total'].map((label, i) => <th scope="col" key={label} className={`px-3 py-3 ${i === 0 ? 'sticky left-0 z-10 bg-ink text-left' : ''}`}>
+              {label === 'Running costs' ? <PlanOverlay lines={runningDetails}>{label}</PlanOverlay> : label === 'Left over' ? <PlanOverlay lines={['Left over each month after every bill.']}>{label}</PlanOverlay> : label}
             </th>)}
           </tr></thead>
           <tbody>{result.rows.map((row) => <tr key={row.month} className={`${stageColors[row.stage]} border-t border-line ${row.refi ? 'font-semibold ring-2 ring-inset ring-ink' : ''}`}>
@@ -185,9 +202,9 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
         </table></div>
       </Card>
       <Card className="!p-4"><CardTitle>Lease-up order</CardTitle>
-        <div className="flex flex-wrap gap-2">{result.units.map((unit) => <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`]}
+        <div className="flex flex-wrap gap-2">{result.units.map((unit, idx) => <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`]}
           className={`rounded-full border px-3 py-2 text-xs ${unit.mode === 'str' ? 'border-ink bg-warm-soft' : 'border-line bg-paper'}`}>
-          Unit {unit.id} · month {unit.startMonth} · {money(unit.rent)}{unit.mode === 'str' ? ' · Airbnb' : ''}
+          {ordinal(idx + 1)} Unit {unit.id} · month {unit.startMonth} · {money(unit.rent)}{unit.mode === 'str' ? ' · Airbnb' : ''}
         </PlanOverlay>)}</div>
       </Card>
     </div>
@@ -198,20 +215,23 @@ function LoadedDealPlan({ deal }) {
   const model = useDealModel(deal, { owner: true });
   const route = useHashRoute();
   const [chosen, setChosen] = useState(null);
-  const [state, setState] = useState({ slug: null, plan: null, status: 'loading' });
+  const [state, setState] = useState({ slug: null, plan: null, comps: [], status: 'loading' });
   useEffect(() => {
     let alive = true;
-    setState({ slug: deal.slug, plan: null, status: 'loading' });
+    setState({ slug: deal.slug, plan: null, comps: [], status: 'loading' });
     (async () => {
       try {
-        const { data: row, error } = await supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${deal.slug}`).maybeSingle();
-        if (alive) setState({ slug: deal.slug, plan: row ? normalizePlan(row.value) : null, status: error ? 'error' : 'ready' });
+        const [{ data: row, error }, { data: compRows }] = await Promise.all([
+          supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${deal.slug}`).maybeSingle(),
+          supabase.from('commercial_comps').select('units,sale_price').eq('deal_id', deal.id),
+        ]);
+        if (alive) setState({ slug: deal.slug, plan: row ? normalizePlan(row.value) : null, comps: compRows || [], status: error ? 'error' : 'ready' });
       } catch {
-        if (alive) setState({ slug: deal.slug, plan: null, status: 'error' });
+        if (alive) setState({ slug: deal.slug, plan: null, comps: [], status: 'error' });
       }
     })();
     return () => { alive = false; };
-  }, [deal.slug]);
+  }, [deal.id, deal.slug]);
   if (state.slug !== deal.slug || state.status === 'loading') return <Card><Empty>Loading…</Empty></Card>;
   if (state.status === 'error' || model.error) return <Card><Empty>Plan unavailable</Empty></Card>;
   if (!state.plan) return <Card><Empty>No plan yet</Empty></Card>;
@@ -220,8 +240,9 @@ function LoadedDealPlan({ deal }) {
   const selected = model.offers.find((offer) => offer.id === chosen && offer.structure === structure)
     || model.offers.find((offer) => offer.structure === structure) || model.offers[0];
   if (!selected) return <Card><Empty>No offers yet</Empty></Card>;
-  const result = monthlyPlan(selected.structure, selected.inputs, model.base, state.plan);
-  return <DealPlanView key={selected.id} result={result} base={model.base} offers={model.offers} selected={selected} setBase={model.setBase}
+  const planBase = { ...model.base, units: 10 };
+  const result = monthlyPlan(selected.structure, selected.inputs, planBase, state.plan);
+  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={model.setBase} comps={state.comps}
     onSelect={(offer) => { setChosen(offer.id); window.location.hash = `#/d/${deal.slug}/plans/${offer.structure}`; }} />;
 }
 

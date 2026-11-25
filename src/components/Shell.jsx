@@ -102,8 +102,7 @@ export const Badge = ({ tone = 'none', children }) => {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{children}</span>;
 };
 
-// Hover/tap info overlay so sources and secondary notes never sit on the page as visible subtext.
-export function InfoTip({ label = 'Details', lines = [] }) {
+function useNonScrollingOverlay(lines) {
   const id = useId();
   const trigger = useRef(null);
   const popup = useRef(null);
@@ -116,16 +115,29 @@ export function InfoTip({ label = 'Details', lines = [] }) {
     clearTimeout(timer.current);
     if (!trigger.current) return;
     const r = trigger.current.getBoundingClientRect();
-    const width = Math.min(320, window.innerWidth - 24);
-    setPosition({
-      width,
-      left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
-      ...(r.bottom < window.innerHeight - 220 ? { top: r.bottom + 6 } : { bottom: Math.max(12, window.innerHeight - r.top + 6) }),
-    });
+    const width = Math.min(480, window.innerWidth - 24);
+    const left = Math.max(12, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - width - 12));
+    setPosition({ width, left, top: r.bottom + window.scrollY + 6 });
   };
   const close = () => { if (!pinned) timer.current = setTimeout(() => setPosition(null), 120); };
 
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // Measure actual rendered height and flip above when more space exists above than below.
+  useEffect(() => {
+    if (!position || !popup.current || !trigger.current) return;
+    const h = popup.current.offsetHeight;
+    const r = trigger.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 12;
+    const spaceAbove = r.top - 12;
+    const wantTop = h > spaceBelow && spaceAbove > spaceBelow
+      ? Math.max(12, r.top + window.scrollY - h - 6)
+      : r.bottom + window.scrollY + 6;
+    if (Math.abs(wantTop - position.top) > 1) {
+      setPosition((prev) => (prev ? { ...prev, top: wantTop } : prev));
+    }
+  }, [position]);
+
   useEffect(() => {
     if (!position) return;
     const outside = (e) => {
@@ -145,6 +157,40 @@ export function InfoTip({ label = 'Details', lines = [] }) {
     };
   }, [position]);
 
+  const portal = position && details.length > 0 ? createPortal(
+    <div
+      ref={popup}
+      id={id}
+      role="tooltip"
+      style={position}
+      onMouseEnter={() => clearTimeout(timer.current)}
+      onMouseLeave={close}
+      className="absolute z-50 break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-xl"
+    >
+      {details.map((line, i) => <div key={i} className="py-1 first:pt-0 last:pb-0">{line}</div>)}
+    </div>,
+    document.body
+  ) : null;
+
+  return {
+    id,
+    trigger,
+    details,
+    isOpen: !!position,
+    portal,
+    triggerProps: {
+      onMouseEnter: open,
+      onMouseLeave: close,
+      onFocus: open,
+      onBlur: close,
+      onClick: () => { if (pinned) { setPinned(false); setPosition(null); } else { open(); setPinned(true); } },
+    },
+  };
+}
+
+// Hover/tap info overlay so sources and secondary notes never sit on the page as visible subtext.
+export function InfoTip({ label = 'Details', lines = [] }) {
+  const { id, trigger, details, isOpen, portal, triggerProps } = useNonScrollingOverlay(lines);
   if (!details.length) return null;
   return (
     <>
@@ -152,31 +198,36 @@ export function InfoTip({ label = 'Details', lines = [] }) {
         ref={trigger}
         type="button"
         aria-label={label}
-        aria-expanded={!!position}
-        aria-describedby={position ? id : undefined}
-        onMouseEnter={open}
-        onMouseLeave={close}
-        onFocus={open}
-        onBlur={close}
-        onClick={() => { if (pinned) { setPinned(false); setPosition(null); } else { open(); setPinned(true); } }}
+        aria-expanded={isOpen}
+        aria-describedby={isOpen ? id : undefined}
+        {...triggerProps}
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-paper text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
       >
         i
       </button>
-      {position && createPortal(
-        <div
-          ref={popup}
-          id={id}
-          role="tooltip"
-          style={position}
-          onMouseEnter={() => clearTimeout(timer.current)}
-          onMouseLeave={close}
-          className="fixed z-50 max-h-60 overflow-y-auto break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-xl"
-        >
-          {details.map((line, i) => <div key={i} className="py-1 first:pt-0 last:pb-0">{line}</div>)}
-        </div>,
-        document.body
-      )}
+      {portal}
+    </>
+  );
+}
+
+// Wraps any number or plain label with a non-scrolling hover/tap overlay showing its math or source.
+export function OverlayTrigger({ children, lines = [], label, className = '' }) {
+  const { id, trigger, details, isOpen, portal, triggerProps } = useNonScrollingOverlay(lines);
+  if (!details.length) return <span className={className}>{children}</span>;
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        aria-label={label}
+        aria-expanded={isOpen}
+        aria-describedby={isOpen ? id : undefined}
+        {...triggerProps}
+        className={`rounded text-left decoration-dotted underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink ${className}`}
+      >
+        {children}
+      </button>
+      {portal}
     </>
   );
 }
