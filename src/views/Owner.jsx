@@ -18,6 +18,7 @@ import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
+import { DEFAULT_EXECUTION_PLAN, DEFAULT_LEAD_OFFER } from '../components/LeadOfferCard.jsx';
 
 const CityRecords = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./DealPlan.jsx'));
@@ -101,7 +102,6 @@ function People({ deal }) {
           {done && <p className="text-sm text-green-800">{done}</p>}
           <button type="button" onClick={() => { navigator.clipboard?.writeText(link); setDone('Site link copied.'); }}
             className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy site link</button>
-          <p className="text-xs text-ink-soft">Nothing is emailed. They sign in with this exact email at the site link you send them, and see only their role’s page.</p>
         </form>
       </Card>
       {deal.slug === 'charlotte' && <AccessRequests dealId={deal.id} onApproved={load} />}
@@ -141,7 +141,6 @@ function RoleLinks({ deal, onJoined }) {
   return (
     <Card className="lg:col-span-2">
       <CardTitle>Private links</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-ink-soft">Each link opens one role’s page after the person signs in. A link works for 14 days to join; their access lasts until you turn it off.</p>
       <form onSubmit={make} className="flex flex-wrap gap-2">
         <select className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
           {LINK_ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -177,63 +176,103 @@ function RoleLinks({ deal, onJoined }) {
 function SellerEditor({ deal, onSaved }) {
   const [c, setC] = useState(deal.seller_content || {});
   const [saved, setSaved] = useState('');
-  const setRow = (key, i, field, v) => setC({ ...c, [key]: c[key].map((r, j) => (j === i ? { ...r, [field]: v } : r)) });
-  const addRow = (key) => setC({ ...c, [key]: [...(c[key] || []), { label: '', value: '' }] });
-  const delRow = (key, i) => setC({ ...c, [key]: c[key].filter((_, j) => j !== i) });
+  const lead = c.lead || {};
+  const execution = c.execution || {};
+  const proof = Array.isArray(c.execution_proof) ? c.execution_proof : [];
+
+  const setLead = (patch) => setC({ ...c, lead: { ...lead, ...patch } });
+  const setExecution = (key, value) => setC({ ...c, execution: { ...execution, [key]: value } });
+  const setProofRow = (i, field, value) => setC({ ...c, execution_proof: proof.map((r, j) => (j === i ? { ...r, [field]: value } : r)) });
+  const addProof = () => setC({ ...c, execution_proof: [...proof, { title: '', detail: '' }] });
+  const delProof = (i) => setC({ ...c, execution_proof: proof.filter((_, j) => j !== i) });
+
   const save = async () => {
-    const clean = { ...c, options: (c.options || []).map((o) => ({ ...o, steps: (o.steps || []).map((x) => x.trim()).filter(Boolean), you_get: (o.you_get || []).filter((r) => r.label) })) };
+    const cleanProof = proof
+      .map((item) => ({ title: (item.title || '').trim(), detail: (item.detail || '').trim() }))
+      .filter((item) => item.title || item.detail);
+    const clean = {
+      ...c,
+      headline: (c.headline || '').trim(),
+      lead: Object.fromEntries(Object.entries(lead).map(([k, v]) => [k, String(v || '').trim()])),
+      execution: Object.fromEntries(Object.entries(execution).map(([k, v]) => [k, String(v || '').trim()])),
+      execution_proof: cleanProof,
+    };
     const { data, error } = await supabase.from('commercial_deals').update({ seller_content: clean }).eq('id', deal.id).select().single();
     setSaved(error ? error.message : 'Saved. The seller sees this now.');
     if (data) onSaved(data);
   };
-  const block = (key, title) => (
-    <div>
-      <p className="mb-2 text-sm font-medium">{title}</p>
-      {(c[key] || []).map((r, i) => (
-        <div key={i} className="mb-2 flex gap-2">
-          <Field value={r.label} placeholder="Line" onChange={(e) => setRow(key, i, 'label', e.target.value)} />
-          <Field value={r.value} placeholder="Detail" onChange={(e) => setRow(key, i, 'value', e.target.value)} />
-          <Button kind="secondary" onClick={() => delRow(key, i)}>×</Button>
-        </div>
-      ))}
-      <Button kind="secondary" onClick={() => addRow(key)}>Add a line</Button>
-    </div>
-  );
+
   return (
     <Card>
-      <CardTitle>What the seller reads</CardTitle>
-      <p className="-mt-2 mb-4 text-sm text-ink-soft">The seller sees only this card, the starred cover photo, and walkthrough photos and videos you mark “Share with seller”. Keep every line true, plain and kind. Your offer math never shows here. <a className="underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a></p>
-      <div className="space-y-4">
-        <Field value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
-        <DictatedField as="textarea" className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2" value={c.intro || ''} placeholder="Intro" onChange={(e) => setC({ ...c, intro: e.target.value })} />
+      <CardTitle aside={<a className="text-sm underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a>}>
+        What the seller reads
+      </CardTitle>
+      <div className="space-y-5">
+        <label className="block text-sm font-medium">
+          Headline
+          <Field className="mt-1" value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
+        </label>
+
         <div className="space-y-3 rounded-2xl border border-line p-4">
-          <p className="text-sm font-medium">The options the seller can pick from</p>
-          <Field value={c.options_title || ''} placeholder="Section title, e.g. Ways this could work for you" onChange={(e) => setC({ ...c, options_title: e.target.value })} />
-          <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={c.options_note || ''} placeholder="Note shown above the options" onChange={(e) => setC({ ...c, options_note: e.target.value })} />
-          <div className="grid gap-4 lg:grid-cols-3">
-            {(c.options || []).map((o, i) => {
-              const set = (p) => setC({ ...c, options: c.options.map((x, j) => (j === i ? { ...x, ...p } : x)) });
-              return (
-                <div key={i} className="space-y-2 rounded-xl bg-paper p-3">
-                  <div className="flex gap-2"><Field aria-label="Option letter" className="!w-14" value={o.key} onChange={(e) => set({ key: e.target.value.slice(0, 3) })} /><Field value={o.title} placeholder="Title" onChange={(e) => set({ title: e.target.value })} /></div>
-                  <Field value={o.tagline || ''} placeholder="One line" onChange={(e) => set({ tagline: e.target.value })} />
-                  <DictatedField as="textarea" className="min-h-24 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.steps || []).join('\n')} placeholder="How it works, one step per line" onChange={(e) => set({ steps: e.target.value.split('\n') })} />
-                  <DictatedField as="textarea" className="min-h-20 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={(o.you_get || []).map((r) => `${r.label} | ${r.value}`).join('\n')} placeholder="What they get: label | value, one per line"
-                    onChange={(e) => set({ you_get: e.target.value.split('\n').map((l) => { const [label, ...v] = l.split('|'); return { label: (label || '').trim(), value: v.join('|').trim() }; }) })} />
-                  <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.ask || ''} placeholder="What we’d ask of them" onChange={(e) => set({ ask: e.target.value })} />
-                  <DictatedField as="textarea" className="min-h-16 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm" value={o.watch || ''} placeholder="Worth knowing" onChange={(e) => set({ watch: e.target.value })} />
-                  <Button kind="secondary" onClick={() => setC({ ...c, options: c.options.filter((_, j) => j !== i) })}>Remove option</Button>
-                </div>
-              );
-            })}
+          <p className="text-sm font-semibold">Single lead offer (parcels 6801234 and 6807893)</p>
+          <label className="block text-xs text-ink-soft">
+            Agreed purchase price (leave blank until picked)
+            <Field className="mt-1" value={lead.price || ''} placeholder="To be agreed upfront in writing" onChange={(e) => setLead({ price: e.target.value })} />
+          </label>
+          {[
+            ['buyer_takes_on', 'What I take on', DEFAULT_LEAD_OFFER.buyer_takes_on],
+            ['seller_contributes_receives', 'What seller contributes and receives', DEFAULT_LEAD_OFFER.seller_contributes_receives],
+            ['payment_source', 'Where payments come from', DEFAULT_LEAD_OFFER.payment_source],
+            ['closing_timing', 'When the purchase happens', DEFAULT_LEAD_OFFER.closing_timing],
+            ['timeline_slip', 'If the timeline slips', DEFAULT_LEAD_OFFER.timeline_slip],
+            ['lender_condition', 'Lender clearance condition', DEFAULT_LEAD_OFFER.lender_condition],
+          ].map(([key, label, placeholder]) => (
+            <label key={key} className="block text-xs text-ink-soft">
+              {label}
+              <DictatedField
+                as="textarea"
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+                value={lead[key] || ''}
+                placeholder={placeholder}
+                onChange={(e) => setLead({ [key]: e.target.value })}
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="space-y-3 rounded-2xl border border-line p-4">
+          <p className="text-sm font-semibold">How I’ll get this done</p>
+          {DEFAULT_EXECUTION_PLAN.map((step) => (
+            <label key={step.key} className="block text-xs text-ink-soft">
+              {step.title}
+              <DictatedField
+                as="textarea"
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+                value={execution[step.key] || ''}
+                placeholder={step.detail}
+                onChange={(e) => setExecution(step.key, e.target.value)}
+              />
+            </label>
+          ))}
+          <div className="space-y-2 border-t border-line pt-3">
+            <p className="text-xs font-semibold text-ink">Owner-approved proof items (hidden from seller until added)</p>
+            {proof.map((r, i) => (
+              <div key={i} className="flex flex-wrap gap-2">
+                <Field className="min-w-44 flex-1" value={r.title} placeholder="Project, reference, or financing item" onChange={(e) => setProofRow(i, 'title', e.target.value)} />
+                <Field className="min-w-56 flex-[2]" value={r.detail} placeholder="Verified detail" onChange={(e) => setProofRow(i, 'detail', e.target.value)} />
+                <Button kind="secondary" type="button" onClick={() => delProof(i)}>×</Button>
+              </div>
+            ))}
+            <Button kind="secondary" type="button" onClick={addProof}>Add approved proof</Button>
           </div>
-          <Button kind="secondary" onClick={() => setC({ ...c, options: [...(c.options || []), { key: String.fromCharCode(65 + (c.options || []).length), title: '', tagline: '', steps: [], you_get: [] }] })}>Add an option</Button>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          {block('carry_now', 'Today (what the seller has now)')}
-          {block('with_us', 'After the sale (what the seller would have)')}
+
+        <div className="flex items-center gap-3">
+          <Button type="button" onClick={save}>Save</Button>
+          {saved && <span role="status" className="text-sm text-ink-soft">{saved}</span>}
         </div>
-        <div className="flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{saved}</span></div>
       </div>
     </Card>
   );
@@ -257,14 +296,13 @@ function Settings({ deal, onSaved }) {
       <div className="grid gap-3 md:grid-cols-2">
         <Field value={d.title} placeholder="Name" onChange={(e) => setD({ ...d, title: e.target.value })} />
         <Field value={d.address} placeholder="Address" onChange={(e) => setD({ ...d, address: e.target.value })} />
-        <label className="text-xs text-ink-soft">Buyer name (shown as “Name · Buyer”; the seller only ever sees “Buyer”)<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
+        <label className="text-xs text-ink-soft">Buyer name<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
         <label className="text-xs text-ink-soft">Seller name<Field value={d.seller_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, seller_name: e.target.value })} /></label>
         <Field value={folder} placeholder="Google Drive folder link" onChange={(e) => setFolder(e.target.value)} />
         <select className="rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
           <option value="active">Active</option><option value="closed">Closed</option><option value="archived">Archived</option>
         </select>
       </div>
-      <p className="mt-3 text-xs text-ink-soft">The Drive folder is only visible to you. Page address: #/d/{deal.slug}</p>
       <div className="mt-4 flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{msg}</span></div>
     </Card>
   );

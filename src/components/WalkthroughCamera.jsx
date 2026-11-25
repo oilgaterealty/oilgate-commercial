@@ -291,13 +291,13 @@ export default function WalkthroughCamera({
               </button>
             ))}
           </div>
-          {upload && (
+          {upload && (upload.waiting > 0 || !upload.online) && (
             <span
               role="status"
               aria-live="polite"
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${upload.waiting ? 'bg-amber-400 text-ink' : 'bg-emerald-500 text-white'}`}
+              className="rounded-full bg-amber-400 px-2.5 py-1 text-xs font-semibold text-ink"
             >
-              {upload.waiting ? `${upload.waiting} waiting to upload${upload.online ? '' : ' (offline)'}` : 'All uploaded ✓'}
+              {upload.waiting ? `${upload.waiting} waiting to upload${upload.online ? '' : ' (offline)'}` : 'Offline'}
             </span>
           )}
           <Button
@@ -418,10 +418,9 @@ export default function WalkthroughCamera({
           </>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-white/75">
-              Saves to {spaceLabel} — {roomLabel}. Up to about 2 min per clip (50 MB).{' '}
-              {hasAudioTrack ? 'Video audio active.' : 'Video only (no mic permission).'}
-            </p>
+            {!hasAudioTrack && (
+              <p className="text-xs text-amber-300">Video only (no mic permission).</p>
+            )}
             {videoNote && <p role="status" className="text-xs text-warm">{videoNote}</p>}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="font-mono text-sm">

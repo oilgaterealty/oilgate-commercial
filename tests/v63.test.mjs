@@ -262,7 +262,6 @@ test('v6.3 picks switch: each person gets their own comp set, mine first', async
 test('v6.3 picks switch is view-only and Files deletes storage before the row', () => {
   const comps = readFileSync(new URL('../src/views/Comps.jsx', import.meta.url), 'utf8');
   assert.match(comps, /arvEstimate\(viewComps/);
-  assert.match(comps, /never changes saved numbers/);
   assert.doesNotMatch(comps, /setView\([^)]*\)[^;]*supabase/);
   const files = readFileSync(new URL('../src/components/Files.jsx', import.meta.url), 'utf8');
   assert.ok(files.indexOf('storage.from(BUCKET).remove') < files.indexOf("from('commercial_uploads').delete()"));

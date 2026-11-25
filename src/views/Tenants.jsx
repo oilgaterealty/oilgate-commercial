@@ -262,10 +262,9 @@ export default function Tenants({ deal, me, role, preview }) {
 
       {edit && (
         <Card className="!p-4">
-          <CardTitle aside={<span className="text-xs text-ink-soft">Private · buyer + realtor · nothing is sent to leads</span>}>
+          <CardTitle>
             Add a lead
           </CardTitle>
-          {role === 'realtor' && <p className="-mt-2 mb-3 text-sm text-ink-soft">Leads you add are yours to edit or delete. For the buyer’s leads, use “Suggest change”.</p>}
           <LeadForm key={formKey} disabled={pending} onSave={(v) => saveLead(v)} />
         </Card>
       )}

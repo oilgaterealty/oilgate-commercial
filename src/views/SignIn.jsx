@@ -36,7 +36,6 @@ export default function SignIn({ canRequestAccess, requestingAccess }) {
           </form>
           {state && <p className="text-sm text-ink-soft">{state}</p>}
         </Card>
-        <p className="mt-4 text-xs text-ink-soft">Only people who were added to a property can see it.</p>
         {canRequestAccess && !requestingAccess && <a className="mt-3 inline-flex rounded-xl border border-line bg-white px-4 py-2 text-sm font-medium hover:bg-warm-soft" href="#/request-access">Request access</a>}
       </div>
     </Shell>

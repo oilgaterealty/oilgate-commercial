@@ -103,3 +103,66 @@ test('bad plan data falls back to blanks; rent options compare per unit after va
   near(s.options.find((o) => o.key === 'std').net, 1200 * 0.9 * 0.9, 1e-6);
   assert.equal(s.best.key, 'std');
 });
+
+test('starting buyer cash is counted in totals, offsets early draws, and tracks cumulative cash', () => {
+  const pNoCash = monthlyPlan('master_lease', { payment: 2000, optionPrice: 100000, sellerAdvances: 0, buyerCash: 0, creditPct: 100 }, B, P);
+  const pWithCash = monthlyPlan('master_lease', { payment: 2000, optionPrice: 100000, sellerAdvances: 0, buyerCash: 5000, creditPct: 100 }, B, P);
+  assert.equal(pWithCash.totals.startingBuyerCash, 5000);
+  assert.ok(pWithCash.totals.buyerCashTotal >= 5000);
+  assert.ok(pWithCash.totals.peakLender < pNoCash.totals.peakLender);
+  near(pWithCash.rows[0].cumulative, pWithCash.rows[0].keeps - pWithCash.totals.startingBuyerCash, 1e-6);
+});
+
+test('peakLender captures bridge balance before payoff even when a draw occurs on exitMonth', () => {
+  const lateCostPlan = {
+    ...P,
+    months: 12,
+    refiMonth: 10,
+    costs: [{ label: 'Exit month cost', cost: 4000, start: 41, end: 41 }],
+  };
+  const p = monthlyPlan('wrap', { note: 120000, rate: 6 }, B, lateCostPlan);
+  assert.equal(p.rows[9].lender, 0);
+  assert.ok(p.exit.lenderPayoff > 0);
+  assert.ok(p.rows[9].lenderBeforePayoff >= p.exit.lenderPayoff);
+  near(p.totals.peakLender, Math.max(...p.rows.map((r) => r.lenderBeforePayoff)), 1e-6);
+});
+
+test('expected refinance date is distinguished from lender eligibility without inventing thresholds', () => {
+  const notReady = monthlyPlan('wrap', { note: 100000, rate: 6 }, B, { ...P, refiMonth: 5 });
+  assert.equal(notReady.eligibility.status, 'not_stabilized');
+  assert.equal(notReady.eligibility.readyBeforeExpected, false);
+
+  const unconfirmed = monthlyPlan('wrap', { note: 100000, rate: 6 }, B, { ...P, refiMonth: 10 });
+  assert.equal(unconfirmed.eligibility.status, 'unconfirmed');
+  assert.equal(unconfirmed.eligibility.seasoningRequired, null);
+
+  const shortSeasoning = monthlyPlan('wrap', { note: 100000, rate: 6 }, B, {
+    ...P,
+    refiMonth: 10,
+    lenderEligibilityConfirmed: true,
+    lenderSeasoningMonths: 6,
+  });
+  assert.equal(shortSeasoning.eligibility.status, 'seasoning_short');
+
+  const eligible = monthlyPlan('wrap', { note: 100000, rate: 6 }, B, {
+    ...P,
+    refiMonth: 10,
+    lenderEligibilityConfirmed: true,
+    lenderSeasoningMonths: 3,
+  });
+  assert.equal(eligible.eligibility.status, 'eligible');
+});
+
+test('Unit 10 rehab starts at $30,000, is omitted at 9 units, and counted once at 10 units', () => {
+  const nineUnits = Array.from({ length: 9 }, (_, i) => ({ id: String(i + 1), rehab: 5000, ready: 4 }));
+  const plan10 = { ...P, months: 14, refiMonth: 12, units: [...nineUnits, { id: '10', rehab: 0, ready: 8, optional: true }] };
+  const r9 = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 9 }, plan10);
+  const r10Default = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10 }, plan10);
+  const r10Edited = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10, tenthUnitRepair: 45000 }, plan10);
+
+  assert.equal(r9.units.length, 9);
+  assert.equal(r10Default.units.length, 10);
+  assert.equal(r10Default.eligibility.arvCase, 'stabilized_10_subject_to_approvals');
+  near(r10Default.totals.oneTimeTotal - r9.totals.oneTimeTotal, 30000, 1e-6);
+  near(r10Edited.totals.oneTimeTotal - r9.totals.oneTimeTotal, 45000, 1e-6);
+});

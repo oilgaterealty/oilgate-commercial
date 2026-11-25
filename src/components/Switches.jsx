@@ -2,7 +2,7 @@ import { buyerName, possessive } from '../lib/people.js';
 import { useState } from 'react';
 import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly, strUnitOptions } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
-import { Button } from './Shell.jsx';
+import { Button, InfoTip } from './Shell.jsx';
 import { checkedLabel } from '../lib/v63.js';
 
 const val = (base, k) => (base[k] ?? BASE_DEFAULTS[k]);
@@ -64,11 +64,20 @@ export default function Switches({ base, setBase, owner }) {
       </div>
       {strUnits > 0 && (
         <div className="mt-3 text-sm">
-          {hasStr
-            ? <p>Each Airbnb unit brings in about <strong>{money(s.net)}/mo</strong> after fees and costs, against {money(+val(base, 'rent'))}/mo as a regular rental. {money(+val(base, 'strNightly'))} a night, {Math.round(+val(base, 'strOccPct'))}% of nights booked.</p>
-            : <p className="text-ink-soft">No Airbnb numbers entered yet, so Airbnb units show no income.</p>}
-          {owner && base.strCheckedAt && <p className="mt-1 text-xs font-semibold text-ink-soft">Airbnb numbers last checked {checkedLabel(base.strCheckedAt)}</p>}
-          {owner && base.strSource && <p className="mt-1 text-xs text-ink-soft">Source: {base.strSource}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            {hasStr
+              ? <p>Each Airbnb unit: <strong>{money(s.net)}/mo</strong> net vs {money(+val(base, 'rent'))}/mo long-term ({money(+val(base, 'strNightly'))}/night, {Math.round(+val(base, 'strOccPct'))}% booked).</p>
+              : <p className="text-ink-soft">No Airbnb numbers entered yet.</p>}
+            {owner && (base.strCheckedAt || base.strSource) && (
+              <InfoTip
+                label="Airbnb source"
+                lines={[
+                  base.strCheckedAt && `Airbnb numbers last checked ${checkedLabel(base.strCheckedAt)}`,
+                  base.strSource && `Source: ${base.strSource}`,
+                ]}
+              />
+            )}
+          </div>
           <button type="button" onClick={() => setDetails(!details)} className="mt-1 text-xs underline">{details ? 'Hide Airbnb numbers' : 'Change Airbnb numbers'}</button>
           {details && (
             <div className="mt-2 grid gap-3 sm:grid-cols-3">
@@ -82,7 +91,6 @@ export default function Switches({ base, setBase, owner }) {
           )}
         </div>
       )}
-      <p className="mt-3 text-xs text-ink-soft">{owner ? 'Your changes save and update every offer.' : `Try any number. Nothing you change here is saved or changes ${possessive(buyerName())} numbers.`}</p>
     </div>
   );
 }

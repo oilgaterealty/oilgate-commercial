@@ -71,11 +71,38 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
   const runningDetails = [...sources, base.taxesSource && `Taxes: ${base.taxesSource}`,
     `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance, utilities, admin and turns divided by 12; Airbnb costs are per active unit.`];
   const strategy = rentStrategy(base, result.plan);
-  const { exit, totals } = result;
+  const { exit, totals, eligibility } = result;
+  const planUnits = +base.units >= 10 ? 10 : 9;
+  const unit10Rehab = base.tenthUnitRepair ?? result.operating.b.tenthUnitRepair;
+  const eligibilityText = !eligibility ? '' : eligibility.status === 'not_stabilized'
+    ? `Not stabilized until month ${eligibility.stabilizedMonth}`
+    : eligibility.status === 'seasoning_short'
+      ? `Short on seasoning (${eligibility.monthsStabilizedAtRefi}/${eligibility.seasoningRequired} mo)`
+      : eligibility.status === 'eligible'
+        ? 'Confirmed'
+        : 'Pending lender underwriting';
   return <div className="space-y-3">
-    <div className="flex flex-wrap gap-2" aria-label="Plan options">
-      {offers.map((offer) => <button key={offer.id} type="button" aria-pressed={offer.id === selected.id}
-        onClick={() => onSelect(offer)} className={`min-h-10 rounded-full border px-4 py-2 text-sm ${offer.id === selected.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>{offer.name}</button>)}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap gap-2" aria-label="Plan options">
+        {offers.map((offer) => <button key={offer.id} type="button" aria-pressed={offer.id === selected.id}
+          onClick={() => onSelect(offer)} className={`min-h-10 rounded-full border px-4 py-2 text-sm ${offer.id === selected.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>{offer.name}</button>)}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Plan unit count">
+          {[[9, '9 units (as-is)'], [10, '10 units (after rehab)']].map(([u, lbl]) => (
+            <button key={u} type="button" aria-pressed={planUnits === u} onClick={() => setBase({ ...base, units: u })}
+              className={`min-h-9 rounded-full px-3 py-1 text-xs font-medium transition ${planUnits === u ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>{lbl}</button>
+          ))}
+        </div>
+        {planUnits === 10 && (
+          <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
+            <span>Unit 10 rehab</span>
+            <input type="number" min={0} step={1000} aria-label="Unit 10 rehab estimate" value={unit10Rehab}
+              onChange={(e) => setBase({ ...base, tenthUnitRepair: e.target.value === '' ? 0 : +e.target.value })}
+              className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
+          </label>
+        )}
+      </div>
     </div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {result.stages.filter((stage) => stage.from !== null).map((stage) => <Card key={stage.key} className="!p-3">
@@ -94,19 +121,23 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
       </Card>)}
     </div>
     {exit && <Card className="!p-4">
-      <h2 className="font-display text-xl font-semibold"><PlanOverlay lines={explain('Refinance')}>Month {exit.month}: refinance {money(exit.loan)}</PlanOverlay></h2>
+      <h2 className="font-display text-xl font-semibold"><PlanOverlay lines={explain('Refinance', 'Lender eligibility')}>Expected refinance (Month {exit.month}): {money(exit.loan)}</PlanOverlay></h2>
       <div className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
         <div className="flex justify-between gap-2"><span>Seller paid</span><PlanOverlay lines={explain('Buy price', 'Buyout', 'Seller payment')}>{money(exit.sellerPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Short-term loan paid off</span><PlanOverlay lines={explain('Short-term lender')}>{money(exit.lenderPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Closing</span><PlanOverlay lines={explain('Refinance')}>{money(exit.closing)}</PlanOverlay></div>
-        <div className={`flex justify-between gap-2 font-semibold ${tone(exit.left)}`}><span>{exit.left < 0 ? 'You bring' : 'Left for you'}</span><PlanOverlay lines={explain('Refinance')}>{exit.left > 0 ? '+' : ''}{money(exit.left)}</PlanOverlay></div>
+        <div className={`flex justify-between gap-2 font-semibold ${tone(exit.left)}`}><span>{exit.left < 0 ? 'You bring' : 'Left for you'}</span><PlanOverlay lines={explain('Refinance', 'Buyer cash')}>{exit.left > 0 ? '+' : ''}{money(exit.left)}</PlanOverlay></div>
+        <div className="flex justify-between gap-2"><span>Lender eligibility</span><PlanOverlay lines={explain('Lender eligibility')}>{eligibilityText}</PlanOverlay></div>
+        {result.units.length >= 10 && (
+          <div className="flex justify-between gap-2"><span>ARV basis</span><PlanOverlay lines={explain('10-unit ARV case')}>Stabilized 10 units (pending approvals)</PlanOverlay></div>
+        )}
       </div>
       <div className="mt-3 rounded-xl bg-warm-soft p-3 text-sm font-semibold"><PlanOverlay lines={explain('Refinance', 'Buy price', 'Buyout')}>Most the seller can get at the refinance with $0 from you: {money(exit.maxSellerPayoff)}</PlanOverlay></div>
     </Card>}
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
       {[
         ['Seller gets in total', totals.sellerTotal, explain('Seller payment', 'Buy price', 'Buyout')],
-        ['Your cash in', totals.buyerCashTotal, explain('Refinance', 'Bank payment')],
+        ['Your cash in', totals.buyerCashTotal, explain('Buyer cash', 'Refinance', 'Bank payment')],
         ['Short-term loan at its peak', totals.peakLender, explain('Short-term lender')],
         ['Loan interest + points', totals.interestTotal + totals.pointsTotal, explain('Short-term lender')],
         ['One-time costs', totals.oneTimeTotal, result.items.map((item) => `${item.label}: ${money(item.cost)}`)],

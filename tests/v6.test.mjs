@@ -80,6 +80,6 @@ test('v6 migration touches only commercial_ objects and storage policies', () =>
 
 test('comps carry their source', () => {
   assert.match(v6, /add column if not exists source text not null default ''/);
-  // v6.3: the source shows through compSource (AI-found comps say so; broker comps show their source text).
-  assert.match(readFileSync('src/views/Comps.jsx', 'utf8'), /Source: \{compSource\(c\)\}/);
+  // v8: source is tucked into an InfoTip overlay through compSource(c), never visible subtext.
+  assert.match(readFileSync('src/views/Comps.jsx', 'utf8'), /<InfoTip label=\{`Source for \$\{c\.address\}`\} lines=\{\[compSource\(c\)\]\}/);
 });

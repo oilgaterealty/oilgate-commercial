@@ -61,11 +61,9 @@ export default function Photos({ deal, role, me, preview }) {
     <div className="space-y-5">
       <Card>
         <CardTitle>Cover photo</CardTitle>
-        <p className="-mt-2 mb-3 text-base text-ink-soft">The starred photo is the one cover every page shows. Walkthrough photos are in “Photos by unit” above.</p>
         <Cover rows={photos} empty="No cover photo yet. Upload one below and star it." />
         <div className="mt-4">
-        <Uploader deal={deal} role={role} me={me} onDone={load} allowShare label="Upload a photo" accept={IMAGES} preview={preview}
-          hint="Star one photo to make it the cover. Tick “Seller can see” so it also shows on the seller page." />
+        <Uploader deal={deal} role={role} me={me} onDone={load} allowShare label="Upload a photo" accept={IMAGES} preview={preview} />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {rows === null && <Empty>Loading…</Empty>}

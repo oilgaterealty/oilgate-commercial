@@ -47,13 +47,11 @@ export function VideoExtras({ video }) {
       )}
       {video?.transcript ? (
         <details className="rounded-lg bg-paper px-3 py-2 text-sm">
-          <summary className="cursor-pointer font-medium">What was said</summary>
+          <summary className="cursor-pointer font-medium">View transcript</summary>
           <p className="mt-1 whitespace-pre-wrap">{video.transcript}</p>
         </details>
-      ) : status === 'pending' ? (
-        <p className="text-sm text-ink-soft">Writing out the audio on the phone that took it…</p>
       ) : status === 'failed' ? (
-        <p className="text-sm text-ink-soft">No transcript: the audio could not be read on that phone.</p>
+        <p className="text-sm text-ink-soft">Transcript unavailable.</p>
       ) : null}
     </div>
   );
@@ -150,7 +148,6 @@ function UnitNotes({ deal, me, role, unit, preview }) {
           <Button type="submit" disabled={busy || !body.trim()}>Add note</Button>
         </form>
       )}
-      <p className="text-sm text-ink-soft">{owner ? 'You see every note. Realtor and reviewer notes come only to you.' : 'Only you and the buyer can read your notes.'}</p>
       {status && <p role="status" className="text-sm text-ink-soft">{status}</p>}
     </div>
   );
@@ -198,7 +195,6 @@ export default function UnitGallery({ deal, me, role, preview }) {
       <Card>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-display text-2xl font-semibold">Photos by unit</h2>
-          <p className="text-base text-ink-soft">{(photos || []).length} photos · {(videos || []).length} videos</p>
         </div>
         {err && <p role="alert" className="mb-3 text-sm text-red-700">{err}</p>}
         <nav aria-label="Units and spaces" className="nav-tabs -mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1.5">

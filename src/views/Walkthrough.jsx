@@ -3,7 +3,7 @@ import { buyerTag } from '../lib/people.js';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, spaceLabel, roomsFor, roomFits, stepSpace, canMoveMedia, uploadCounts, v5Access, visibleNotes } from '../lib/leaseUp.js';
 import { when, roleLabel } from '../lib/format.js';
-import { MAX_RECORDING_MS, WHISPER_ENGINE_LABEL, transcribeAudio } from '../lib/dictation.js';
+import { MAX_RECORDING_MS, transcribeAudio } from '../lib/dictation.js';
 import { assembleSessionAudio } from '../lib/audioStitch.js';
 import { mediaCoordinator } from '../lib/mediaCoordinator.js';
 import {
@@ -143,6 +143,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const [activeVoiceUi, setActiveVoiceUi] = useState(null); // { sessionId, unitNumber, room, elapsedMs, chunkCount, totalBytes }
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editingNoteText, setEditingNoteText] = useState('');
+  const [openTranscripts, setOpenTranscripts] = useState({});
   const [retranscribingId, setRetranscribingId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -1057,7 +1058,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
     }
     if (mountedRef.current) {
       const left = localMediaRef.current.length;
-      setStatus(left === 0 ? `All uploaded (${saved} just now).` : `${saved} uploaded, ${left} still waiting. They retry every 15 seconds.`);
+      setStatus(left === 0 ? '' : `${saved} uploaded, ${left} still waiting. They retry every 15 seconds.`);
     }
   };
 
@@ -1380,17 +1381,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
   if (!access.walkthrough) return null;
 
-  const totalRooms = WALK_SPACES.reduce((s, u) => s + roomsFor(u).length, 0);
-  const startedRooms = WALK_SPACES.reduce(
-    (sum, u) =>
-      sum +
-      roomsFor(u).filter(([r]) => {
-        const c = counts[`${u}:${r}`];
-        return c && c.p + c.v + c.n + c.pending > 0;
-      }).length,
-    0
-  );
-
   const cameraCapturedPhotos = cameraModal?.mode === 'photo'
     ? localMediaWithUrls.filter(
         (m) => m.kind === 'photo' && m.unitNumber === cameraModal.unit && m.room === cameraModal.room
@@ -1563,14 +1553,9 @@ export default function Walkthrough({ deal, me, role, preview }) {
       <Card className="!p-4">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-display text-xl font-semibold">Walkthrough inventory</h2>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
-            <span>
-              {startedRooms}/{totalRooms} rooms · {(photos || []).length} photos · {(videos || []).length} videos · {(notes || []).length} notes
-            </span>
-            {!online && (
-              <span className="rounded-full bg-amber-100 px-2.5 py-0.5 font-medium text-amber-900">Offline</span>
-            )}
-          </div>
+          {!online && (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">Offline</span>
+          )}
         </div>
 
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
@@ -1621,31 +1606,26 @@ export default function Walkthrough({ deal, me, role, preview }) {
           </div>
         )}
 
-        {edit && (
+        {edit && (upload.waiting > 0 || upload.failed > 0 || !online) && (
           <div
             role="status"
             aria-live="polite"
-            className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${
-              upload.waiting ? 'border-amber-400 bg-amber-50 text-amber-950' : 'border-emerald-300 bg-emerald-50 text-emerald-900'
-            }`}
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950"
           >
             <span className="font-semibold">
               {upload.waiting
-                ? `${upload.waiting} waiting to upload${upload.uploading ? ` · ${upload.uploading} uploading now` : ''}${upload.failed ? ` · ${upload.failed} will retry` : ''}`
-                : 'All uploaded ✓ Nothing is only on this phone.'}
+                ? `${upload.waiting} waiting to upload${upload.uploading ? ` · ${upload.uploading} uploading` : ''}${upload.failed ? ` · ${upload.failed} failed` : ''}`
+                : 'Offline — new items stay on this phone until connected.'}
             </span>
             {upload.waiting > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs">Safe on this phone until the server confirms.</span>
-                <button
-                  type="button"
-                  disabled={!online || syncingAll}
-                  onClick={() => void syncAllPending()}
-                  className="min-h-[36px] rounded-lg bg-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
-                >
-                  {syncingAll ? 'Uploading…' : online ? 'Upload now' : 'Waiting for connection'}
-                </button>
-              </div>
+              <button
+                type="button"
+                disabled={!online || syncingAll}
+                onClick={() => void syncAllPending()}
+                className="min-h-[36px] rounded-lg bg-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
+              >
+                {syncingAll ? 'Uploading…' : online ? 'Upload now' : 'Waiting for connection'}
+              </button>
             )}
           </div>
         )}
@@ -1685,9 +1665,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 ›
               </button>
             </div>
-            <span className="text-xs font-medium text-ink-soft">
-              {WALK_UNITS} units + {WALK_SPACES.length - WALK_UNITS} areas
-            </span>
           </div>
 
           <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap" role="group" aria-label="Units">
@@ -1717,7 +1694,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
           {/* All 5 named room choices — full labels, >= 44px tap targets, zero horizontal clipping */}
           <div>
-            <p className="mb-1.5 text-xs font-medium text-ink-soft">Room in {spaceLabel(unit)}</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5" role="group" aria-label={`Rooms for ${spaceLabel(unit)}`}>
               {roomsFor(unit).map(([r, label]) => {
                 const c = counts[`${unit}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
@@ -1726,6 +1702,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                   <button
                     key={r}
                     type="button"
+                    aria-label={`${spaceLabel(unit)} ${label}: ${c.p} photos, ${c.v} videos, ${c.n} voice notes`}
                     aria-pressed={active}
                     onClick={() => setSelectedRoom(r)}
                     className={`flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-3 py-2 text-left transition ${
@@ -1735,9 +1712,11 @@ export default function Walkthrough({ deal, me, role, preview }) {
                     }`}
                   >
                     <span className="text-sm font-semibold leading-tight">{label}</span>
-                    <span className={`text-[11px] ${active ? 'text-white/80' : 'text-ink-soft'}`}>
-                      {c.p}p · {c.v}v · {c.n}n{c.pending ? ` · ${c.pending} local` : ''}
-                    </span>
+                    {c.pending > 0 && (
+                      <span className={`text-[11px] ${active ? 'text-white/80' : 'text-amber-800'}`}>
+                        {c.pending} waiting
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -1748,13 +1727,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
       {/* Active Unit & Room Capture First */}
       <Card>
-        <CardTitle
-          aside={
-            <span className="text-xs text-ink-soft">
-              Photos, videos & voice notes · {WHISPER_ENGINE_LABEL}
-            </span>
-          }
-        >
+        <CardTitle>
           {spaceLabel(unit)} — {roomLabel(selectedRoom)}
         </CardTitle>
         {preview && (
@@ -1810,12 +1783,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 </div>
               )}
             </div>
-
-            {edit && (
-              <p className="text-xs text-ink-soft">
-                Audio chunks save on your device as you speak before transcription or switching rooms. Keep the screen awake while narrating; locks, calls, or app switches pause cleanly and keep all saved chunks.
-              </p>
-            )}
 
             {/* Local pending / paused / transcribing / failed voice sessions for THIS room */}
             {edit && roomLocalSessions.length > 0 && (
@@ -2038,21 +2005,34 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         </div>
                       </div>
                     ) : (
-                      <>
+                      <div className="space-y-2">
                         {n.polished && String(n.polished).trim() ? (
-                          <p className="whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-2 py-1 text-sm font-semibold text-ink">
-                            <span className="mr-1 text-xs font-bold uppercase tracking-wide text-amber-800">Summary</span>
+                          <p className="whitespace-pre-wrap break-words text-sm text-ink">
                             {String(n.polished).trim()}
                           </p>
                         ) : null}
                         {n.raw_transcript ? (
-                          <p className="whitespace-pre-wrap break-words text-sm">{n.raw_transcript}</p>
-                        ) : (
-                          <p className="text-xs italic text-ink-soft">
-                            Audio saved without transcript yet — tap Retranscribe or Edit.
+                          <div className="space-y-1.5">
+                            <button
+                              type="button"
+                              aria-expanded={Boolean(openTranscripts[n.id])}
+                              onClick={() => setOpenTranscripts((prev) => ({ ...prev, [n.id]: !prev[n.id] }))}
+                              className="text-xs font-medium text-ink underline underline-offset-2 hover:text-ink-soft"
+                            >
+                              {openTranscripts[n.id] ? 'Hide transcript' : 'View transcript'}
+                            </button>
+                            {openTranscripts[n.id] && (
+                              <p className="whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 text-sm text-ink-soft">
+                                {n.raw_transcript}
+                              </p>
+                            )}
+                          </div>
+                        ) : !n.polished || !String(n.polished).trim() ? (
+                          <p className="text-xs text-ink-soft">
+                            No transcript yet — tap Retranscribe or Edit.
                           </p>
-                        )}
-                      </>
+                        ) : null}
+                      </div>
                     )}
                   </li>
                 ))}
@@ -2284,12 +2264,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 )}
               </div>
 
-              {edit && (
-                <p className="text-xs text-ink-soft">
-                  MP4, WebM, or MOV up to 50 MB (recommended under 2 min). Failed uploads stay queued on this device for retry.
-                </p>
-              )}
-
               {roomPendingVideos.length > 0 && (
                 <ul className="space-y-2.5" aria-label="Pending room videos">
                   {roomPendingVideos.map((v) => (
@@ -2400,7 +2374,6 @@ export default function Walkthrough({ deal, me, role, preview }) {
       <Card className="!p-4 hidden md:block">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="font-display text-lg font-semibold">All units progress</h3>
-          <span className="text-xs text-ink-soft">Click any cell to jump to that unit & room</span>
         </div>
         {matrixTable}
       </Card>

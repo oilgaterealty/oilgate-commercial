@@ -34,6 +34,6 @@ test('last-checked dates', () => {
   assert.equal(checkedLabel(''), '');
   assert.equal(latestCompDate([{ created_at: '2026-11-20T01:00:00Z' }, { created_at: '2026-11-23T01:00:00Z' }, {}]), '2026-11-23T01:00:00Z');
   assert.equal(latestCompDate(null), '');
-  assert.match(read('src/components/Switches.jsx'), /owner && base\.strCheckedAt/);
+  assert.match(read('src/components/Switches.jsx'), /owner && \(base\.strCheckedAt/);
   assert.match(read('src/views/Comps.jsx'), /Comp list last updated/);
 });

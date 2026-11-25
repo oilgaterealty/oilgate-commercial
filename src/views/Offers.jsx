@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import Switches, { SendWhatIf } from '../components/Switches.jsx';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, grade, money, pct } from '../lib/dealmath.js';
-import { Card, CardTitle, Button, Badge, Empty } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Badge, Empty, InfoTip } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
@@ -83,16 +83,15 @@ function BuildingNumbers({ base, setBase, o, owner }) {
       </button>
       {open && (
         <div className="mt-3">
-          <p className="mb-2 text-xs text-ink-soft">{owner
-            ? 'Shared by every offer, saved privately with this deal. Rents, taxes, insurance and repairs stay unverified until the rent roll, bills and bids are in.'
-            : `These are ${possessive(buyerName())} numbers for the building. Try your own on any of them; nothing you change is saved, and Send to ${buyerName()} shows what you changed.`}</p>
           <div className="grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.filter(([k]) => !['units', 'tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
                 onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
           </div>
-          <p className="mt-2 text-xs text-ink-soft">A refinance could lend {money(o.refiLoan)}, limited by {o.refiLimitedBy === 'DSCR' ? 'the rent' : 'the building’s value'}. Yearly return on the value (cap rate) {pct(o.capRate, 1)}.</p>
+          <div className="mt-2 flex items-center gap-2 text-xs text-ink-soft">
+            <span>Refinance loan: {money(o.refiLoan)} ({o.refiLimitedBy === 'DSCR' ? 'rent-limited' : 'value-limited'}) · Cap rate {pct(o.capRate, 1)}</span>
+          </div>
         </div>
       )}
     </Card>
@@ -192,7 +191,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
         <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>
         <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Card view</Button>
         <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
-        <span className="ml-auto text-xs text-ink-soft">{owner ? saved : 'Shared for review. Questions go through Messages.'}</span>
+        {owner && saved && <span className="ml-auto text-xs text-ink-soft">{saved}</span>}
       </div>
       {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card>}
       {offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
@@ -223,7 +222,6 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                   {plain(cur.structure, r).lines.map((t, i) => <p key={i}>{t}</p>)}
                   <p className="text-ink-soft"><span className="font-medium text-ink">Worth knowing:</span> {plain(cur.structure, r).risk}.</p>
                 </div>
-                <p className="mb-2 px-1 text-xs text-ink-soft">{owner ? 'Change one number and watch the results move.' : 'Try a number and watch the results move. Nothing is saved.'}</p>
                 {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
                   const d = STRUCTURES[cur.structure].defaults[k];
                   const v = cur.inputs?.[k];
@@ -246,14 +244,15 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                       {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
-                      <p className="text-xs text-ink-soft">The seller never sees this page. What the seller reads is under Seller page.</p>
                     </div>
                   </>
                 ) : cur.note ? <p className="mt-3 whitespace-pre-line rounded-xl bg-warm-soft/60 px-3 py-2 text-sm">{cur.note}</p> : null}
               </Card>
               <div className="space-y-5">
                 <Results r={r} />
-                <p className="text-xs text-ink-soft">Tests: rent covers the payment 1.20x or more, 85% or fewer units rented to break even, 8–12% yearly return on cash in, total cost 75% of value or less. The seller’s loan terms are unconfirmed, and nothing here is a lender quote.</p>
+                <div className="flex justify-end">
+                  <InfoTip label="Underwriting benchmarks" lines={['Targets: 1.20x+ DSCR, 85% or fewer units to break even, 8–12% cash-on-cash, 75% or less total cost vs ARV. Seller loan terms are unconfirmed and nothing here is a lender quote.']} />
+                </div>
               </div>
             </div>
           )}

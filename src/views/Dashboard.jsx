@@ -27,7 +27,7 @@ function Tile({ label, children, sub, strong }) {
 export const OFFER_TILES = [['askPrice', 'Seller’s offer'], ['ourOffer', 'Our offer']];
 function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Seller’s offer' }) {
   const v = base[field];
-  if (!owner) return <Tile label={label} strong sub="Being discussed, not signed">{v ? money(+v) : 'Not set yet'}</Tile>;
+  if (!owner) return <Tile label={label} strong>{v ? money(+v) : 'Not set yet'}</Tile>;
   return (
     <div className="rounded-2xl bg-ink p-3 text-white">
       <label htmlFor={`offer-${field}`} className="text-xs text-warm">{label}</label>
@@ -36,7 +36,6 @@ function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Selle
         <input id={`offer-${field}`} type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, [field]: e.target.value === '' ? '' : +e.target.value })}
           className="w-full rounded-lg border border-white/20 bg-white/10 py-1 pl-6 pr-2 font-display text-xl font-semibold text-white outline-none focus:border-warm" />
       </div>
-      <p className="mt-0.5 text-xs text-white/70">Being discussed, not signed. Only you can change it.</p>
     </div>
   );
 }
@@ -85,8 +84,8 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
               <Tile label="Best cash flow" strong sub={best ? `${best.x.name} · whole building` : ''}>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
               <Tile label="Monthly rent / unit" sub={o.strUnits ? `${o.strUnits} unit${o.strUnits > 1 ? 's' : ''} as Airbnb` : 'Regular rentals'}>{money(o.b.rent)}</Tile>
               <Tile label="Status">{cap(deal.status)}</Tile>
-              <Tile label="Units" sub={o.extraRepair ? `Adds ${money(o.extraRepair)} repair` : 'Underwriting'}>{o.b.units}</Tile>
-              <Tile label="Yearly profit before payments" sub="Net operating income">{money(o.noi)}</Tile>
+              <Tile label="Units" sub={o.extraRepair ? `Adds ${money(o.extraRepair)} repair` : undefined}>{o.b.units}</Tile>
+              <Tile label="Yearly profit before payments">{money(o.noi)}</Tile>
               <Tile label="Value after repairs">{money(o.b.value)}</Tile>
               <Tile label="Repair budget" sub={`Yearly return on value ${pct(o.capRate, 1)}`}>{money(o.b.rehab)}</Tile>
             </dl>

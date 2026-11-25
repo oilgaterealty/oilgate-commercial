@@ -39,11 +39,12 @@ test('deal at a glance starts with the seller’s offer and our offer, for every
 
 test('Airbnb source line is for the owner only', () => {
   const s = src('src/components/Switches.jsx');
-  assert.match(s, /\{owner && base\.strSource && <p/);
+  assert.match(s, /\{owner && \(base\.strCheckedAt \|\| base\.strSource\)/);
+  assert.match(s, /<InfoTip/);
 });
 
-test('10th unit starts at $20,000', () => {
-  assert.equal(BASE_DEFAULTS.tenthUnitRepair, 20000);
+test('10th unit starts at $30,000', () => {
+  assert.equal(BASE_DEFAULTS.tenthUnitRepair, 30000);
 });
 
 test('buyer name comes only from the deal settings', () => {

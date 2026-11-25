@@ -79,14 +79,9 @@ export default function StrategyIdeas({ deal, me, role, preview }) {
   return (
     <div className="space-y-5">
       <Card>
-        <CardTitle aside={<span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">Buyer + realtor</span>}>
+        <CardTitle>
           Strategy ideas
         </CardTitle>
-        <p className="-mt-2 mb-4 text-sm text-ink-soft">
-          {owner
-            ? 'Only you and the realtor see these. She can add ideas and delete her own; you can change any card.'
-            : 'Only you and the buyer see these. Add an idea any time; you can delete the ones you added.'}
-        </p>
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
 
         <form onSubmit={save} className="space-y-2.5 rounded-2xl bg-paper p-4">

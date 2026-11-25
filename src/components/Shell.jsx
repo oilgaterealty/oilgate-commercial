@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { buyerTag, sellerTag, viewingRole } from '../lib/people.js';
 import { supabase } from '../lib/supabase.js';
 import { DictatedField } from './Dictation.jsx';
@@ -100,3 +101,82 @@ export const Badge = ({ tone = 'none', children }) => {
   const c = { pass: 'bg-good/10 text-good', close: 'bg-amber-100 text-amber-800', fail: 'bg-red-50 text-red-700', none: 'bg-warm-soft text-ink-soft' }[tone];
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{children}</span>;
 };
+
+// Hover/tap info overlay so sources and secondary notes never sit on the page as visible subtext.
+export function InfoTip({ label = 'Details', lines = [] }) {
+  const id = useId();
+  const trigger = useRef(null);
+  const popup = useRef(null);
+  const timer = useRef(null);
+  const [position, setPosition] = useState(null);
+  const [pinned, setPinned] = useState(false);
+  const details = (lines || []).filter(Boolean);
+
+  const open = () => {
+    clearTimeout(timer.current);
+    if (!trigger.current) return;
+    const r = trigger.current.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 24);
+    setPosition({
+      width,
+      left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
+      ...(r.bottom < window.innerHeight - 220 ? { top: r.bottom + 6 } : { bottom: Math.max(12, window.innerHeight - r.top + 6) }),
+    });
+  };
+  const close = () => { if (!pinned) timer.current = setTimeout(() => setPosition(null), 120); };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!position) return;
+    const outside = (e) => {
+      if (!trigger.current?.contains(e.target) && !popup.current?.contains(e.target)) {
+        setPinned(false); setPosition(null);
+      }
+    };
+    const escape = (e) => { if (e.key === 'Escape') { setPinned(false); setPosition(null); } };
+    const dismiss = () => { setPinned(false); setPosition(null); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [position]);
+
+  if (!details.length) return null;
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        aria-label={label}
+        aria-expanded={!!position}
+        aria-describedby={position ? id : undefined}
+        onMouseEnter={open}
+        onMouseLeave={close}
+        onFocus={open}
+        onBlur={close}
+        onClick={() => { if (pinned) { setPinned(false); setPosition(null); } else { open(); setPinned(true); } }}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-paper text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
+      >
+        i
+      </button>
+      {position && createPortal(
+        <div
+          ref={popup}
+          id={id}
+          role="tooltip"
+          style={position}
+          onMouseEnter={() => clearTimeout(timer.current)}
+          onMouseLeave={close}
+          className="fixed z-50 max-h-60 overflow-y-auto break-words rounded-xl border border-line bg-ink p-3 text-xs text-white shadow-xl"
+        >
+          {details.map((line, i) => <div key={i} className="py-1 first:pt-0 last:pb-0">{line}</div>)}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}

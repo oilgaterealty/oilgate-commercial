@@ -3,7 +3,7 @@
 // plan inputs (unit schedule, one-time costs, lender terms) all flow through here, so every page that
 // shows a plan updates the moment any input changes. Real deal numbers live only in the owner's private
 // database row, never in this public code. Defaults below are blank templates.
-import { operating, strMonthly, pmt, pv, STRUCTURES } from './dealmath.js';
+import { BASE_DEFAULTS, operating, strMonthly, pmt, pv, STRUCTURES } from './dealmath.js';
 
 export const WEEKS_PER_MONTH = 52 / 12;
 
@@ -16,6 +16,8 @@ export const PLAN_DEFAULTS = {
   rehabStartWeek: 0, // when unit work begins
   lenderRate: 0, // short-term lender, interest only, % per year
   lenderPoints: 0, // % of each draw
+  lenderSeasoningMonths: null, // months of stabilized operations required by lender, null until confirmed
+  lenderEligibilityConfirmed: false, // whether a permanent lender has confirmed refinance eligibility
   sellerLoanBalance: 0, // what the seller still owes their bank (estimate)
   sellerLoanRate: 0,
   sellerLoanYears: 30,
@@ -46,7 +48,14 @@ export function normalizePlan(raw) {
   if (typeof p === 'string') { try { p = JSON.parse(p); } catch { p = {}; } }
   p = p && typeof p === 'object' ? p : {};
   const out = { ...PLAN_DEFAULTS };
-  for (const k of Object.keys(PLAN_DEFAULTS)) if (!Array.isArray(PLAN_DEFAULTS[k]) && p[k] !== undefined) out[k] = num(p[k], PLAN_DEFAULTS[k]);
+  for (const k of Object.keys(PLAN_DEFAULTS)) {
+    if (Array.isArray(PLAN_DEFAULTS[k]) || k === 'lenderSeasoningMonths' || k === 'lenderEligibilityConfirmed') continue;
+    if (p[k] !== undefined) out[k] = num(p[k], PLAN_DEFAULTS[k]);
+  }
+  out.lenderSeasoningMonths = p.lenderSeasoningMonths !== undefined && p.lenderSeasoningMonths !== null && p.lenderSeasoningMonths !== '' && Number.isFinite(+p.lenderSeasoningMonths) && +p.lenderSeasoningMonths >= 0
+    ? +p.lenderSeasoningMonths
+    : null;
+  out.lenderEligibilityConfirmed = Boolean(p.lenderEligibilityConfirmed);
   out.units = (Array.isArray(p.units) ? p.units : []).map((u) => ({ id: String(u.id ?? ''), rehab: num(u.rehab), ready: num(u.ready), occupied: !!u.occupied, rent: u.rent === undefined || u.rent === null || u.rent === '' ? null : num(u.rent), optional: !!u.optional, note: u.note ? String(u.note) : '' }));
   out.costs = (Array.isArray(p.costs) ? p.costs : []).map((c) => ({ label: String(c.label ?? ''), cost: num(c.cost), start: num(c.start), end: num(c.end, num(c.start)), group: c.group ? String(c.group) : 'other' }));
   out.rentOptions = (Array.isArray(p.rentOptions) ? p.rentOptions : []).map((r) => ({ key: String(r.key ?? r.label ?? ''), label: String(r.label ?? ''), rent: num(r.rent) }));
@@ -61,7 +70,24 @@ export function unitSchedule(baseIn, planIn) {
   const required = plan.units.filter((u) => !u.optional);
   const optional = plan.units.filter((u) => u.optional);
   const extra = Math.max(0, o.b.units - required.length);
-  const chosen = [...required, ...optional.slice(0, extra)];
+  const hasEditableTenth = baseIn && baseIn.tenthUnitRepair !== undefined && baseIn.tenthUnitRepair !== null && baseIn.tenthUnitRepair !== '';
+  const pickedOptional = optional.slice(0, extra).map((u) => {
+    const rehab = hasEditableTenth ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : (u.rehab > 0 ? u.rehab : BASE_DEFAULTS.tenthUnitRepair);
+    return { ...u, rehab };
+  });
+  const chosen = [...required, ...pickedOptional];
+  if (o.b.units >= 10 && plan.units.length > 0 && chosen.length === 9 && optional.length === 0) {
+    const maxReady = chosen.reduce((m, u) => Math.max(m, u.ready), 0);
+    chosen.push({
+      id: '10',
+      rehab: hasEditableTenth ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : BASE_DEFAULTS.tenthUnitRepair,
+      ready: maxReady || 16,
+      occupied: false,
+      rent: null,
+      optional: true,
+      note: 'Unit 10 rehab (subject to approvals)',
+    });
+  }
   const strCount = o.strUnits;
   const byReady = [...chosen].sort((a, b) => (a.occupied - b.occupied) || (a.ready - b.ready));
   const strIds = new Set(byReady.filter((u) => !u.occupied).slice(0, strCount).map((u) => u.id));
@@ -124,10 +150,12 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   const exitClosing = structure === 'master_lease' ? x.exerciseClosing : structure === 'partnership' ? x.closing : 0;
   const sellerLoanPayment = plan.sellerLoanBalance > 0 && plan.sellerLoanRate > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : 0;
 
-  let pool = (structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : 0) + (structure === 'cash' ? 0 : num(x.buyerCash));
   const advancesStart = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : 0;
+  const startingBuyerCash = structure === 'cash' ? items[0].cost : num(x.buyerCash);
+  let sellerPool = advancesStart;
+  let buyerPool = structure === 'cash' ? 0 : num(x.buyerCash);
   let lender = 0, credits = 0, refied = false;
-  let peakLender = 0, interestTotal = 0, pointsTotal = 0, sellerTotal = structure === 'cash' ? x.price : 0, buyerKeepsTotal = 0, buyerCashTotal = structure === 'cash' ? items[0].cost : 0, oneTimeTotal = 0;
+  let peakLender = 0, interestTotal = 0, pointsTotal = 0, sellerTotal = structure === 'cash' ? x.price : 0, buyerKeepsTotal = 0, buyerCashTotal = startingBuyerCash, oneTimeTotal = 0;
   const rows = [];
   let exit = null;
 
@@ -156,7 +184,9 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
 
     let fromPool = 0, draw = 0, points = 0, keeps = 0, refi = null;
     if (net < 0) {
-      fromPool = Math.min(pool, -net); pool -= fromPool; net += fromPool;
+      const fromSellerPool = Math.min(sellerPool, -net); sellerPool -= fromSellerPool; net += fromSellerPool;
+      const fromBuyerPool = Math.min(buyerPool, -net); buyerPool -= fromBuyerPool; net += fromBuyerPool;
+      fromPool = fromSellerPool + fromBuyerPool;
       if (net < 0) {
         if (structure === 'cash') { buyerCashTotal += -net; } else {
           const f = 1 - plan.lenderPoints / 100;
@@ -166,16 +196,19 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
       }
     } else keeps = net;
 
+    // Measure peak bridge balance before the refinance payoff clears it to zero.
+    const lenderBeforePayoff = lender;
+    peakLender = Math.max(peakLender, lenderBeforePayoff);
+
     if (exitMonth === m && !refied) {
       const payoff = sellerPayoff(structure, x, credits);
-      const due = payoff + lender + exitClosing;
-      refi = { loan: refiLoan, net: refiNet, sellerPayoff: payoff, lenderPayoff: lender, closing: exitClosing, left: refiNet - due, maxSellerPayoff: refiNet - lender - exitClosing };
+      const due = payoff + lenderBeforePayoff + exitClosing;
+      refi = { loan: refiLoan, net: refiNet, sellerPayoff: payoff, lenderPayoff: lenderBeforePayoff, closing: exitClosing, left: refiNet - due, maxSellerPayoff: refiNet - lenderBeforePayoff - exitClosing };
       sellerTotal += payoff; lender = 0; refied = true;
       if (refi.left >= 0) keeps += refi.left; else buyerCashTotal += -refi.left;
       exit = { month: m, ...refi, credits };
     }
 
-    peakLender = Math.max(peakLender, lender);
     interestTotal += interest; pointsTotal += points; sellerTotal += seller; oneTimeTotal += costTotal;
     buyerKeepsTotal += refi && refi.left > 0 ? keeps - refi.left : keeps;
     const exitCash = exit && !refi && exit.left > 0 ? exit.left : 0;
@@ -183,9 +216,32 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     rows.push({
       month: m, stage, renting: renting.length, total, rentingIds: renting.map((u) => u.id), newIds: renting.filter((u) => u.startMonth === m).map((u) => u.id),
       collected, mgmt, fixed: fixedMo, strCosts, noi, reserves, seller, bank, interest, costs, costTotal,
-      fromPool, draw, points, lender, keeps, refi, cumulative: buyerKeepsTotal + (refi && refi.left > 0 ? refi.left : 0) + exitCash - buyerCashTotal, sellerGap: sellerLoanPayment ? seller - sellerLoanPayment : null,
+      fromPool, draw, points, lender, lenderBeforePayoff, keeps, refi, cumulative: buyerKeepsTotal + (refi && refi.left > 0 ? refi.left : 0) + exitCash - buyerCashTotal, sellerGap: sellerLoanPayment ? seller - sellerLoanPayment : null,
     });
   }
+
+  const stabilizedMonth = units.length ? Math.max(...units.map((u) => u.startMonth)) : null;
+  const readyBeforeExpected = stabilizedMonth !== null && exitMonth !== null && stabilizedMonth <= exitMonth;
+  const monthsStabilizedAtRefi = stabilizedMonth !== null && exitMonth !== null ? Math.max(0, exitMonth - stabilizedMonth + 1) : 0;
+  const seasoningRequired = plan.lenderSeasoningMonths;
+  const seasoningMet = seasoningRequired === null ? null : monthsStabilizedAtRefi >= seasoningRequired;
+  const lenderConfirmed = Boolean(plan.lenderEligibilityConfirmed);
+  const eligibilityStatus = !exitMonth ? 'none'
+    : !readyBeforeExpected ? 'not_stabilized'
+    : !lenderConfirmed ? 'unconfirmed'
+    : seasoningMet === false ? 'seasoning_short'
+    : 'eligible';
+  const eligibility = {
+    expectedRefiMonth: exitMonth,
+    stabilizedMonth,
+    readyBeforeExpected,
+    monthsStabilizedAtRefi,
+    seasoningRequired,
+    seasoningMet,
+    lenderConfirmed,
+    status: eligibilityStatus,
+    arvCase: total >= 10 ? 'stabilized_10_subject_to_approvals' : 'as_is_9',
+  };
 
   const stages = ['vacant', 'partial', 'full', 'after'].map((key) => {
     const rs = rows.filter((r) => r.stage === key && !r.refi);
@@ -195,9 +251,9 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   });
 
   return {
-    structure, inputs: x, operating: o, plan, units, items, rows, stages, exit,
+    structure, inputs: x, operating: o, plan, units, items, rows, stages, exit, eligibility,
     full: { collected: fullCollected, noi: fullNoi, reserves: fullReserves, cashFlow: fullCashFlow, refiLoan, refiNet, refiPayment, refiLimitedBy: pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr) < (b.refiLtv / 100) * b.value ? 'DSCR' : 'LTV' },
-    totals: { sellerTotal, sellerNet: plan.sellerLoanBalance ? sellerTotal - plan.sellerLoanBalance : null, buyerKeepsTotal, refiCashOut: exit && exit.left > 0 ? exit.left : 0, buyerCashTotal, peakLender, interestTotal, pointsTotal, oneTimeTotal, advancesUsed: Math.min(advancesStart, advancesStart + (structure === 'cash' ? 0 : num(x.buyerCash)) - pool), cashPrice: structure === 'cash' ? x.price : null },
+    totals: { sellerTotal, sellerNet: plan.sellerLoanBalance ? sellerTotal - plan.sellerLoanBalance : null, buyerKeepsTotal, refiCashOut: exit && exit.left > 0 ? exit.left : 0, startingBuyerCash, unusedBuyerPool: buyerPool, buyerCashTotal, peakLender, interestTotal, pointsTotal, oneTimeTotal, advancesUsed: advancesStart - sellerPool, cashPrice: structure === 'cash' ? x.price : null },
     sellerLoanPayment, bankLoan, bankPayment,
   };
 }
@@ -229,10 +285,27 @@ export function derivations(p) {
   }
   if (p.structure === 'wrap') L.push(['Seller payment', `${$(x.note)} owed × ${x.rate}% ÷ 12 = ${$((x.note * x.rate) / 1200)}/mo from month 1${x.amortYears > 0 ? `, paid down over ${x.amortYears} years` : ', interest only'}. The balance is paid in full at the refinance.`]);
   if (p.structure === 'cash') L.push(['Bank payment', `${$(p.bankLoan)} loan at ${x.rate}% over ${x.years} years = ${$(p.bankPayment)}/mo from month 1.`]);
+  if (p.totals.startingBuyerCash > 0 || p.totals.buyerCashTotal > 0) {
+    L.push(['Buyer cash', `${$(p.totals.startingBuyerCash)} starting buyer-funded cash${p.exit && p.exit.left < 0 ? ` + ${$(-p.exit.left)} needed at refinance` : ''} = ${$(p.totals.buyerCashTotal)} total buyer cash in.`]);
+  }
   if (p.exit) {
     L.push(['Refinance', `${$(full.refiLoan)} loan (limited by ${full.refiLimitedBy === 'LTV' ? 'value' : 'rent coverage'}) − fees and holdback = ${$(full.refiNet)}. Pays the seller ${$(p.exit.sellerPayoff)}, the short-term lender ${$(p.exit.lenderPayoff)}${p.exit.closing ? ` and ${$(p.exit.closing)} closing` : ''}. ${p.exit.left >= 0 ? `${$(p.exit.left)} left over to you.` : `${$(-p.exit.left)} short, which you would cover.`}`]);
   }
-  if (p.totals.peakLender > 0) L.push(['Short-term lender', `Covers what rent and the seller’s upfront money don’t, peaking at ${$(p.totals.peakLender)}. Interest ${$(p.totals.interestTotal)} + points ${$(p.totals.pointsTotal)} through the refinance.`]);
+  if (p.eligibility && p.eligibility.expectedRefiMonth) {
+    const el = p.eligibility;
+    const msg = el.status === 'not_stabilized'
+      ? `Expected refinance is month ${el.expectedRefiMonth}, but all ${p.units.length} units do not start collecting until month ${el.stabilizedMonth}.`
+      : el.status === 'seasoning_short'
+        ? `Expected refinance is month ${el.expectedRefiMonth} (${el.monthsStabilizedAtRefi} months stabilized), below the ${el.seasoningRequired}-month lender seasoning requirement.`
+        : el.status === 'eligible'
+          ? `Stabilizes month ${el.stabilizedMonth}; lender terms confirmed for month ${el.expectedRefiMonth}.`
+          : `Expected refinance is month ${el.expectedRefiMonth} (all ${p.units.length} units paying by month ${el.stabilizedMonth}); actual refinance eligibility depends on confirmed lender underwriting, seasoning, and legal unit approvals.`;
+    L.push(['Lender eligibility', msg]);
+  }
+  if (p.units.length >= 10) {
+    L.push(['10-unit ARV case', 'Stabilized 10-unit case uses the editable Unit 10 rehab estimate once and remains subject to legal unit approvals and permanent financing.']);
+  }
+  if (p.totals.peakLender > 0) L.push(['Short-term lender', `Covers what rent and upfront funds don’t, peaking at ${$(p.totals.peakLender)} before refinance payoff. Interest ${$(p.totals.interestTotal)} + points ${$(p.totals.pointsTotal)} through the refinance.`]);
   if (p.sellerLoanPayment) L.push(['Seller’s own loan', `About ${$(p.sellerLoanPayment)}/mo on ${$(p.plan.sellerLoanBalance)} at ${p.plan.sellerLoanRate}% (estimate). Months where the seller gets less than that, they cover the difference.`]);
   return L;
 }

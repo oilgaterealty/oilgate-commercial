@@ -54,7 +54,6 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
     {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">
       <DictatedField as="textarea" aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />
       <div className="flex flex-wrap gap-2">{role === 'owner' && <select aria-label={kind === 'task' ? 'Who it is for' : 'Share with'} value={audience} onChange={e => setAudience(e.target.value)} className="rounded-xl border border-line px-3 py-2">{FOR().filter(([k]) => kind === 'task' || k !== 'shared').map(([k, l]) => <option key={k} value={k}>{kind === 'task' ? `For ${l}` : k === 'owner' ? 'Only me' : `Share with ${l.toLowerCase()}`}</option>)}</select>}<Button type="submit" disabled={!body.trim()}>Add {kind}</Button></div>
-      <p className="text-xs text-ink-soft">{role === 'owner' ? 'Only the people you pick and you can read this.' : `Shared with ${buyerName()}. Other roles can’t see your entries.`}</p>
     </form>}
   </Card>;
 }

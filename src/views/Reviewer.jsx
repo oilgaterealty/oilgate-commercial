@@ -34,8 +34,7 @@ function Facts({ deal, numbers }) {
           <div><dt className="text-ink-soft">Refinance assumed</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
         </>}
       </dl>
-      {o && <p className="mt-3 text-xs text-ink-soft">Rents, taxes, insurance and repairs are unverified until the rent roll, bills and bids are in. The seller’s loan terms are unconfirmed. No lender has quoted.</p>}
-      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this nine-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol><p className="text-ink-soft">This general overview is informational. It is not an offer or a financing commitment.</p></div>}
+      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this nine-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol></div>}
     </Card>
   );
 }

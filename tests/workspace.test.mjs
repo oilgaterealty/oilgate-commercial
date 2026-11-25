@@ -34,10 +34,13 @@ test('new workspace tables have RLS and exclude seller/viewer research', () => {
   assert.match(sql, /commercial_loan_read[\s\S]*?in \('owner','seller'\)/);
   assert.doesNotMatch(sql, /update commercial_conversations set participants|update commercial_messages|drop table|truncate/i);
 });
-test('seller stays outside underwriting and defaults to expanded comparison', () => {
+test('seller stays outside underwriting and shows single offer plus execution plan', () => {
   const src = readFileSync(new URL('../src/views/Seller.jsx', import.meta.url), 'utf8');
-  assert.match(src, /useState\('table'\)/);
-  assert.match(src, /const open = true/);
+  const card = readFileSync(new URL('../src/components/LeadOfferCard.jsx', import.meta.url), 'utf8');
+  assert.match(src, /<LeadOfferCard/);
+  assert.match(src, /<ExecutionPlanCard/);
   assert.match(src, /PhotoStrip photos/);
+  assert.match(card, /6801234 and 6807893/);
+  assert.doesNotMatch(src, /comparison-table|Side by side|One at a time|carry_now|with_us/);
   assert.doesNotMatch(src, /commercial_offers|commercial_models|canSave|SellerEditor/);
 });

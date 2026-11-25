@@ -4,7 +4,7 @@ import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5A
 import { money, operating } from '../lib/dealmath.js';
 import { roleLabel } from '../lib/format.js';
 import { COMP_SORTS, checkedLabel, compSource, compsForView, latestCompDate, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
-import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, Field, InfoTip } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
 import { buyerName, possessive } from '../lib/people.js';
 
@@ -213,7 +213,7 @@ export default function Comps({ deal, me, role, preview }) {
   return (
     <div className="space-y-5 pb-20">
       <Card>
-        <CardTitle aside={<span className="text-xs text-ink-soft">{owner ? 'Your comps and cap rate save' : `What-ifs never change ${possessive(buyerName())} numbers`}</span>}>
+        <CardTitle>
           What it’s worth
         </CardTitle>
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
@@ -249,7 +249,6 @@ export default function Comps({ deal, me, role, preview }) {
                 );
               })}
             </div>
-            <p className="mt-1 text-sm text-ink-soft">Switching only changes this view. It never changes saved numbers.</p>
           </div>
         )}
 
@@ -284,9 +283,8 @@ export default function Comps({ deal, me, role, preview }) {
       </Card>
 
       <Card>
-        <CardTitle aside={<span className="text-sm text-ink-soft">{allComps.length} comp{allComps.length === 1 ? '' : 's'}{canPick ? ' · pick the ones you trust' : ''}</span>}>Comparable sales</CardTitle>
+        <CardTitle aside={<div className="flex items-center gap-2"><span className="text-sm text-ink-soft">{allComps.length}</span>{latestCompDate(savedComps) && <InfoTip label="Comp list updated" lines={[`Comp list last updated ${checkedLabel(latestCompDate(savedComps))}`]} />}</div>}>Comparable sales</CardTitle>
         {status && <p role="status" className="mb-3 text-sm text-ink-soft">{status}</p>}
-        {latestCompDate(savedComps) && <p className="mb-3 text-xs font-semibold text-ink-soft">Comp list last updated {checkedLabel(latestCompDate(savedComps))}</p>}
         {savedComps === null ? (
           <Empty>Loading…</Empty>
         ) : allComps.length === 0 ? (
@@ -311,10 +309,10 @@ export default function Comps({ deal, me, role, preview }) {
                     {meta(c) && <p className="text-sm text-ink-soft">{meta(c)}</p>}
                   </div>
                   <CompFacts c={c} />
-                  {compSource(c) && <p className="text-sm text-ink-soft break-words">Source: {compSource(c)}</p>}
                   {role === 'owner' && pickedBy[c.id] && <p className="text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
                   <div className="flex flex-wrap items-center gap-3">
                     <PickButton c={c} />
+                    {compSource(c) && <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} />}
                     {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
                   </div>
                 </li>
@@ -348,7 +346,9 @@ export default function Comps({ deal, me, role, preview }) {
                       <td className="border-b border-line px-3 py-4 font-semibold">{money(pricePerUnit(c))}</td>
                       <td className="border-b border-line px-3 py-4 font-semibold">{soldLabel(c.sale_date) || 'Not found'}</td>
                       <td className="border-b border-line px-3 py-4">{milesLabel(c.distance_mi) || '—'}</td>
-                      <td className="max-w-[260px] border-b border-line px-3 py-4 text-sm text-ink-soft">{compSource(c) || '—'}</td>
+                      <td className="border-b border-line px-3 py-4 text-sm text-ink-soft">
+                        {compSource(c) ? <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} /> : '—'}
+                      </td>
                       <td className="border-b border-line px-3 py-4">
                         <div className="flex flex-col items-start gap-2">
                           <PickButton c={c} />
@@ -362,7 +362,6 @@ export default function Comps({ deal, me, role, preview }) {
             </div>
           </>
         )}
-        <p className="mt-3 text-sm text-ink-soft">Distances are miles from {deal.address || 'the property'}. {role === 'owner' ? 'You see everyone’s picks.' : 'Only you and the buyer see your picks.'}</p>
       </Card>
 
       <Card>
