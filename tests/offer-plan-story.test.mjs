@@ -193,24 +193,32 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
   }
 });
 
-test('Offers OptionCard and OptionTable render the 7-step monthlyPlan story with zero bare "You keep"', () => {
+test('Offers OptionCard and OptionTable render the units-rented table and refinance block with zero bare "You keep"', () => {
+  const shellMock = {
+    Card: ({ children }) => React.createElement('section', null, children),
+    CardTitle: ({ children }) => React.createElement('h2', null, children),
+    Button: ({ children, ...p }) => React.createElement('button', p, children),
+    Badge: ({ children }) => React.createElement('span', null, children),
+    Empty: ({ children }) => React.createElement('p', null, children),
+    InfoTip: () => null,
+    OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children),
+  };
+  const costSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': shellMock });
+  const unitsGuideMod = loadJsx('src/components/UnitsRentedGuide.jsx', {
+    './CostSummary.jsx': costSummaryMod.default,
+    './Shell.jsx': shellMock,
+    '../lib/dealmath.js': { money },
+  });
   const offersMod = loadJsx('src/views/Offers.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer', possessive: () => "Buyer's" },
     '../components/Dictation.jsx': { DictatedField: (p) => React.createElement(p.as || 'input', p) },
     '../lib/supabase.js': { supabase: {} },
     '../lib/useDealModel.js': { useDealModel: () => ({}) },
     '../components/Switches.jsx': { __esModule: true, default: () => null, SendWhatIf: () => null },
-    '../components/CostSummary.jsx': { __esModule: true, default: () => null },
+    '../components/CostSummary.jsx': costSummaryMod,
+    '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS: [], STRUCTURES: {}, buildLeadStory, evaluate, grade: () => 'none', money, pct: (v) => `${v}%`, valueSummary },
-    '../components/Shell.jsx': {
-      Card: ({ children }) => React.createElement('section', null, children),
-      CardTitle: ({ children }) => React.createElement('h2', null, children),
-      Button: ({ children, ...p }) => React.createElement('button', p, children),
-      Badge: ({ children }) => React.createElement('span', null, children),
-      Empty: ({ children }) => React.createElement('p', null, children),
-      InfoTip: () => null,
-      OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children),
-    },
+    '../components/Shell.jsx': shellMock,
     '../lib/plain.js': { plain: () => ({ glance: '', lines: [], risk: '' }) },
     '../lib/occupancy.js': { breakEvenCount: () => '6 of 10' },
     '../lib/site.js': { SITE_KIND: '', canAccessDealPlan: () => true },
@@ -218,22 +226,22 @@ test('Offers OptionCard and OptionTable render the 7-step monthlyPlan story with
 
   const offer = { id: 'o1', name: 'A: Lease option', structure: 'master_lease', is_lead: true, inputs: { payment: 2000, optionPrice: 300000, sellerAdvances: 20000, creditPct: 100, exerciseClosing: 5000, buyerCash: 0 } };
   const planRes = monthlyPlan(offer.structure, offer.inputs, TEST_BASE, TEST_PLAN);
-  const story = buildOfferStory(planRes, { base: TEST_BASE, comps: TEST_COMPS });
+  const story = buildOfferStory(planRes, { base: TEST_BASE, comps: TEST_COMPS, offer });
   const cardHtml = renderToStaticMarkup(React.createElement(offersMod.OptionCard, { o: offer, i: 0, story, planHref: '#/d/charlotte/plans/master_lease' }));
   const tableHtml = renderToStaticMarkup(React.createElement(offersMod.OptionTable, { offers: [offer], stories: { o1: story }, planHrefOf: () => '#/d/charlotte/plans/master_lease' }));
 
-  for (const html of [cardHtml, tableHtml]) {
-    assert.match(html, /Your money in/);
-    assert.match(html, /Cash out at refinance/);
-    assert.match(html, /Seller gets in total/);
-    assert.match(html, /Most the seller can get at refi with \$0 from you/);
-    assert.match(html, /Month by month/);
-    assert.match(html, /1st Unit 9 · month 1/);
-    assert.match(html, /Estimated value by income:/);
-    assert.match(html, /Estimated value by comps:/);
-    assert.match(html, /You take home/);
-    assert.doesNotMatch(html, /You keep/);
-  }
+  assert.match(cardHtml, /Units rented table/);
+  assert.match(cardHtml, /You net, contingency used/);
+  assert.match(cardHtml, /In hand after fees and reserve/);
+  assert.match(cardHtml, /Repair loan paid off/);
+  assert.match(cardHtml, /Left for you/);
+  assert.match(cardHtml, /Plans/);
+  assert.match(tableHtml, /Seller paid off/);
+  assert.match(tableHtml, /Repair loan paid off/);
+  assert.match(tableHtml, /Left for you/);
+  assert.match(tableHtml, /Plans/);
+  assert.doesNotMatch(cardHtml, /You keep|Month \d+/i);
+  assert.doesNotMatch(tableHtml, /You keep|Month \d+/i);
 });
 
 test('Plans removes as-is switch, defaults Unit 10 to $30K, uses plain pending wording, and overlays never scroll inside', () => {

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import Switches, { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
+import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
 import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
@@ -175,11 +176,12 @@ function StoryLines({ lines }) {
   );
 }
 
-// Each offer reads as its numbered month-by-month plan story. All math and estimates live in tap/hover overlays.
+// Each offer reads as its units-rented table and refinance plan. All math and estimates live in tap/hover overlays.
 export function OptionCard({ o, i, story, planHref }) {
-  const h = story.headline;
-  const primaryHeadlines = [h.moneyIn, h.cashOut];
-  const secondaryHeadlines = [h.sellerTotal, h.maxSellerAtRefi];
+  const hasUnitsGuide = isUnitsGuide(story?.unitsGuide);
+  const h = story?.headline;
+  const primaryHeadlines = h ? [h.moneyIn, h.cashOut] : [];
+  const secondaryHeadlines = h ? [h.sellerTotal, h.maxSellerAtRefi] : [];
   return (
     <div className="rounded-3xl border-2 border-ink bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -187,59 +189,130 @@ export function OptionCard({ o, i, story, planHref }) {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink font-display text-lg text-white">{letterOf(o, i)}</span>
           {o.is_lead && <span className="rounded-full bg-good/10 px-2.5 py-0.5 text-xs font-semibold text-good">Lead offer</span>}
         </div>
-        {planHref && <a href={planHref} className="inline-flex min-h-9 items-center text-sm font-medium underline">Month by month</a>}
+        {planHref && <a href={planHref} className="inline-flex min-h-9 items-center text-sm font-medium underline">Plans</a>}
       </div>
       <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
 
-      {story.costSummary && <CostSummary summary={story.costSummary} className="mt-4" />}
+      {hasUnitsGuide ? (
+        <UnitsRentedGuide guide={story.unitsGuide} className="mt-4" />
+      ) : (
+        <>
+          {story.costSummary && <CostSummary summary={story.costSummary} className="mt-4" />}
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5">
-        {primaryHeadlines.map((item) => (
-          <div key={item.label} className="rounded-2xl bg-paper p-3.5">
-            <div className="text-xs text-ink-soft">{item.label}</div>
-            <div className={`mt-1 font-display text-2xl font-semibold leading-tight ${item.positive === true ? 'text-good' : item.positive === false ? 'text-red-700' : 'text-ink'}`}>
-              <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
-            </div>
-          </div>
-        ))}
-        {secondaryHeadlines.map((item) => (
-          <div key={item.label} className="rounded-2xl bg-paper p-3">
-            <div className="text-xs text-ink-soft">{item.label}</div>
-            <div className="mt-1 font-display text-xl font-semibold leading-tight text-ink">
-              <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <ol className="mt-4 space-y-3 border-t border-line pt-4">
-        {story.steps.map((step) => (
-          <li key={step.num} className="flex gap-3">
-            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{step.num}</span>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <span className="text-sm font-semibold text-ink">{step.title}</span>
-                {step.when && <span className="text-xs font-medium text-ink-soft">{step.when}</span>}
-              </div>
-              {step.pills && (
-                <div className="flex flex-wrap gap-1.5 pt-0.5">
-                  {step.pills.map((pill, idx) => (
-                    <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2.5 py-1 text-xs font-medium text-ink">
-                      {pill.label}
-                    </OverlayTrigger>
-                  ))}
+          <div className="mt-4 grid grid-cols-2 gap-2.5">
+            {primaryHeadlines.map((item) => (
+              <div key={item.label} className="rounded-2xl bg-paper p-3.5">
+                <div className="text-xs text-ink-soft">{item.label}</div>
+                <div className={`mt-1 font-display text-2xl font-semibold leading-tight ${item.positive === true ? 'text-good' : item.positive === false ? 'text-red-700' : 'text-ink'}`}>
+                  <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
                 </div>
-              )}
-              {step.lines && <StoryLines lines={step.lines} />}
-            </div>
-          </li>
-        ))}
-      </ol>
+              </div>
+            ))}
+            {secondaryHeadlines.map((item) => (
+              <div key={item.label} className="rounded-2xl bg-paper p-3">
+                <div className="text-xs text-ink-soft">{item.label}</div>
+                <div className="mt-1 font-display text-xl font-semibold leading-tight text-ink">
+                  <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <ol className="mt-4 space-y-3 border-t border-line pt-4">
+            {story.steps.map((step) => (
+              <li key={step.num} className="flex gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{step.num}</span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink">{step.title}</span>
+                    {step.when && <span className="text-xs font-medium text-ink-soft">{step.when}</span>}
+                  </div>
+                  {step.pills && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {step.pills.map((pill, idx) => (
+                        <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2.5 py-1 text-xs font-medium text-ink">
+                          {pill.label}
+                        </OverlayTrigger>
+                      ))}
+                    </div>
+                  )}
+                  {step.lines && <StoryLines lines={step.lines} />}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
     </div>
   );
 }
 
 export function OptionTable({ offers, stories, planHrefOf }) {
+  const hasUnitsGuide = offers.some((o) => isUnitsGuide(stories[o.id]?.unitsGuide));
+  if (hasUnitsGuide) {
+    const g = (o) => stories[o.id]?.unitsGuide;
+    const rows = [
+      ['Cost summary', (o) => g(o)?.costSummary ? <CostSummary summary={g(o).costSummary} /> : '—'],
+      ['Seller covered at', (o) => {
+        const ug = g(o);
+        return ug ? (ug.sellerCoveredAt !== null ? `${ug.sellerCoveredAt} units` : 'Not covered') : '—';
+      }],
+      ['You break even at', (o) => {
+        const ug = g(o);
+        return ug ? (ug.breakEvenUnits !== null ? `${ug.breakEvenUnits} units` : 'Above 10') : '—';
+      }],
+      ['Estimated value', (o) => {
+        const r = g(o)?.refi;
+        return r ? <OverlayTrigger lines={r.estimatedValueOverlay} className="font-semibold">{money(r.estimatedValue)}</OverlayTrigger> : '—';
+      }],
+      ['Loan at refi', (o) => {
+        const r = g(o)?.refi;
+        return r ? <OverlayTrigger lines={r.loanOverlay} className="font-semibold">{money(r.loan)} ({r.ltvShownPct}%)</OverlayTrigger> : '—';
+      }],
+      ['In hand after fees and reserve', (o) => {
+        const r = g(o)?.refi;
+        return r ? <OverlayTrigger lines={r.inHandOverlay} className="font-semibold">{money(r.inHand)}</OverlayTrigger> : '—';
+      }],
+      ['Seller paid off', (o) => {
+        const r = g(o)?.refi;
+        return r ? <OverlayTrigger lines={r.sellerPayoffOverlay} className="font-semibold">{r.sellerPayoffText}</OverlayTrigger> : '—';
+      }],
+      ['Repair loan paid off', (o) => {
+        const r = g(o)?.refi;
+        return r ? <OverlayTrigger lines={r.repairLoanOverlay} className="font-semibold">{money(r.repairLoanPayoff)} unused · {money(r.repairLoanPayoffContUsed)} all used</OverlayTrigger> : '—';
+      }],
+      ['Left for you', (o) => {
+        const r = g(o)?.refi;
+        if (!r) return '—';
+        return (
+          <div className="space-y-1 font-display text-lg font-semibold">
+            <div><OverlayTrigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>{money(r.leftForYou)} unused</OverlayTrigger></div>
+            <div><OverlayTrigger lines={r.leftForYouContUsedOverlay} className={r.leftForYouContUsed >= 0 ? 'text-good' : 'text-red-700'}>{money(r.leftForYouContUsed)} all used</OverlayTrigger></div>
+          </div>
+        );
+      }],
+    ];
+    return (
+      <div className="comparison-scroll" tabIndex={0} aria-label="Options side by side; scroll sideways">
+        <table className="comparison-table">
+          <thead>
+            <tr>
+              <th>Compare</th>
+              {offers.map((o, i) => (
+                <th key={o.id}>
+                  <div>Option {letterOf(o, i)}{o.is_lead ? ' ★' : ''}</div>
+                  <div>{titleOf(o)}</div>
+                  {planHrefOf?.(o) && <a href={planHrefOf(o)} className="mt-1 inline-block text-xs font-normal underline">Plans</a>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{rows.map(([label, f]) => <tr key={label}><th>{label}</th>{offers.map((o) => <td key={o.id}>{f(o)}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    );
+  }
+
   const stepNums = [1, 2, 3, 4, 5, 6, 7];
   const stepLabels = {
     1: '1. Take over',
@@ -291,7 +364,7 @@ export function OptionTable({ offers, stories, planHrefOf }) {
               <th key={o.id}>
                 <div>Option {letterOf(o, i)}{o.is_lead ? ' ★' : ''}</div>
                 <div>{titleOf(o)}</div>
-                {planHrefOf?.(o) && <a href={planHrefOf(o)} className="mt-1 inline-block text-xs font-normal underline">Month by month</a>}
+                {planHrefOf?.(o) && <a href={planHrefOf(o)} className="mt-1 inline-block text-xs font-normal underline">Plans</a>}
               </th>
             ))}
           </tr>
@@ -354,7 +427,7 @@ function SellerSummaryEditor({ offer, onPatch, onReset }) {
 }
 
 // Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to the buyer.
-export default function Offers({ deal, canSave, onlyShared, me, role, preview }) {
+export default function Offers({ deal, canSave, onlyShared, me, role, preview, leadGuide: leadGuideProp }) {
   const owner = !!canSave;
   const model = useDealModel(deal, { owner, onlyShared });
   const { offers, setOffers, base, setBase: saveBase, later, saved } = model;
@@ -363,9 +436,22 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
   const [leadErr, setLeadErr] = useState('');
   const [planState, setPlanState] = useState({ lib: null, plan: null });
   const [comps, setComps] = useState([]);
+  const [fetchedLeadGuide, setFetchedLeadGuide] = useState(null);
   const syncedLeadRef = useRef(false);
   const canPlan = Boolean(owner && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) && loadPlanLib);
   const canComps = Boolean(owner || role === 'realtor' || role === 'reviewer');
+
+  useEffect(() => {
+    if (owner || leadGuideProp !== undefined) return () => {};
+    let alive = true;
+    supabase.rpc('commercial_get_lead_guide', { p_deal: deal.id }).then(({ data }) => {
+      if (!alive) return;
+      const raw = Array.isArray(data) ? data[0] : data;
+      const g = raw?.guide || raw || null;
+      setFetchedLeadGuide(isUnitsGuide(g) ? g : null);
+    });
+    return () => { alive = false; };
+  }, [deal.id, owner, leadGuideProp]);
 
   useEffect(() => {
     let alive = true;
@@ -396,33 +482,26 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
 
   const computeSellerSummary = (offer, nextInputs, nextBase, force = false) => {
     if (!owner || !canPlan || !planState.lib || !planState.plan) return undefined;
-    if (!force && offer?.seller_summary?.locked) return offer.seller_summary;
     return planState.lib.offerSellerSummary({ ...offer, inputs: nextInputs }, nextBase, planState.plan, comps, force);
   };
 
-  // Ensure an unlocked lead offer gets a fresh seller_summary once deal_plan loads.
+  // Ensure the lead offer gets a fresh seller_summary.guide (and unlocked seller_summary terms) once deal_plan loads.
   useEffect(() => {
     if (syncedLeadRef.current || !owner || !canPlan || !planState.lib || !planState.plan || !offers?.length) return;
     const lead = offers.find((x) => x.is_lead);
-    if (!lead || lead.seller_summary?.locked) { syncedLeadRef.current = true; return; }
-    const hasTerms = Array.isArray(lead.seller_summary?.terms) && lead.seller_summary.terms.length > 0;
-    const hasGuide = Boolean(lead.seller_summary?.guide?.cost?.length);
-    if (!hasTerms || !hasGuide) {
-      syncedLeadRef.current = true;
-      const summary = computeSellerSummary(lead, lead.inputs, base, false);
-      if (summary) {
-        setOffers((list) => list.map((x) => (x.id === lead.id ? { ...x, seller_summary: summary } : x)));
-        void supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', lead.id);
-      }
-    } else {
-      syncedLeadRef.current = true;
+    if (!lead) { syncedLeadRef.current = true; return; }
+    syncedLeadRef.current = true;
+    const summary = computeSellerSummary(lead, lead.inputs, base, false);
+    if (summary && JSON.stringify(summary) !== JSON.stringify(lead.seller_summary)) {
+      setOffers((list) => list.map((x) => (x.id === lead.id ? { ...x, seller_summary: summary } : x)));
+      void supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', lead.id);
     }
   }, [owner, canPlan, planState, offers, base, comps]);
 
   const patch = (id, p) => {
     const existing = (offers || []).find((o) => o.id === id);
     const nextPatch = { ...p };
-    if (owner && existing && 'inputs' in p && !('seller_summary' in p) && !existing.seller_summary?.locked) {
+    if (owner && existing && 'inputs' in p && !('seller_summary' in p)) {
       const summary = computeSellerSummary(existing, p.inputs, base, false);
       if (summary) nextPatch.seller_summary = summary;
     }
@@ -435,7 +514,6 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
     if (owner && canPlan && planState.lib && planState.plan && offers?.length) {
       const updates = [];
       setOffers((list) => list.map((o) => {
-        if (o.seller_summary?.locked) return o;
         const summary = computeSellerSummary(o, o.inputs, nextBase, false);
         if (!summary) return o;
         updates.push([o.id, summary]);
@@ -465,7 +543,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
     const { error } = await supabase.rpc('commercial_set_lead_offer', { p_deal: deal.id, p_offer: o.id });
     setLeadErr(error ? error.message : '');
     if (!error) {
-      const nextSummary = !o.seller_summary?.locked ? computeSellerSummary(o, o.inputs, base, false) : undefined;
+      const nextSummary = computeSellerSummary(o, o.inputs, base, false);
       setOffers((list) => list.map((x) => (x.id === o.id ? { ...x, is_lead: true, ...(nextSummary ? { seller_summary: nextSummary } : {}) } : { ...x, is_lead: false })));
       if (nextSummary) {
         await supabase.from('commercial_offers').update({ seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', o.id);
@@ -480,12 +558,19 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
       return [o.id, planState.lib.offerPlanStory(o, base, planState.plan, comps)];
     }
     const baseStory = buildLeadStory(o.structure, evals[o.id], { base, comps });
-    const guide = o.seller_summary?.guide;
-    if (guide?.cost?.length) {
+    const g = (leadGuideProp && isUnitsGuide(leadGuideProp) ? leadGuideProp : null)
+      || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
+      || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
+    if (g) {
+      baseStory.unitsGuide = g;
+      if (g.costSummary) baseStory.costSummary = g.costSummary;
+      else if (g.cost?.length) baseStory.costSummary = { heading: g.costHeading, headingOverlay: g.costHeadingOverlay || [], lines: g.cost };
+    } else if (o.seller_summary?.guide?.cost?.length) {
+      const guide = o.seller_summary.guide;
       baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
     }
     return [o.id, baseStory];
-  })), [sortedOffers, evals, base, comps, canPlan, planState]);
+  })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide]);
 
   if (offers === null) return <Empty>Loading…</Empty>;
   const cur = sortedOffers.find((o) => o.id === active) || sortedOffers[0];
@@ -560,6 +645,11 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                   return <NumberRow key={k} label={l} unit={u} value={v ?? d} changed={v !== undefined && v !== d}
                     onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
                 })}
+                {owner && cur.structure !== 'cash' && !STRUCTURES[cur.structure].fields.some(([k]) => k === 'shortCarry') && (
+                  <NumberRow label="Short months carried by the repair loan ($)" unit="$"
+                    value={cur.inputs?.shortCarry ?? 0} changed={Boolean(cur.inputs?.shortCarry)}
+                    onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, shortCarry: nv } })} />
+                )}
                 {owner && (
                   <>
                     <DictatedField as="textarea" aria-label="Notes on this offer" value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"

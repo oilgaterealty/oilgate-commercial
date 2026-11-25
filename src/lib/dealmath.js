@@ -8,10 +8,8 @@ export const BASE_FIELDS = [
   ['vacancyPct', 'Vacancy + collection loss', '%'],
   ['taxes', 'Taxes / yr', '$'],
   ['insurance', 'Insurance / yr', '$'],
-  ['utilities', 'Owner-paid utilities / yr', '$'],
-  ['admin', 'Grounds + admin / yr', '$'],
-  ['turns', 'Turns / yr', '$'],
-  ['mgmtPct', 'Management + maintenance (% of rent collected)', '%'],
+  ['waterMo', 'Water / mo', '$'],
+  ['emptyUnitUtilMo', 'Utilities per empty unit / mo', '$'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
   ['value', 'Estimated value after repairs', '$'],
   ['rehab', 'Rent-ready budget', '$'],
@@ -27,12 +25,12 @@ export const BASE_FIELDS = [
 // Facts about the building (from the rent roll, bills and seller records). Only the owner can change these.
 // Everything else is an assumption anyone with access can try a what-if on.
 // Rent is a what-if anyone on the team can try; only the owner's changes save.
-export const KNOWN_BASE = ['taxes', 'insurance', 'utilities', 'admin', 'turns'];
+export const KNOWN_BASE = ['taxes', 'insurance', 'waterMo', 'emptyUnitUtilMo'];
 
 export const BASE_DEFAULTS = {
   units: 10, tenthUnitRepair: 30000, rent: 0, vacancyPct: 7,
-  taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
-  mgmtPct: 10, reservesPerUnit: 300, value: 0, rehab: 0,
+  taxes: 0, insurance: 0, waterMo: 0, emptyUnitUtilMo: 0, utilities: 0, admin: 0, turns: 0,
+  mgmtPct: 0, reservesPerUnit: 300, value: 0, rehab: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
 };
 
@@ -45,9 +43,10 @@ export const STRUCTURES = {
       ['sellerAdvances', 'Seller’s upfront money, added to the price', '$'],
       ['creditPct', 'Share of each payment that counts toward the price', '%'],
       ['exerciseClosing', 'Closing costs when we buy', '$'],
+      ['shortCarry', 'Short months carried by the repair loan ($)', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
-    defaults: { payment: 0, optionPrice: 0, sellerAdvances: 0, creditPct: 100, exerciseClosing: 0, buyerCash: 0 },
+    defaults: { payment: 0, optionPrice: 0, sellerAdvances: 0, creditPct: 100, exerciseClosing: 0, shortCarry: 0, buyerCash: 0 },
   },
   wrap: {
     label: 'Buy now, seller is paid monthly',
@@ -58,7 +57,7 @@ export const STRUCTURES = {
       ['sellerLoanPayment', 'Seller’s own loan payment / mo (0 = unknown)', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
-    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, buyerCash: 0 },
+    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, shortCarry: 0, buyerCash: 0 },
   },
   partnership: {
     label: 'Partner now, buy out later',
@@ -70,7 +69,7 @@ export const STRUCTURES = {
       ['closing', 'Closing costs at buyout', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
-    defaults: { buyout: 0, sellerAdvances: 0, stepUp: 0, monthsToBuyout: 12, closing: 0, buyerCash: 0 },
+    defaults: { buyout: 0, sellerAdvances: 0, stepUp: 0, monthsToBuyout: 12, closing: 0, shortCarry: 0, buyerCash: 0 },
   },
   cash: {
     label: 'Straight sale with a bank loan',
@@ -94,7 +93,7 @@ export const STRUCTURES = {
       ['buyerCash', 'Your cash in', '$'],
       ['addFundToBuyout', 'Add his rehab money to the buyout', 'bool'],
     ],
-    defaults: { sellerFund: 0, fillTarget: 7, buyerSplitPct: 50, refiMonth: 12, closing: 0, buyerCash: 0, addFundToBuyout: false },
+    defaults: { sellerFund: 0, fillTarget: 7, buyerSplitPct: 50, refiMonth: 12, closing: 0, shortCarry: 0, buyerCash: 0, addFundToBuyout: false },
   },
 };
 
@@ -317,7 +316,20 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const x = evalResult.inputs;
   const val = valueSummary({ base: { ...b, ...base }, noi: o.noi, units: b.units, comps });
   const rentMo = o.egi / 12;
-  const runningMo = (o.mgmt + o.fixed + o.reserves) / 12;
+  const taxesMo = b.taxes / 12;
+  const insMo = b.insurance / 12;
+  const waterMo = num(b.waterMo, 0);
+  const reservesMo = o.reserves / 12;
+  const runningMo = taxesMo + insMo + waterMo + reservesMo;
+  const runningParts = [
+    taxesMo > 0 ? `Taxes ${money(taxesMo)}/mo` : null,
+    insMo > 0 ? `Insurance ${money(insMo)}/mo (estimate)` : null,
+    waterMo > 0 ? `Water ${money(waterMo)}/mo (estimate)` : null,
+    reservesMo > 0 ? `Reserves ${money(reservesMo)}/mo (estimate)` : null,
+  ].filter(Boolean);
+  const runningOverlay = runningParts.length
+    ? [`${runningParts.join(' + ')} = ${money(runningMo)}/mo.`]
+    : ['No running costs entered.'];
   const paymentMo = evalResult.sellerMonthly ?? (o.cashFlow / 12 - evalResult.keepMonthly);
   const fullLeft = evalResult.keepMonthly;
 
@@ -388,7 +400,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
       lines: structure === 'seller_rehab'
         ? [
             { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
-            { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
+            ...(runningMo > 0 ? [{ label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: runningOverlay }] : []),
             { label: 'Seller gets', value: `${money(evalResult.sellerMonthly)}/mo`, overlay: sellerOverlay },
             {
               label: 'Left over each month after every bill',
@@ -399,7 +411,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
           ]
         : [
             { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
-            { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
+            ...(runningMo > 0 ? [{ label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: runningOverlay }] : []),
             { label: structure === 'cash' ? 'Bank payment' : 'Seller payment', value: `${money(paymentMo)}/mo`, overlay: sellerOverlay },
             {
               label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month`,

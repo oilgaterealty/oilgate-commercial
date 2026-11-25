@@ -11,12 +11,12 @@ export function plain(structure, r) {
     return {
       glance: 'We run the whole building now and buy it later at a price locked in today.',
       owns: 'Seller, until we buy',
-      payoff: `When we buy, ${months(r.extra[1][1])}`,
+      payoff: 'Once all 10 units are rented',
       cash: cashUp,
       risk: 'The seller keeps the building and their loan until we buy',
       lines: [
         'We lease the whole building and run it. The seller keeps the deed and their loan, and we hold a locked price to buy it later.',
-        `The seller gets ${money(x.payment)}/mo once it’s full${x.sellerAdvances ? `, fronts ${money(x.sellerAdvances)} for rent-ready work and lease-up, and gets that back in the price` : ''}. We buy for ${money(buyAt)}, ${months(r.extra[1][1])}, once a bank refinance can cover it.`,
+        `The seller gets ${money(x.payment)}/mo once it’s full${x.sellerAdvances ? `, fronts ${money(x.sellerAdvances)} for rent-ready work and lease-up, and gets that back in the price` : ''}. We buy for ${money(buyAt)} once all 10 units are rented and a bank refinance can cover it.`,
       ],
     };
   }

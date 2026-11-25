@@ -175,22 +175,30 @@ test('Option E includes explanatory overlay and renders in Card, Table, Plans, a
   assert.ok(JSON.stringify(sellerSum).includes(OPTION_E_OVERLAY));
   assert.match(plainSummary.risk, /His rehab money is only paid back through his share of the rent/);
 
+  const shellMock = {
+    Card: ({ children }) => React.createElement('section', null, children),
+    Button: ({ children, ...p }) => React.createElement('button', p, children),
+    Badge: ({ children }) => React.createElement('span', null, children),
+    Empty: ({ children }) => React.createElement('p', null, children),
+    InfoTip: () => null,
+    OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children),
+  };
+  const costSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': shellMock });
+  const unitsGuideMod = loadJsx('src/components/UnitsRentedGuide.jsx', {
+    './CostSummary.jsx': costSummaryMod.default,
+    './Shell.jsx': shellMock,
+    '../lib/dealmath.js': { money },
+  });
   const offersMod = loadJsx('src/views/Offers.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../components/Dictation.jsx': { DictatedField: (p) => React.createElement(p.as || 'input', p) },
     '../lib/supabase.js': { supabase: {} },
     '../lib/useDealModel.js': { useDealModel: () => ({}) },
     '../components/Switches.jsx': { __esModule: true, default: () => null, SendWhatIf: () => null },
-    '../components/CostSummary.jsx': { __esModule: true, default: () => null },
+    '../components/CostSummary.jsx': costSummaryMod,
+    '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary },
-    '../components/Shell.jsx': {
-      Card: ({ children }) => React.createElement('section', null, children),
-      Button: ({ children, ...p }) => React.createElement('button', p, children),
-      Badge: ({ children }) => React.createElement('span', null, children),
-      Empty: ({ children }) => React.createElement('p', null, children),
-      InfoTip: () => null,
-      OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children),
-    },
+    '../components/Shell.jsx': shellMock,
     '../lib/plain.js': { plain },
     '../lib/occupancy.js': { breakEvenCount: () => '6 of 10 units' },
     '../lib/site.js': { SITE_KIND: '', canAccessDealPlan: () => true },

@@ -52,8 +52,9 @@ export default function Seller({ deal, me, preview }) {
     if (!error) setLevel(l);
   };
 
-  const summary = sellerOffer?.seller_summary && Array.isArray(sellerOffer.seller_summary.terms) && sellerOffer.seller_summary.terms.length > 0
-    ? sellerOffer.seller_summary
+  const rawSummary = sellerOffer?.seller_summary;
+  const summary = rawSummary && ((Array.isArray(rawSummary.sellerTable) && rawSummary.sellerTable.length > 0) || (Array.isArray(rawSummary.terms) && rawSummary.terms.length > 0))
+    ? rawSummary
     : null;
 
   return (

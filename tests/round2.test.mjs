@@ -114,18 +114,18 @@ test('Task 0: always 10 units, no Airbnb anywhere, added unit follows optional:t
   }
 });
 
-test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Setup, and To inspect systems items', () => {
-  const cs = buildCostSummary(SAMPLE_BASE, SAMPLE_PLAN);
-  assert.equal(moneyK(69000), '$69K');
-  assert.equal(cs.heading, 'Whole job about $69K');
+test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Setup, Contingency, and skips $0 items', () => {
+  const cs = buildCostSummary(SAMPLE_BASE, { ...SAMPLE_PLAN, contingency: 5000 });
+  assert.equal(moneyK(74000), '$74K');
+  assert.equal(cs.heading, 'Whole job about $74K');
   assert.equal(cs.lines[0].label, 'Units $55K');
   assert.equal(cs.lines[0].detail, 'Unit 4 $28K, Unit 3 $12K');
   assert.equal(cs.lines[1].label, 'Building $8K');
   assert.equal(cs.lines[1].detail, 'exterior $5K, common areas $3K');
   assert.equal(cs.lines[2].label, 'Setup about $6K');
   assert.equal(cs.lines[2].detail, 'security, eviction, title, permits');
-  assert.equal(cs.lines[3].label, 'Electric and heat: $0, to inspect');
-  assert.ok(cs.lines[3].overlay.includes('Not budgeted yet; checked at inspection.'));
+  assert.equal(cs.lines[3].label, 'Contingency $5K');
+  assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
   assert.ok(cs.lines[0].overlay.some((l) => l.includes('Unit 4 needs its zoning certificate')));
 
   // CostSummary renders cleanly without <p>, <small>, or <caption>
@@ -133,13 +133,13 @@ test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Set
     './Shell.jsx': { OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children) },
   });
   const html = renderToStaticMarkup(React.createElement(CostSummary, { summary: cs }));
-  assert.match(html, /Whole job about \$69K/);
+  assert.match(html, /Whole job about \$74K/);
   assert.match(html, /Unit 4 \$28K, Unit 3 \$12K/);
-  assert.match(html, /Electric and heat: \$0, to inspect/);
-  assert.doesNotMatch(html, /<p\b|<small\b|<caption\b/);
+  assert.match(html, /Contingency \$5K/);
+  assert.doesNotMatch(html, /to inspect|\$0,|<p\b|<small\b|<caption\b/);
 });
 
-test('Task 2 & 3: buildSellerSummary produces plain seller terms/steps, respects locked, and Seller.jsx renders it', () => {
+test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, refreshes guide when locked, and Seller.jsx renders it', () => {
   const res = monthlyPlan('master_lease', { payment: 2500, optionPrice: 320000, sellerAdvances: 10000, creditPct: 100, exerciseClosing: 4000 }, SAMPLE_BASE, SAMPLE_PLAN);
   const offer = { id: 'o1', name: 'A: Lease now, buy later', structure: 'master_lease', inputs: {} };
   const summary = buildSellerSummary(offer, res, { base: SAMPLE_BASE });
@@ -147,17 +147,21 @@ test('Task 2 & 3: buildSellerSummary produces plain seller terms/steps, respects
   assert.equal(summary.version, 1);
   assert.equal(summary.title, 'Lease now, buy later');
   assert.ok(!summary.title.includes('A:'));
+  assert.equal(summary.sellerTable.length, 11);
   assert.ok(summary.terms.some((t) => t.label === 'Your current loan' && t.value.includes('(or what you owe)')));
-  assert.deepEqual(summary.steps.map((s) => s.title), ['Take over', 'Rehab', 'Fill', 'Full', 'Refinance']);
+  assert.deepEqual(summary.steps.map((s) => s.title), ['Take over', 'Repairs', 'Rent pays your costs first', 'Refinance']);
   assert.ok(summary.steps[1].detail.includes('Whole job about $69K'));
-  // Never exposes buyer returns or option letters
-  assert.doesNotMatch(JSON.stringify({ title: summary.title, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR/i);
+  // Never exposes buyer returns, option letters, or months
+  assert.doesNotMatch(JSON.stringify({ title: summary.title, intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR|Month \d+/i);
 
-  // Locked summary is never overwritten
+  // Locked summary preserves locked terms/steps while refreshing guide
   const locked = { version: 1, locked: true, title: 'Custom locked title', terms: [{ label: 'Price', value: 'Custom' }], steps: [] };
-  assert.equal(nextSellerSummary({ ...offer, seller_summary: locked }, res, { base: SAMPLE_BASE }), locked);
+  const refreshed = nextSellerSummary({ ...offer, seller_summary: locked }, res, { base: SAMPLE_BASE });
+  assert.equal(refreshed.title, 'Custom locked title');
+  assert.deepEqual(refreshed.terms, locked.terms);
+  assert.equal(refreshed.guide.rows.length, 11);
 
-  // Seller.jsx calls commercial_get_seller_offer and LeadOfferCard renders summary + fallback
+  // Seller.jsx calls commercial_get_seller_offer and LeadOfferCard renders sellerTable + refiLine + fallback
   const sellerSrc = read('src/views/Seller.jsx');
   assert.match(sellerSrc, /commercial_get_seller_offer/);
 
@@ -176,8 +180,10 @@ test('Task 2 & 3: buildSellerSummary produces plain seller terms/steps, respects
   ));
   assert.match(html, /The offer — Lease now, buy later/);
   assert.match(html, /\(or what you owe\)/);
-  assert.match(html, /Month 12/);
+  assert.match(html, /Units rented/);
+  assert.match(html, /Your costs covered/);
   assert.match(html, /Whole job about \$69K/);
+  assert.doesNotMatch(html, /Month 12/);
 
   const fallbackHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, {
     deal: { id: 'd1', slug: 'demo' },

@@ -79,6 +79,8 @@ export function validProofItems(content = {}) {
     .filter((item) => item.title || item.detail);
 }
 
+const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
+
 // Single plain-English offer card shown to the seller (and lead_guest). Never renders multiple options.
 export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
   const lead = normalizeLeadOffer(content);
@@ -87,7 +89,9 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState('');
 
+  const hasSellerTable = Boolean(summary && Array.isArray(summary.sellerTable) && summary.sellerTable.length > 0);
   const hasSummary = Boolean(summary && Array.isArray(summary.terms) && summary.terms.length > 0);
+  const firstCoveredUnits = hasSellerTable ? (summary.sellerTable.find((r) => r.covered === 'yes')?.units ?? null) : null;
   const rows = hasSummary
     ? summary.terms.map((t) => ({
         label: String(t?.label || '').trim(),
@@ -105,7 +109,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
         { label: 'Lender clearance condition', value: lead.lender_condition, overlay: [] },
       ];
 
-  const cleanTitle = hasSummary && summary.title
+  const cleanTitle = (hasSummary || hasSellerTable) && summary?.title
     ? String(summary.title).replace(/^(Option\s+)?[A-Z]\s*:\s*/i, '').trim()
     : '';
 
@@ -129,7 +133,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
     <Card className="border-2 border-ink">
       <CardTitle
         aside={
-          preview && !hasSummary && !lead.price ? (
+          preview && !hasSummary && !hasSellerTable && !lead.price ? (
             <a href={`#/d/${deal.slug}/seller-page`} className="text-sm font-medium underline">
               Pick lead terms in Seller page
             </a>
@@ -138,18 +142,56 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
       >
         {cleanTitle ? `The offer — ${cleanTitle}` : 'The offer'}
       </CardTitle>
-      <dl className="divide-y divide-line">
-        {rows.map((row) => (
-          <div key={row.label} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[220px_1fr] sm:gap-4">
-            <dt className="text-sm font-semibold text-ink">{row.label}</dt>
-            <dd className="text-sm leading-relaxed text-ink">
-              {row.overlay.length > 0 && OverlayTrigger
-                ? <OverlayTrigger lines={row.overlay}>{row.value}</OverlayTrigger>
-                : row.value}
-            </dd>
+      {hasSellerTable ? (
+        <div className="space-y-4">
+          <div className="text-sm leading-relaxed text-ink">
+            {summary.intro || 'I take over the leasing and the repairs. Rent pays your costs first. Once every unit is rented, I buy the building through a refinance.'}
           </div>
-        ))}
-      </dl>
+          <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Units rented">
+            <table className="w-full border-collapse text-right text-sm tabular-nums">
+              <thead className="bg-ink text-xs text-white">
+                <tr>
+                  <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
+                  <th scope="col" className="px-3 py-2.5">Rent in</th>
+                  <th scope="col" className="px-3 py-2.5 text-center">Your costs covered</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.sellerTable.map((row) => {
+                  const isFirstYes = firstCoveredUnits !== null && row.units === firstCoveredUnits;
+                  return (
+                    <tr key={row.units} className={`border-t border-line ${isFirstYes ? 'bg-emerald-50 font-semibold' : 'bg-white'}`}>
+                      <th scope="row" className="px-3 py-2 text-left">{row.units}</th>
+                      <td className="px-3 py-2">{fmtDollars(row.rentIn)}</td>
+                      <td className={`px-3 py-2 text-center ${row.covered === 'yes' ? 'text-good font-semibold' : row.covered === 'partly' ? 'text-amber-800' : 'text-ink-soft'}`}>
+                        {row.covered}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {summary.refiLine && (
+            <div className="rounded-2xl bg-paper p-3.5 text-sm font-medium text-ink">
+              {summary.refiLine}
+            </div>
+          )}
+        </div>
+      ) : (
+        <dl className="divide-y divide-line">
+          {rows.map((row) => (
+            <div key={row.label} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[220px_1fr] sm:gap-4">
+              <dt className="text-sm font-semibold text-ink">{row.label}</dt>
+              <dd className="text-sm leading-relaxed text-ink">
+                {row.overlay.length > 0 && OverlayTrigger
+                  ? <OverlayTrigger lines={row.overlay}>{row.value}</OverlayTrigger>
+                  : row.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {onAsk && (
         <div className="mt-5 space-y-3 border-t border-line pt-4">
           <div className="flex flex-wrap gap-2">

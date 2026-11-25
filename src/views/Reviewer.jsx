@@ -11,6 +11,7 @@ import UnitGallery from '../components/UnitGallery.jsx';
 import Offers from './Offers.jsx';
 import StrategyIdeas from './StrategyIdeas.jsx';
 import { seenBy } from '../lib/visibility.js';
+import { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 
 function Facts({ deal, numbers }) {
   const [base, setBase] = useState(null);
@@ -43,7 +44,19 @@ function Facts({ deal, numbers }) {
 // Reviewer and viewer. Each sees only what the owner shared with that role.
 export default function Reviewer({ deal, me, role, preview, tab }) {
   const [rows, load] = useUploads(deal);
+  const [leadGuide, setLeadGuide] = useState(null);
   const viewer = role === 'viewer' || role === 'guest';
+  useEffect(() => {
+    if (viewer) return;
+    let alive = true;
+    supabase.rpc('commercial_get_lead_guide', { p_deal: deal.id }).then(({ data }) => {
+      if (!alive) return;
+      const raw = Array.isArray(data) ? data[0] : data;
+      const g = raw?.guide || raw || null;
+      setLeadGuide(isUnitsGuide(g) ? g : null);
+    });
+    return () => { alive = false; };
+  }, [deal.id, viewer]);
   const shared = preview ? seenBy(role, rows) : rows || [];
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
@@ -63,7 +76,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           {!viewer && (
             <section>
               <h2 className="mb-3 font-display text-2xl font-semibold">The lead offer</h2>
-              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} />
+              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} leadGuide={leadGuide} />
             </section>
           )}
           <div className="grid gap-6 lg:grid-cols-2">
