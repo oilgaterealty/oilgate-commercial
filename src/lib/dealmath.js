@@ -3,8 +3,7 @@
 // Building numbers shared by every offer. Each deal's real numbers live in its private database row,
 // never in this (public) code. These blanks are only a starting template.
 export const BASE_FIELDS = [
-  ['units', 'Units', 'n'],
-  ['tenthUnitRepair', 'Extra repair cost if there are 10 units', '$'],
+  ['tenthUnitRepair', 'Added unit rehab', '$'],
   ['rent', 'Rent per unit / mo', '$'],
   ['vacancyPct', 'Vacancy + collection loss', '%'],
   ['taxes', 'Taxes / yr', '$'],
@@ -14,7 +13,7 @@ export const BASE_FIELDS = [
   ['turns', 'Turns / yr', '$'],
   ['mgmtPct', 'Management + maintenance (% of rent collected)', '%'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
-  ['value', 'Value after rent-ready (ARV)', '$'],
+  ['value', 'Estimated value after repairs', '$'],
   ['rehab', 'Rent-ready budget', '$'],
   ['refiRate', 'Refinance rate', '%'],
   ['refiYears', 'Refinance term (years)', 'n'],
@@ -25,28 +24,14 @@ export const BASE_FIELDS = [
   ['refiReserve', 'Cash the bank holds back at refinance', '$'],
 ];
 
-// How many units can be switched to Airbnb (the switch shows each of these).
-export const STR_UNIT_CHOICES = [0, 1, 2, 3];
-export const strUnitOptions = () => STR_UNIT_CHOICES.map((n) => [n, n === 0 ? 'None' : `${n} unit${n > 1 ? 's' : ''}`]);
-
-// Short-term rental (Airbnb) assumptions. Defaults are placeholders; each deal's real numbers live in its private row.
-export const STR_FIELDS = [
-  ['strNightly', 'Nightly rate', '$'],
-  ['strOccPct', 'Nights booked', '%'],
-  ['strFeesPct', 'Platform fees (% of bookings)', '%'],
-  ['strCleaningPerStay', 'Cleaning fee charged per stay', '$'],
-  ['strNightsPerStay', 'Average nights per stay', 'n'],
-  ['strCostsMo', 'Extra costs per Airbnb unit / mo (utilities, supplies, cleaning)', '$'],
-];
-
 // Facts about the building (from the rent roll, bills and seller records). Only the owner can change these.
 // Everything else is an assumption anyone with access can try a what-if on.
-// Units, rent and the Airbnb switch are what-ifs anyone on the team can try; only the owner's changes save.
+// Rent is a what-if anyone on the team can try; only the owner's changes save.
 export const KNOWN_BASE = ['taxes', 'insurance', 'utilities', 'admin', 'turns'];
 
 export const BASE_DEFAULTS = {
-  units: 0, tenthUnitRepair: 30000, rent: 0, vacancyPct: 7,
-  strUnits: 0, strNightly: 0, strOccPct: 0, strFeesPct: 15, strCleaningPerStay: 0, strNightsPerStay: 3, strCostsMo: 0, taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
+  units: 10, tenthUnitRepair: 30000, rent: 0, vacancyPct: 7,
+  taxes: 0, insurance: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 10, reservesPerUnit: 300, value: 0, rehab: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
 };
@@ -98,6 +83,19 @@ export const STRUCTURES = {
     ],
     defaults: { price: 0, downPct: 25, rate: 7.5, years: 30, closingPct: 2 },
   },
+  seller_rehab: {
+    label: 'Seller funds part of the rehab, buyout at refi',
+    fields: [
+      ['sellerFund', 'Seller’s rehab money', '$'],
+      ['fillTarget', 'Units filled before you share in the rent', 'n'],
+      ['buyerSplitPct', 'Your share of what’s left after that', '%'],
+      ['refiMonth', 'Refinance month', 'n'],
+      ['closing', 'Closing costs at the refinance', '$'],
+      ['buyerCash', 'Your cash in', '$'],
+      ['addFundToBuyout', 'Add his rehab money to the buyout', 'bool'],
+    ],
+    defaults: { sellerFund: 0, fillTarget: 7, buyerSplitPct: 50, refiMonth: 12, closing: 0, buyerCash: 0, addFundToBuyout: false },
+  },
 };
 
 const num = (v, d = 0) => (Number.isFinite(+v) && v !== '' && v !== null ? +v : d);
@@ -116,14 +114,14 @@ export function pv(ratePct, years, payment) {
 
 export function operating(baseIn = {}) {
   const b = { ...BASE_DEFAULTS, ...Object.fromEntries(Object.entries(baseIn).map(([k, v]) => [k, num(v, BASE_DEFAULTS[k])])) };
-  const str = strMonthly(b);
-  const strUnits = Math.max(0, Math.min(b.units, Math.round(b.strUnits)));
-  const ltrUnits = b.units - strUnits;
-  const gpr = ltrUnits * b.rent * 12 + strUnits * str.gross * 12;
-  const egi = ltrUnits * b.rent * 12 * (1 - b.vacancyPct / 100) + strUnits * str.collected * 12;
+  // All units are long-term rentals; ignore any legacy short-term values.
+  const strUnits = 0;
+  const ltrUnits = b.units;
+  const gpr = ltrUnits * b.rent * 12;
+  const egi = gpr * (1 - b.vacancyPct / 100);
   const mgmt = egi * (b.mgmtPct / 100);
-  const fixed = b.taxes + b.insurance + b.utilities + b.admin + b.turns + strUnits * b.strCostsMo * 12;
-  const extraRepair = b.units >= 10 ? b.tenthUnitRepair : 0;
+  const fixed = b.taxes + b.insurance + b.utilities + b.admin + b.turns;
+  const extraRepair = num(b.tenthUnitRepair, 0);
   b.rehab += extraRepair;
   const noi = egi - mgmt - fixed;
   const reserves = b.units * b.reservesPerUnit;
@@ -133,16 +131,7 @@ export function operating(baseIn = {}) {
   const refiLoan = Math.min(loanByDscr, loanByLtv);
   const refiNet = refiLoan - (refiLoan * b.refiFeesPct) / 100 - b.refiFeesFlat - b.refiReserve;
   const refiPayment = pmt(b.refiRate, b.refiYears, refiLoan);
-  return { b, str, strUnits, ltrUnits, extraRepair, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
-}
-
-// One Airbnb unit, per month: what guests pay (gross), and what we collect after platform fees.
-export function strMonthly(b) {
-  const nights = 30.4 * (b.strOccPct / 100);
-  const stays = b.strNightsPerStay > 0 ? nights / b.strNightsPerStay : 0;
-  const gross = nights * b.strNightly + stays * b.strCleaningPerStay;
-  const collected = gross * (1 - b.strFeesPct / 100);
-  return { nights, gross, collected, net: collected - b.strCostsMo };
+  return { b, strUnits, ltrUnits, extraRepair, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
 }
 
 // Occupancy needed to cover fixed costs, reserves and the yearly payment.
@@ -151,7 +140,12 @@ const breakEven = (o, debtYearly) => (o.gpr ? (o.fixed + o.reserves + debtYearly
 export function evaluate(structure, inputsIn = {}, baseIn = {}) {
   const o = operating(baseIn);
   const def = STRUCTURES[structure]?.defaults || {};
-  const x = { ...def, ...Object.fromEntries(Object.entries(inputsIn).map(([k, v]) => [k, num(v, def[k])])) };
+  const x = {
+    ...def,
+    ...Object.fromEntries(
+      Object.entries(inputsIn || {}).map(([k, v]) => [k, typeof def[k] === 'boolean' ? Boolean(v) : num(v, def[k])])
+    ),
+  };
   let debtMonthly = 0, sellerMonthly = 0, sellerNet = null, allIn = 0, cashIn = num(x.buyerCash), extra = [];
 
   if (structure === 'master_lease') {
@@ -187,6 +181,16 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     allIn = x.price + (x.price * x.closingPct) / 100 + o.b.rehab;
     sellerMonthly = null; // paid once at closing
     extra = [['Seller is paid at closing', x.price, '$'], ['Loan amount', loan, '$']];
+  } else if (structure === 'seller_rehab') {
+    debtMonthly = o.refiPayment;
+    const buyerShare = Math.max(0, Math.min(100, x.buyerSplitPct)) / 100;
+    sellerMonthly = Math.max(0, (o.cashFlow / 12) * (1 - buyerShare));
+    allIn = (x.addFundToBuyout ? x.sellerFund : 0) + x.closing + cashIn;
+    extra = [
+      ['Seller’s rehab money', x.sellerFund, '$'],
+      ['Refinance month', x.refiMonth, 'mo'],
+      ['You keep after refinance', o.cashFlow / 12 - o.refiPayment, '$/mo'],
+    ];
   }
 
   if (structure !== 'cash') allIn += o.extraRepair;
@@ -225,6 +229,19 @@ export function grade(metric, v) {
 export const money = (v) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : (v < 0 ? '−$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US'));
 export const pct = (v, d = 0) => (v === null || !Number.isFinite(v) ? '—' : (v * 100).toFixed(d) + '%');
 
+export function moneyK(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  if (abs === 0) return '$0';
+  const sign = v < 0 ? '−' : '';
+  if (abs < 500) return `${sign}$${Math.round(abs).toLocaleString('en-US')}`;
+  return `${sign}$${Math.round(abs / 1000).toLocaleString('en-US')}K`;
+}
+
+export function sellerLoanText(amount, forSeller = false) {
+  return `${money(amount)} (${forSeller ? 'or what you owe' : 'or what he owes'})`;
+}
+
 // Exact median $/unit from valid comps, scaled to the property's unit count.
 export function compsMedian(comps = [], units = 0) {
   const perUnits = (comps || [])
@@ -256,10 +273,10 @@ export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {})
   }
 
   const incomeLine = income !== null
-    ? (incomePerUnit !== null ? `Value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Value by income: ${money(income)}`)
-    : 'Value by income: —';
+    ? (incomePerUnit !== null ? `Estimated value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Estimated value by income: ${money(income)}`)
+    : 'Estimated value by income: —';
   const compsLine = compsCalc.total !== null
-    ? (compsCalc.perUnit !== null ? `By comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `By comps: ${money(compsCalc.total)}`)
+    ? (compsCalc.perUnit !== null ? `Estimated value by comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `Estimated value by comps: ${money(compsCalc.total)}`)
     : null;
 
   const incomeOverlay = [];
@@ -304,34 +321,43 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const paymentMo = evalResult.sellerMonthly ?? (o.cashFlow / 12 - evalResult.keepMonthly);
   const fullLeft = evalResult.keepMonthly;
 
-  const advances = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : 0;
-  const closingCost = structure === 'master_lease' ? x.exerciseClosing : structure === 'partnership' ? x.closing : 0;
+  const advances = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : structure === 'seller_rehab' ? x.sellerFund : 0;
+  const closingCost = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab') ? x.closing : 0;
   const sellerPayoffEst = structure === 'master_lease'
     ? x.optionPrice + x.sellerAdvances
     : structure === 'wrap'
       ? x.note
       : structure === 'partnership'
         ? x.buyout + x.sellerAdvances
-        : x.price;
+        : structure === 'seller_rehab'
+          ? (x.addFundToBuyout ? x.sellerFund : 0)
+          : x.price;
   const refiLeft = structure === 'cash' ? null : o.refiNet - sellerPayoffEst - closingCost;
   const maxSellerAtRefi = structure === 'cash' ? null : o.refiNet - closingCost;
   const afterLeft = structure === 'cash' ? fullLeft : o.cashFlow / 12 - o.refiPayment;
 
   const sellerLine = structure === 'cash'
     ? `Paid ${money(x.price)} at closing`
-    : `${money(evalResult.sellerMonthly)}/mo once full`;
+    : structure === 'seller_rehab'
+      ? `${money(evalResult.sellerMonthly)}/mo once full (estimate)`
+      : `${money(evalResult.sellerMonthly)}/mo once full`;
   const sellerOverlay = structure === 'master_lease'
     ? [`${money(x.payment)} full payment when all ${b.units} units rent (${x.creditPct}% credited toward the ${money(x.optionPrice)} locked price).`]
     : structure === 'partnership'
       ? [`${money(x.stepUp)} full payment once all ${b.units} units rent.`]
       : structure === 'wrap'
         ? [`${money(x.note)} owed × ${x.rate}% ÷ 12 = ${money(evalResult.sellerMonthly)}/mo${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'} (seller loan terms are estimates).`]
-        : [`${money(x.price)} paid at closing; bank payment ${money(paymentMo)}/mo (${x.downPct}% down, ${x.rate}% / ${x.years} yrs).`];
+        : structure === 'seller_rehab'
+          ? [
+              `Seller gets all extra rent until ${x.fillTarget} units are filled, then ${100 - x.buyerSplitPct}% of what is left after his loan payment.`,
+              'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.',
+            ]
+          : [`${money(x.price)} paid at closing; bank payment ${money(paymentMo)}/mo (${x.downPct}% down, ${x.rate}% / ${x.years} yrs).`];
 
   const rehabItems = [];
   const baseRehab = Math.max(0, b.rehab - o.extraRepair);
   if (baseRehab > 0) rehabItems.push(`Rent-ready budget: ${money(baseRehab)}`);
-  if (o.extraRepair > 0) rehabItems.push(`Unit 10 rehab: ${money(o.extraRepair)}`);
+  if (o.extraRepair > 0) rehabItems.push(`Added unit rehab: ${money(o.extraRepair)}`);
   if (!rehabItems.length) rehabItems.push(`Total rehab budget: ${money(b.rehab)}`);
 
   const steps = [
@@ -341,9 +367,11 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
       lines: [
         { label: 'Seller gets', value: sellerLine, overlay: sellerOverlay },
         {
-          label: 'Seller fronts',
+          label: structure === 'seller_rehab' ? 'Seller’s rehab money' : 'Seller fronts',
           value: money(advances),
-          overlay: [advances > 0 ? `${money(advances)} fronted by the seller and paid back at the refinance.` : 'No upfront advance from the seller.'],
+          overlay: structure === 'seller_rehab'
+            ? ['His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.']
+            : [advances > 0 ? `${money(advances)} fronted by the seller and paid back at the refinance.` : 'No upfront advance from the seller.'],
         },
       ],
     },
@@ -357,17 +385,29 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
     {
       num: 5,
       title: 'Full',
-      lines: [
-        { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
-        { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
-        { label: structure === 'cash' ? 'Bank payment' : 'Seller payment', value: `${money(paymentMo)}/mo`, overlay: sellerOverlay },
-        {
-          label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month`,
-          value: `${money(fullLeft)}/mo`,
-          tone: fullLeft >= 0 ? 'pass' : 'fail',
-          overlay: [`${money(rentMo)} rent − ${money(runningMo)} running costs − ${money(paymentMo)} payment = ${money(fullLeft)}/mo.`],
-        },
-      ],
+      lines: structure === 'seller_rehab'
+        ? [
+            { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
+            { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
+            { label: 'Seller gets', value: `${money(evalResult.sellerMonthly)}/mo`, overlay: sellerOverlay },
+            {
+              label: 'Left over each month after every bill',
+              value: `${money(Math.max(0, (o.cashFlow / 12) * (Math.max(0, Math.min(100, x.buyerSplitPct)) / 100)))}/mo`,
+              tone: 'pass',
+              overlay: sellerOverlay,
+            },
+          ]
+        : [
+            { label: 'Rent in', value: `${money(rentMo)}/mo`, overlay: [`${b.units} units after ${b.vacancyPct}% vacancy = ${money(rentMo)}/mo.`] },
+            { label: 'Running costs', value: `${money(runningMo)}/mo`, overlay: [`Management ${money(o.mgmt / 12)}/mo + fixed bills ${money(o.fixed / 12)}/mo + reserves ${money(o.reserves / 12)}/mo = ${money(runningMo)}/mo.`] },
+            { label: structure === 'cash' ? 'Bank payment' : 'Seller payment', value: `${money(paymentMo)}/mo`, overlay: sellerOverlay },
+            {
+              label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month`,
+              value: `${money(fullLeft)}/mo`,
+              tone: fullLeft >= 0 ? 'pass' : 'fail',
+              overlay: [`${money(rentMo)} rent − ${money(runningMo)} running costs − ${money(paymentMo)} payment = ${money(fullLeft)}/mo.`],
+            },
+          ],
     },
     {
       num: 6,
@@ -379,10 +419,18 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
             { label: 'Loan', value: `${money(x.price * (1 - x.downPct / 100))} at closing`, overlay: [`Straight bank purchase loan from day 1.`] },
           ]
         : [
-            { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms and Unit 10 needs its zoning certificate; the math still runs on today’s numbers.'] },
+            { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms and the added unit needs its zoning certificate; the math still runs on today’s numbers.'] },
             ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
             { label: 'Loan', value: money(o.refiLoan), overlay: [`${money(o.refiLoan)} (${o.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − fees & holdback = ${money(o.refiNet)} net.`] },
-            { label: 'Pays seller', value: money(sellerPayoffEst), overlay: [`Estimated payoff ${money(sellerPayoffEst)} before monthly credits.`] },
+            {
+              label: 'Pays seller',
+              value: structure === 'seller_rehab'
+                ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan (or what he owes)` : 'His loan (or what he owes)')
+                : money(sellerPayoffEst),
+              overlay: structure === 'seller_rehab'
+                ? ['His remaining loan balance at refinance is paid off.', 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.']
+                : [`Estimated payoff ${money(sellerPayoffEst)} before monthly credits.`],
+            },
             { label: 'Closing', value: money(closingCost), overlay: [`Closing costs at refinance: ${money(closingCost)}.`] },
             {
               label: refiLeft >= 0 ? `You take home ${money(refiLeft)}` : `You bring ${money(-refiLeft)}`,
@@ -424,8 +472,12 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
       },
       sellerTotal: {
         label: 'Seller gets at payoff',
-        value: money(sellerPayoffEst),
-        overlay: [`${money(sellerPayoffEst)} at closing/refinance, plus monthly payments along the way.`],
+        value: structure === 'seller_rehab'
+          ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan (or what he owes)` : 'His loan (or what he owes)')
+          : money(sellerPayoffEst),
+        overlay: structure === 'seller_rehab'
+          ? ['Seller loan payoff at refinance plus monthly rent share.', 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.']
+          : [`${money(sellerPayoffEst)} at closing/refinance, plus monthly payments along the way.`],
       },
       maxSellerAtRefi: {
         label: 'Most the seller can get at refi with $0 from you',

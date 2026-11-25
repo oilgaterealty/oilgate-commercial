@@ -59,30 +59,27 @@ test('editing one input changes the result live', () => {
   assert.ok(evaluate('wrap', { note: 400000, rate: 7 }, B).keepMonthly < evaluate('wrap', { note: 400000, rate: 6 }, B).keepMonthly);
 });
 
-test('bills are locked for everyone but the owner; units, rent and Airbnb are what-ifs', async () => {
+test('bills are locked for everyone but the owner; rent is a what-if', async () => {
   const { KNOWN_BASE } = await import('../src/lib/dealmath.js');
   for (const k of ['taxes', 'insurance']) assert.ok(KNOWN_BASE.includes(k), k);
-  for (const k of ['units', 'rent', 'strUnits', 'refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
+  for (const k of ['rent', 'refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
 });
 
-test('a 10th unit adds its repair cost to the budget and to every offer', () => {
-  const nine = operating({ ...B, units: 9, tenthUnitRepair: 12000 });
-  const ten = operating({ ...B, units: 10, tenthUnitRepair: 12000 });
-  assert.equal(nine.b.rehab, 20000);
-  assert.equal(ten.b.rehab, 32000);
+test('added unit repair cost is always included once in the budget and in every offer', () => {
+  const baseWithRepair = operating({ ...B, tenthUnitRepair: 12000 });
+  assert.equal(baseWithRepair.b.rehab, 32000);
   near(evaluate('wrap', { note: 400000 }, { ...B, tenthUnitRepair: 12000 }).allIn, 412000, 0.01);
   near(evaluate('cash', { price: 100000, closingPct: 0 }, { ...B, tenthUnitRepair: 12000 }).allIn, 132000, 0.01);
 });
 
-test('Airbnb units replace long-term rent with nightly income after fees and costs', () => {
-  const s = { strNightly: 100, strOccPct: 50, strFeesPct: 10, strCleaningPerStay: 0, strNightsPerStay: 2, strCostsMo: 200 };
-  const zero = operating({ ...B, ...s, strUnits: 0 });
-  const one = operating({ ...B, ...s, strUnits: 1 });
-  near(one.str.gross, 1520, 0.01);
-  near(one.str.collected, 1368, 0.01);
-  near(one.egi - zero.egi, 1368 * 12 - 1000 * 12 * 0.95, 0.01);
-  near(one.fixed - zero.fixed, 2400, 0.01);
-  assert.equal(one.ltrUnits, 9);
+test('all units run long-term even if legacy short-term fields exist on saved data', () => {
+  const legacy = { strUnits: 2, strNightly: 150, strOccPct: 60, strFeesPct: 15, strCleaningPerStay: 50, strNightsPerStay: 3, strCostsMo: 200 };
+  const clean = operating(B);
+  const withLegacy = operating({ ...B, ...legacy });
+  assert.equal(withLegacy.strUnits, 0);
+  assert.equal(withLegacy.ltrUnits, 10);
+  near(withLegacy.egi, clean.egi, 0.01);
+  near(withLegacy.fixed, clean.fixed, 0.01);
 });
 
 test('plain-English lines use the live math', async () => {

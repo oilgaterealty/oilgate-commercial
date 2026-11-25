@@ -18,24 +18,24 @@ function Facts({ deal, numbers }) {
     if (!numbers) return;
     supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle().then(({ data }) => setBase(data?.base || {}));
   }, [deal.id]);
-  const o = base && operating({ units: 9, ...base });
+  const o = base && operating({ ...base, units: 10 });
   return (
     <Card>
       <CardTitle>The property</CardTitle>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
         <div><dt className="text-ink-soft">Address</dt><dd className="font-medium">{deal.address}</dd></div>
-        <div><dt className="text-ink-soft">Units</dt><dd className="font-medium">{o ? o.b.units : 9}</dd></div>
+        <div><dt className="text-ink-soft">Units</dt><dd className="font-medium">{o ? o.b.units : 10}</dd></div>
         {o && base.askPrice ? <div><dt className="text-ink-soft">Current offer (seller’s number)</dt><dd className="font-medium">{money(+base.askPrice)}</dd></div> : null}
         {o && <>
           <div><dt className="text-ink-soft">Rent assumed</dt><dd className="font-medium">{money(o.b.rent)}/unit/mo</dd></div>
           <div><dt className="text-ink-soft">Yearly profit before payments</dt><dd className="font-medium">{money(o.noi)}/yr</dd></div>
-          <div><dt className="text-ink-soft">Value after repairs</dt><dd className="font-medium">{money(o.b.value)}</dd></div>
+          <div><dt className="text-ink-soft">Estimated value after repairs</dt><dd className="font-medium">{money(o.b.value)}</dd></div>
           <div><dt className="text-ink-soft">Yearly return on value</dt><dd className="font-medium">{pct(o.capRate, 1)}</dd></div>
           <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-medium">{money(o.b.rehab)}</dd></div>
           <div><dt className="text-ink-soft">Refinance assumed</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
         </>}
       </dl>
-      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this nine-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol></div>}
+      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this 10-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol></div>}
     </Card>
   );
 }

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
-import { WALK_SPACES, spaceLabel, ROOMS, AREA_ROOMS } from '../lib/leaseUp.js';
+import { WALK_SPACES, WALK_UNITS, spaceLabel, ROOMS, AREA_ROOMS } from '../lib/leaseUp.js';
 import { when } from '../lib/format.js';
 import { authorLabel } from '../lib/people.js';
 import { visibleUnitNotes, canWriteUnitNotes } from '../lib/v63.js';
+import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 import { Button, Card, Empty } from './Shell.jsx';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 import { DictatedField } from './Dictation.jsx';
+
+// Owner-only dynamic import so public and seller builds never query or bundle readiness.
+const loadReadinessLib =
+  import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller'
+    ? null
+    : () => Promise.all([import('../lib/readiness.js'), import('./ReadinessBadge.jsx')]);
 
 const roomName = (k) => [...ROOMS, ...AREA_ROOMS].find(([x]) => x === k)?.[1] || k;
 
@@ -160,6 +167,8 @@ export default function UnitGallery({ deal, me, role, preview }) {
   const [unit, setUnit] = useState(1);
   const [view, setView] = useState(null);
   const [err, setErr] = useState('');
+  const [readinessState, setReadinessState] = useState({ lib: null, Badge: null, map: {} });
+  const canReadiness = Boolean(loadReadinessLib && role === 'owner' && !preview && canAccessDealPlan(SITE_KIND, role, preview));
 
   useEffect(() => {
     let live = true;
@@ -175,6 +184,31 @@ export default function UnitGallery({ deal, me, role, preview }) {
     return () => { live = false; };
   }, [deal.id]);
 
+  useEffect(() => {
+    let live = true;
+    if (!canReadiness || !loadReadinessLib) return () => { live = false; };
+    loadReadinessLib().then(async ([lib, mod]) => {
+      const map = await lib.loadReadinessMap(supabase, deal.id);
+      if (live) setReadinessState({ lib, Badge: mod.default, map });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [deal.id, canReadiness]);
+
+  const updateReadiness = async (unitNumber, label) => {
+    if (!canReadiness || !readinessState.lib || !me?.uid) return;
+    const { data, error } = await readinessState.lib.saveUnitReadiness(supabase, {
+      dealId: deal.id,
+      unitNumber,
+      label,
+      existingRow: readinessState.map[unitNumber],
+      uid: me.uid,
+      name: me.name,
+    });
+    if (!error && data) {
+      setReadinessState((prev) => ({ ...prev, map: { ...prev.map, [unitNumber]: data } }));
+    }
+  };
+
   const counts = useMemo(() => {
     const c = {};
     for (const x of [...(photos || []), ...(videos || [])]) c[x.unit_number] = (c[x.unit_number] || 0) + 1;
@@ -189,19 +223,32 @@ export default function UnitGallery({ deal, me, role, preview }) {
   const ready = rooms.flatMap((r) => loaded.filter((p) => p.room === r));
 
   useEffect(() => { setView(null); }, [unit]);
+  const RBadge = readinessState.Badge;
 
   return (
     <div className="space-y-5">
       <Card>
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-2xl font-semibold">Photos by unit</h2>
+          {RBadge && unit <= WALK_UNITS && (
+            <RBadge
+              unitNumber={unit}
+              label={readinessState.map[unit]?.body || 'Not entered'}
+              editable
+              onSave={updateReadiness}
+            />
+          )}
         </div>
         {err && <p role="alert" className="mb-3 text-sm text-red-700">{err}</p>}
         <nav aria-label="Units and spaces" className="nav-tabs -mx-1 mb-4 flex gap-1.5 overflow-x-auto px-1 pb-1.5">
           {WALK_SPACES.map((u) => (
             <button key={u} type="button" aria-pressed={unit === u} onClick={() => setUnit(u)}
               className={`inline-flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-sm font-medium ${unit === u ? 'bg-ink text-white' : 'border border-line bg-white text-ink hover:border-ink'}`}>
-              {spaceLabel(u)}{counts[u] ? <span className={`rounded-full px-1.5 text-xs ${unit === u ? 'bg-white/20' : 'bg-warm-soft'}`}>{counts[u]}</span> : null}
+              <span>{spaceLabel(u)}</span>
+              {RBadge && u <= WALK_UNITS && readinessState.map[u]?.body && (
+                <RBadge unitNumber={u} label={readinessState.map[u].body} compact />
+              )}
+              {counts[u] ? <span className={`rounded-full px-1.5 text-xs ${unit === u ? 'bg-white/20' : 'bg-warm-soft'}`}>{counts[u]}</span> : null}
             </button>
           ))}
         </nav>

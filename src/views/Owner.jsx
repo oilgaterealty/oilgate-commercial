@@ -157,7 +157,7 @@ function RoleLinks({ deal, onJoined }) {
         </select>
         <Field type="email" required aria-label="Recipient email" placeholder="Recipient email" value={f.recipient_email} onChange={(e) => setF({ ...f, recipient_email: e.target.value })} />
         <Field aria-label="Recipient label" placeholder="Name or note (e.g. Evan)" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} />
-        <Field type="number" min={1} max={90} aria-label="Expires in days" title="Expires in days" value={f.expires_days} onChange={(e) => setF({ ...f, expires_days: e.target.value })} />
+        <Field type="number" inputMode="numeric" min={1} max={90} aria-label="Expires in days" title="Expires in days" value={f.expires_days} onChange={(e) => setF({ ...f, expires_days: e.target.value })} />
         <Button type="submit">Make link</Button>
       </form>
       {fresh && (

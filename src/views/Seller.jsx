@@ -21,11 +21,23 @@ export default function Seller({ deal, me, preview }) {
   const [rows, load] = useUploads(deal);
   const [level, setLevel] = useState(null);
   const [saveError, setSaveError] = useState('');
+  const [sellerOffer, setSellerOffer] = useState(null);
   // The seller sees one cover photo (the starred upload) and only the walkthrough photos and videos shared with him.
   const walk = useSharedWalkPhotos(deal, 'seller');
   const walkVideos = useSharedWalkVideos(deal, 'seller');
   const coverRows = photosOf((rows || []).filter((r) => r.visibility === 'seller'));
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
+
+  useEffect(() => {
+    let live = true;
+    supabase.rpc('commercial_get_seller_offer', { p_deal: deal.id })
+      .then(({ data }) => {
+        if (!live) return;
+        const row = Array.isArray(data) ? data[0] : data;
+        setSellerOffer(row || null);
+      });
+    return () => { live = false; };
+  }, [deal.id]);
 
   useEffect(() => {
     if (preview) return;
@@ -39,6 +51,10 @@ export default function Seller({ deal, me, preview }) {
     setSaveError(error ? 'Your interest did not save. Please try again.' : '');
     if (!error) setLevel(l);
   };
+
+  const summary = sellerOffer?.seller_summary && Array.isArray(sellerOffer.seller_summary.terms) && sellerOffer.seller_summary.terms.length > 0
+    ? sellerOffer.seller_summary
+    : null;
 
   return (
     <div className="readable space-y-8">
@@ -59,11 +75,12 @@ export default function Seller({ deal, me, preview }) {
       <LeadOfferCard
         deal={deal}
         content={c}
+        summary={summary}
         preview={preview}
         onAsk={(q) => sendToOwner(deal, me, 'seller', q, 'Offer question')}
       />
 
-      <ExecutionPlanCard content={c} />
+      <ExecutionPlanCard content={c} summary={summary} />
 
       <LoanPosition deal={deal} role="seller" preview={preview} me={me} />
 

@@ -31,35 +31,35 @@ test('pipeline stages advance and revert without retaining an orphaned unit', ()
   assert.throws(() => stageMove('unknown', '', 9), /valid stage/);
 });
 
-test('moved in requires a free enabled unit, atomically paired with the stage', () => {
+test('moved in always allows all 10 units, atomically paired with the stage', () => {
   assert.equal(unitCount(10), 10);
-  assert.equal(unitCount(9), 9);
-  assert.equal(unitCount(undefined), 9);
-  for (const invalid of ['', 0, 1.5, 10, undefined]) {
-    assert.throws(() => stageMove('moved_in', invalid, 9), /available unit/);
+  assert.equal(unitCount(9), 10);
+  assert.equal(unitCount(undefined), 10);
+  for (const invalid of ['', 0, 1.5, 11, undefined]) {
+    assert.throws(() => stageMove('moved_in', invalid, 10), /available unit/);
   }
-  assert.throws(() => stageMove('moved_in', 2, 9, [2]), /already has a tenant/);
-  assert.deepEqual(stageMove('moved_in', '9', 9), { stage: 'moved_in', unit_number: 9 });
+  assert.throws(() => stageMove('moved_in', 2, 10, [2]), /already has a tenant/);
+  assert.deepEqual(stageMove('moved_in', '9', 10), { stage: 'moved_in', unit_number: 9 });
   assert.deepEqual(stageMove('moved_in', 10, 10, [2, 3, 7]), { stage: 'moved_in', unit_number: 10 });
 });
 
-test('comps compute per-unit price, average price/unit x units, NOI / cap, and what-if message', () => {
+test('comps compute per-unit price, average price/unit x 10 units, NOI / cap, and what-if message', () => {
   const comps = [
     { address: '100 Main St', units: 4, sale_price: '200000' },
     { address: '200 Oak Ave', units: 8, sale_price: '480000' },
   ];
   assert.equal(pricePerUnit(comps[0]), 50000);
   assert.equal(pricePerUnit(comps[1]), 60000);
-  assert.deepEqual(arvEstimate(comps, 9, 48000, 8), { avg: 55000, market: 495000, income: 600000 });
+  assert.deepEqual(arvEstimate(comps, 10, 48000, 8), { avg: 55000, market: 550000, income: 600000 });
   assert.deepEqual(arvEstimate(comps, 10, 48000, 10), { avg: 55000, market: 550000, income: 480000 });
   assert.deepEqual(arvEstimate([], 10, '', 9), { avg: null, market: null, income: null });
-  assert.deepEqual(arvEstimate([{ address: 'Bad', units: 0, sale_price: 'Infinity' }], 9, 50000, 7), { avg: null, market: null, income: null });
+  assert.deepEqual(arvEstimate([{ address: 'Bad', units: 0, sale_price: 'Infinity' }], 10, 50000, 7), { avg: null, market: null, income: null });
   assert.equal(validComp({ address: '  ', units: 4, sale_price: 50000 }), false);
 
-  const msg = compWhatIfMessage({ savedComps: [comps[0]], localComps: [comps[1]], units: 9, noi: 48000, cap: 8 });
+  const msg = compWhatIfMessage({ savedComps: [comps[0]], localComps: [comps[1]], units: 10, noi: 48000, cap: 8 });
   assert.match(msg, /200 Oak Ave: 8 units, \$480,000 \(\$60,000\/unit\)/);
-  assert.match(msg, /Value by comps: \$495,000/);
-  assert.match(msg, /Value by income: \$600,000/);
+  assert.match(msg, /Estimated value by comps: \$550,000/);
+  assert.match(msg, /Estimated value by income: \$600,000/);
 });
 
 test('0009 migration enables RLS on all 6 tables, includes nullable polished column, and enforces moved-in unit uniqueness', () => {

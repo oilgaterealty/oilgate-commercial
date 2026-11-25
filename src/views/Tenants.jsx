@@ -97,7 +97,7 @@ function SuggestForm({ lead, disabled, onSend, onCancel }) {
 export default function Tenants({ deal, me, role, preview }) {
   const access = v5Access(role);
   const edit = access.editTenants && !preview;
-  const [units, setUnits] = useState(9);
+  const [units, setUnits] = useState(10);
   const [leads, setLeads] = useState(null);
   const [loadErr, setLoadErr] = useState('');
   const [status, setStatus] = useState('');

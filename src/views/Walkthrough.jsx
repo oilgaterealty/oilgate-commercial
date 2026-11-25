@@ -31,6 +31,12 @@ import MoveBar, { MoveOneDialog } from '../components/WalkMoveBar.jsx';
 import PhotoViewer, { ThumbOverlay } from '../components/PhotoViewer.jsx';
 import { processVideo } from '../lib/videoPost.js';
 import { VideoExtras } from '../components/UnitGallery.jsx';
+import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
+
+const loadReadinessLib =
+  import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller'
+    ? null
+    : () => Promise.all([import('../lib/readiness.js'), import('../components/ReadinessBadge.jsx')]);
 
 const PHOTO_EXT = {
   'image/jpeg': 'jpg',
@@ -151,6 +157,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
   const [moving, setMoving] = useState(false);
   const [viewKey, setViewKey] = useState(null); // photo open in the in-app viewer: 'l:<id>' on this device, 'p:<id>' uploaded
   const [moveOne, setMoveOne] = useState(null); // one photo key ('l:' / 'p:') whose "Move to…" picker is open
+  const [readinessState, setReadinessState] = useState({ lib: null, Badge: null, map: {} });
+  const canReadiness = Boolean(loadReadinessLib && role === 'owner' && !preview && canAccessDealPlan(SITE_KIND, role, preview));
 
   const mountedRef = useRef(true);
   const inFlightRef = useRef(new Set());
@@ -205,6 +213,32 @@ export default function Walkthrough({ deal, me, role, preview }) {
       live = false;
     };
   }, [deal.id, access.walkthrough, refresh, role]);
+
+  // Load owner-only unit readiness badges.
+  useEffect(() => {
+    let live = true;
+    if (!canReadiness || !loadReadinessLib) return () => { live = false; };
+    loadReadinessLib().then(async ([lib, mod]) => {
+      const map = await lib.loadReadinessMap(supabase, deal.id);
+      if (live) setReadinessState({ lib, Badge: mod.default, map });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [deal.id, canReadiness, refresh]);
+
+  const updateReadiness = async (unitNumber, label) => {
+    if (!canReadiness || !readinessState.lib || !me?.uid) return;
+    const { data, error } = await readinessState.lib.saveUnitReadiness(supabase, {
+      dealId: deal.id,
+      unitNumber,
+      label,
+      existingRow: readinessState.map[unitNumber],
+      uid: me.uid,
+      name: me.name,
+    });
+    if (!error && data) {
+      setReadinessState((prev) => ({ ...prev, map: { ...prev.map, [unitNumber]: data } }));
+    }
+  };
 
   // Load user-scoped local IndexedDB audio sessions and pending media queue.
   const reloadLocalState = useCallback(async () => {
@@ -1401,7 +1435,14 @@ export default function Walkthrough({ deal, me, role, preview }) {
         <tbody>
           {WALK_SPACES.map((u) => (
             <tr key={u}>
-              <th scope="row" className="px-2 py-1 font-semibold text-ink">{spaceLabel(u)}</th>
+              <th scope="row" className="px-2 py-1 font-semibold text-ink">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span>{spaceLabel(u)}</span>
+                  {readinessState.Badge && u <= WALK_UNITS && readinessState.map[u]?.body && (
+                    <readinessState.Badge unitNumber={u} label={readinessState.map[u].body} compact />
+                  )}
+                </div>
+              </th>
               {roomsFor(u).map(([r, label]) => {
                 const c = counts[`${u}:${r}`] || { p: 0, v: 0, n: 0, pending: 0 };
                 const active = u === unit && r === selectedRoom;
@@ -1677,7 +1718,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                   type="button"
                   aria-pressed={active}
                   onClick={() => setSelectedUnit(u)}
-                  className={`min-h-[44px] rounded-xl border px-2 py-1.5 text-center text-xs font-medium transition sm:px-3 ${
+                  className={`flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-1.5 text-center text-xs font-medium transition sm:px-3 ${
                     active
                       ? 'border-ink bg-ink text-white'
                       : t.total + t.pending > 0
@@ -1685,8 +1726,10 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         : 'border-line bg-paper text-ink-soft hover:border-ink'
                   }`}
                 >
-                  {spaceLabel(u)}
-                  {t.pending > 0 ? '*' : ''}
+                  <span>{spaceLabel(u)}{t.pending > 0 ? '*' : ''}</span>
+                  {readinessState.Badge && u <= WALK_UNITS && readinessState.map[u]?.body && (
+                    <readinessState.Badge unitNumber={u} label={readinessState.map[u].body} compact />
+                  )}
                 </button>
               );
             })}
@@ -1727,7 +1770,16 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
       {/* Active Unit & Room Capture First */}
       <Card>
-        <CardTitle>
+        <CardTitle
+          aside={readinessState.Badge && unit <= WALK_UNITS ? (
+            <readinessState.Badge
+              unitNumber={unit}
+              label={readinessState.map[unit]?.body || 'Not entered'}
+              editable
+              onSave={updateReadiness}
+            />
+          ) : null}
+        >
           {spaceLabel(unit)} — {roomLabel(selectedRoom)}
         </CardTitle>
         {preview && (

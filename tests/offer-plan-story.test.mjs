@@ -102,8 +102,8 @@ test('compsMedian and valueSummary compute income primary and median comps secon
   assert.equal(cm.total, 650000);
 
   const val = valueSummary({ base: TEST_BASE, noi: 81000, units: 10, comps: TEST_COMPS });
-  assert.equal(val.incomeLine, 'Value by income: $750,000 ($75,000/unit)');
-  assert.equal(val.compsLine, 'By comps: $650,000 ($65,000/unit)');
+  assert.equal(val.incomeLine, 'Estimated value by income: $750,000 ($75,000/unit)');
+  assert.equal(val.compsLine, 'Estimated value by comps: $650,000 ($65,000/unit)');
   assert.ok(val.incomeOverlay.some((l) => l.includes('81,000') && l.includes('9%')));
   assert.ok(val.incomeOverlay.some((l) => l.includes('Sample valuation note')));
   assert.ok(val.compsOverlay[0].includes('$65,000 median/unit × 10 units = $650,000'));
@@ -142,20 +142,20 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
   // Step 1: Take over shows seller payment math (scaled by 1 of 10 units renting)
   const s1 = story.steps[0];
   assert.equal(s1.title, 'Take over');
-  assert.equal(s1.lines[0].value, '$200/mo');
+  assert.match(s1.lines[0].value, /^\$200\/mo/);
   assert.ok(s1.lines[0].overlay.some((l) => l.includes('$2,000 full payment × 1 of 10 units renting = $200/mo')));
 
   // Step 2: Rehab sums unit work (incl. $30K Unit 10) + building systems + other one-time costs
   const s2 = story.steps[1];
   const expectedRehab = 39000 + 30000 + 15000 + 3000;
   assert.equal(s2.lines[0].value, money(expectedRehab));
-  assert.ok(s2.lines[0].overlay.some((l) => l.includes('Unit 10 rent-ready work: $30,000')));
+  assert.ok(s2.lines[0].overlay.some((l) => l.includes('Unit 10 (added unit) rehab: $30,000')));
   assert.ok(s2.lines[0].overlay.some((l) => l.includes('Building systems: $15,000')));
 
   // Step 3: Holding cost marks estimates and explains negative cash flow without bare "You keep"
   const s3 = story.steps[2];
   assert.ok(s3.lines[0].overlay.some((l) => l.includes('(estimate)')));
-  assert.match(s3.lines[1].label, /Short \$.* a month while fixing up \(covered by /);
+  assert.match(s3.lines[2].label, /Short \$.* a month while fixing up \(covered by /);
 
   // Step 4: Lease-up has ordinals
   const s4 = story.steps[3];
@@ -165,12 +165,12 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
 
   // Step 5: Full
   const s5 = story.steps[4];
-  assert.deepEqual(s5.lines.map((l) => l.label), ['Rent in', 'Running costs', 'Seller payment', 'Left over each month after every bill']);
+  assert.deepEqual(s5.lines.map((l) => l.label), ['Rent in', 'Running costs', 'Seller gets', 'Left over each month after every bill']);
 
   // Step 6: Refinance shows income + comps + You take home in big type
   const s6 = story.steps[5];
-  assert.ok(s6.lines.some((l) => l.label.startsWith('Value by income:')));
-  assert.ok(s6.lines.some((l) => l.label.startsWith('By comps:')));
+  assert.ok(s6.lines.some((l) => l.label.startsWith('Estimated value by income:')));
+  assert.ok(s6.lines.some((l) => l.label.startsWith('Estimated value by comps:')));
   assert.ok(s6.lines.some((l) => l.big && l.label.startsWith('You take home ')));
 
   // Offer where buyer must bring cash at refinance
@@ -199,7 +199,8 @@ test('Offers OptionCard and OptionTable render the 7-step monthlyPlan story with
     '../components/Dictation.jsx': { DictatedField: (p) => React.createElement(p.as || 'input', p) },
     '../lib/supabase.js': { supabase: {} },
     '../lib/useDealModel.js': { useDealModel: () => ({}) },
-    '../components/Switches.jsx': { default: () => null, SendWhatIf: () => null },
+    '../components/Switches.jsx': { __esModule: true, default: () => null, SendWhatIf: () => null },
+    '../components/CostSummary.jsx': { __esModule: true, default: () => null },
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS: [], STRUCTURES: {}, buildLeadStory, evaluate, grade: () => 'none', money, pct: (v) => `${v}%`, valueSummary },
     '../components/Shell.jsx': {
       Card: ({ children }) => React.createElement('section', null, children),
@@ -228,8 +229,8 @@ test('Offers OptionCard and OptionTable render the 7-step monthlyPlan story with
     assert.match(html, /Most the seller can get at refi with \$0 from you/);
     assert.match(html, /Month by month/);
     assert.match(html, /1st Unit 9 · month 1/);
-    assert.match(html, /Value by income:/);
-    assert.match(html, /By comps:/);
+    assert.match(html, /Estimated value by income:/);
+    assert.match(html, /Estimated value by comps:/);
     assert.match(html, /You take home/);
     assert.doesNotMatch(html, /You keep/);
   }
@@ -247,7 +248,7 @@ test('Plans removes as-is switch, defaults Unit 10 to $30K, uses plain pending w
   assert.doesNotMatch(dealPlanSrc, /as-is|Pending lender underwriting|Stabilized 10 units \(pending approvals\)/i);
   assert.doesNotMatch(leadGuestSrc, /as-is/i);
   assert.match(dealPlanSrc, /No lender has confirmed yet/);
-  assert.match(dealPlanSrc, /Unit 10 rehab/);
+  assert.match(dealPlanSrc, /Added unit \(Unit \{addedId\}\) rehab/);
   assert.match(dealPlanSrc, /Left over each month after every bill/);
 
   // No max-h-* or overflow-y-auto in any overlay/tooltip
@@ -258,7 +259,7 @@ test('Plans removes as-is switch, defaults Unit 10 to $30K, uses plain pending w
   // Access gating: seller/public builds never load dealplan; guest views never import dealplan
   assert.match(offersSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \|\| import\.meta\.env\.VITE_SITE_KIND === 'seller'\s*\?\s*null/);
   assert.match(offersSrc, /canAccessDealPlan\(SITE_KIND, role, preview\)/);
-  assert.match(offersSrc, /monthlyPlan\(/);
+  assert.match(offersSrc, /offerPlanStory\(/);
   for (const view of ['Seller.jsx', 'Lender.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'LeadGuest.jsx']) {
     assert.doesNotMatch(read(`src/views/${view}`), /dealplan|DealPlan|deal_plan/i, view);
   }

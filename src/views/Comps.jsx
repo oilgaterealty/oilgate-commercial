@@ -71,8 +71,7 @@ export default function Comps({ deal, me, role, preview }) {
 
   if (!access.comps) return null;
 
-  const modelUnits = unitCount(base?.units);
-  const units = localUnits ?? modelUnits;
+  const units = 10;
   const noi = base ? operating({ ...base, units }).noi : null;
   const allComps = [...(savedComps || []), ...localComps];
   const shownComps = sortComps(allComps, sort.key, sort.dir);
@@ -83,7 +82,7 @@ export default function Comps({ deal, me, role, preview }) {
   const calc = arvEstimate(viewComps, units, noi, cap);
   const valueFor = (uid) => arvEstimate(compsForView(allComps, picks, uid), units, noi, cap).market;
   const canAdd = validComp(draft);
-  const dirty = !owner && (localComps.length > 0 || cap !== savedCap || (localUnits !== null && localUnits !== modelUnits));
+  const dirty = !owner && (localComps.length > 0 || cap !== savedCap);
   const autoPerUnit = perUnitOf(draft.sale_price, draft.units);
   const autoYear = yearOf(draft.sale_date);
   const myPick = (c) => picks.find((p) => p.comp_id === c.id && p.picker_uid === me?.uid);
@@ -220,14 +219,14 @@ export default function Comps({ deal, me, role, preview }) {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-ink p-5 text-white">
-            <p className="text-xs uppercase tracking-[0.16em] text-warm">Value by comps</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-warm">Estimated value by comps</p>
             <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">{money(calc.market)}</p>
             <p className="mt-1 text-sm text-white/80">
               {calc.avg !== null ? `${money(calc.avg)} average per unit × ${units} units` : viewOn === 'all' ? `Add comps below to value ${units} units` : 'No picks yet. Tap Pick on the comps you trust.'}
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-paper p-5">
-            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Value by income</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Estimated value by income</p>
             <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">{money(calc.income)}</p>
             <p className="mt-1 text-sm text-ink-soft">
               {noi !== null ? `${money(noi)} yearly NOI ÷ ${cap}% cap rate` : 'Enter rent in the deal model for NOI'}
@@ -237,7 +236,7 @@ export default function Comps({ deal, me, role, preview }) {
 
         {people.length > 0 && (
           <div className="mt-4">
-            <p className="mb-1 text-sm font-medium">Value by comps uses</p>
+            <p className="mb-1 text-sm font-medium">Estimated value by comps uses</p>
             <div className="flex flex-wrap gap-2" role="group" aria-label="Whose comps the value uses">
               {[{ uid: 'all', label: 'All comps' }, ...people].map((o) => {
                 const val = o.uid === 'all' ? null : valueFor(o.uid);
@@ -265,19 +264,8 @@ export default function Comps({ deal, me, role, preview }) {
             </div>
           </div>
           <div>
-            <p className="mb-1 text-xs text-ink-soft">Units {owner ? '(from the building switch)' : '(building switch or what-if)'}</p>
-            {owner ? (
-              <p className="py-1 text-sm font-medium">{modelUnits} units</p>
-            ) : (
-              <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Units what-if">
-                {[9, 10].map((u) => (
-                  <button key={u} type="button" aria-pressed={units === u} onClick={() => setLocalUnits(u === modelUnits ? null : u)}
-                    className={`min-h-[40px] rounded-full px-3 py-1 text-sm transition ${units === u ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>
-                    {u} units
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="mb-1 text-xs text-ink-soft">Units</p>
+            <p className="py-1 text-sm font-medium">10 units</p>
           </div>
         </div>
       </Card>

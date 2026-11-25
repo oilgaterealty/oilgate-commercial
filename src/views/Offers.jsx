@@ -1,11 +1,12 @@
-import { buyerName, possessive } from '../lib/people.js';
+import { buyerName } from '../lib/people.js';
 import { DictatedField } from '../components/Dictation.jsx';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import Switches, { SendWhatIf } from '../components/Switches.jsx';
+import CostSummary from '../components/CostSummary.jsx';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
-import { Card, CardTitle, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
+import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
@@ -19,6 +20,23 @@ const loadPlanLib =
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
 function NumberRow({ label, unit, value, onChange, changed, locked }) {
+  if (unit === 'bool') {
+    const checked = Boolean(value);
+    if (locked) {
+      return (
+        <div className="flex items-center justify-between gap-3 py-1.5">
+          <span className="text-sm text-ink-soft">{label}</span>
+          <span className="text-sm font-medium">{checked ? 'On' : 'Off'}</span>
+        </div>
+      );
+    }
+    return (
+      <label className="flex items-center justify-between gap-3 py-2">
+        <span className={`text-sm ${changed ? 'font-medium text-ink' : 'text-ink-soft'}`}>{label}</span>
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-5 w-5 rounded border-line accent-ink" />
+      </label>
+    );
+  }
   const step = stepFor(unit, label);
   const v = value ?? '';
   if (locked) {
@@ -38,7 +56,7 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
         <button type="button" onClick={() => bump(-1)} className="h-8 w-8 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           {unit === '$' && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>}
-          <input type="number" inputMode="decimal" value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
+          <input type="number" inputMode={unit === 'n' ? 'numeric' : 'decimal'} value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
             className={`h-8 w-28 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
         </span>
         <span className="w-4 text-xs text-ink-soft">{unit === '%' ? '%' : unit === 'x' ? 'x' : ''}</span>
@@ -77,7 +95,7 @@ export function Results({ r }) {
           overlay={['Target 1.20x or more.']} />
         <Metric label="Yearly return on cash in" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)}
           overlay={[r.cashIn > 0 ? `${money(r.cashIn)} cash in. Target 8–12%.` : 'No cash in upfront.']} />
-        <Metric label="Total cost vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)}
+        <Metric label="Total cost vs estimated value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)}
           overlay={[`${money(r.allIn)} of ${money(r.operating.b.value)}. Target 75% or less.`]} />
         <Metric label="Rented units to break even" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)}
           overlay={[`${breakEvenCount(r)}. Target 85% or less.`]} />
@@ -113,7 +131,7 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
       {open && (
         <div className="mt-3">
           <div className="grid gap-x-8 md:grid-cols-2">
-            {BASE_FIELDS.filter(([k]) => !['units', 'tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
+            {BASE_FIELDS.filter(([k]) => !['tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
                 onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
@@ -123,7 +141,6 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
     </Card>
   );
 }
-
 
 export const letterOf = (o, i) => (/^([A-Z])\s*:/.exec(o.name)?.[1]) || String.fromCharCode(65 + i);
 export const titleOf = (o) => o.name.replace(/^[A-Z]\s*:\s*/, '');
@@ -161,7 +178,8 @@ function StoryLines({ lines }) {
 // Each offer reads as its numbered month-by-month plan story. All math and estimates live in tap/hover overlays.
 export function OptionCard({ o, i, story, planHref }) {
   const h = story.headline;
-  const headlines = [h.moneyIn, h.cashOut, h.sellerTotal, h.maxSellerAtRefi];
+  const primaryHeadlines = [h.moneyIn, h.cashOut];
+  const secondaryHeadlines = [h.sellerTotal, h.maxSellerAtRefi];
   return (
     <div className="rounded-3xl border-2 border-ink bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -173,11 +191,21 @@ export function OptionCard({ o, i, story, planHref }) {
       </div>
       <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
 
+      {story.costSummary && <CostSummary summary={story.costSummary} className="mt-4" />}
+
       <div className="mt-4 grid grid-cols-2 gap-2.5">
-        {headlines.map((item) => (
+        {primaryHeadlines.map((item) => (
+          <div key={item.label} className="rounded-2xl bg-paper p-3.5">
+            <div className="text-xs text-ink-soft">{item.label}</div>
+            <div className={`mt-1 font-display text-2xl font-semibold leading-tight ${item.positive === true ? 'text-good' : item.positive === false ? 'text-red-700' : 'text-ink'}`}>
+              <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
+            </div>
+          </div>
+        ))}
+        {secondaryHeadlines.map((item) => (
           <div key={item.label} className="rounded-2xl bg-paper p-3">
             <div className="text-xs text-ink-soft">{item.label}</div>
-            <div className={`mt-1 font-display text-xl font-semibold leading-tight ${item.positive === true ? 'text-good' : item.positive === false ? 'text-red-700' : 'text-ink'}`}>
+            <div className="mt-1 font-display text-xl font-semibold leading-tight text-ink">
               <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
             </div>
           </div>
@@ -225,25 +253,25 @@ export function OptionTable({ offers, stories, planHrefOf }) {
   const renderStep = (story, num) => {
     const step = story.steps.find((s) => s.num === num);
     if (!step) return '—';
-    if (step.pills) {
-      return (
-        <div className="flex flex-wrap gap-1">
-          {step.pills.map((pill, idx) => (
-            <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2 py-0.5 text-xs">
-              {pill.label}
-            </OverlayTrigger>
-          ))}
-        </div>
-      );
-    }
     return (
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {step.when && <div className="text-xs font-semibold text-ink-soft">{step.when}</div>}
-        <StoryLines lines={step.lines} />
+        {step.pills && (
+          <div className="flex flex-wrap gap-1">
+            {step.pills.map((pill, idx) => (
+              <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2 py-0.5 text-xs">
+                {pill.label}
+              </OverlayTrigger>
+            ))}
+          </div>
+        )}
+        {step.lines && <StoryLines lines={step.lines} />}
       </div>
     );
   };
+  const hasCostSummary = offers.some((o) => Boolean(stories[o.id]?.costSummary));
   const rows = [
+    ...(hasCostSummary ? [['Cost summary', (o) => <CostSummary summary={stories[o.id].costSummary} />]] : []),
     ['Your money in', (o) => <OverlayTrigger lines={stories[o.id].headline.moneyIn.overlay} className="font-display text-lg font-semibold">{stories[o.id].headline.moneyIn.value}</OverlayTrigger>],
     ['Cash out at refinance', (o) => {
       const c = stories[o.id].headline.cashOut;
@@ -274,16 +302,68 @@ export function OptionTable({ offers, stories, planHrefOf }) {
   );
 }
 
+function SellerSummaryEditor({ offer, onPatch, onReset }) {
+  const s = offer?.seller_summary && typeof offer.seller_summary === 'object' ? offer.seller_summary : { version: 1, title: '', terms: [], steps: [] };
+  const terms = Array.isArray(s.terms) ? s.terms : [];
+  const steps = Array.isArray(s.steps) ? s.steps : [];
+  const locked = Boolean(s.locked);
+  const update = (next) => onPatch({ seller_summary: { version: 1, ...s, ...next } });
+  return (
+    <div className="mt-4 space-y-3 border-t border-line pt-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">Seller page text</span>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex items-center gap-1.5 text-xs font-medium">
+            <input type="checkbox" checked={locked} onChange={(e) => update({ locked: e.target.checked })} />
+            Lock text
+          </label>
+          <Button type="button" kind="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onReset}>Reset from numbers</Button>
+        </div>
+      </div>
+      <label className="block text-xs text-ink-soft">
+        Title
+        <input value={s.title || ''} onChange={(e) => update({ title: e.target.value })}
+          className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-ink" />
+      </label>
+      <div className="space-y-1.5">
+        {terms.map((t, idx) => (
+          <div key={idx} className="grid gap-1.5 sm:grid-cols-[150px_1fr]">
+            <input aria-label={`Seller term ${idx + 1} label`} value={t.label || ''} onChange={(e) => update({ terms: terms.map((row, j) => (j === idx ? { ...row, label: e.target.value } : row)) })}
+              className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
+            <input aria-label={`Seller term ${idx + 1} value`} value={t.value || ''} onChange={(e) => update({ terms: terms.map((row, j) => (j === idx ? { ...row, value: e.target.value } : row)) })}
+              className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1.5">
+        {steps.map((st, idx) => (
+          <div key={idx} className="space-y-1 rounded-xl border border-line bg-paper p-2">
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <input aria-label={`Seller step ${idx + 1} title`} value={st.title || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, title: e.target.value } : row)) })}
+                className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-medium text-ink outline-none focus:border-ink" />
+              <input aria-label={`Seller step ${idx + 1} when`} value={st.when || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, when: e.target.value } : row)) })}
+                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
+            </div>
+            <textarea rows={2} aria-label={`Seller step ${idx + 1} detail`} value={st.detail || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, detail: e.target.value } : row)) })}
+              className="w-full rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to the buyer.
 export default function Offers({ deal, canSave, onlyShared, me, role, preview }) {
   const owner = !!canSave;
   const model = useDealModel(deal, { owner, onlyShared });
-  const { offers, setOffers, base, setBase, later, saved } = model;
+  const { offers, setOffers, base, setBase: saveBase, later, saved } = model;
   const [active, setActive] = useState(null);
-  const [view, setView] = useState('table');
+  const [view, setView] = useState('cards');
   const [leadErr, setLeadErr] = useState('');
   const [planState, setPlanState] = useState({ lib: null, plan: null });
   const [comps, setComps] = useState([]);
+  const syncedLeadRef = useRef(false);
   const canPlan = Boolean(owner && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) && loadPlanLib);
   const canComps = Boolean(owner || role === 'realtor' || role === 'reviewer');
 
@@ -314,10 +394,59 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
     return () => { alive = false; };
   }, [deal.id, canComps]);
 
-  const patch = (id, p) => {
-    setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...p } : o)));
-    later(id, () => supabase.from('commercial_offers').update({ ...p, updated_at: new Date().toISOString() }).eq('id', id));
+  const computeSellerSummary = (offer, nextInputs, nextBase, force = false) => {
+    if (!owner || !canPlan || !planState.lib || !planState.plan) return undefined;
+    if (!force && offer?.seller_summary?.locked) return offer.seller_summary;
+    return planState.lib.offerSellerSummary({ ...offer, inputs: nextInputs }, nextBase, planState.plan, comps, force);
   };
+
+  // Ensure an unlocked lead offer gets a fresh seller_summary once deal_plan loads.
+  useEffect(() => {
+    if (syncedLeadRef.current || !owner || !canPlan || !planState.lib || !planState.plan || !offers?.length) return;
+    const lead = offers.find((x) => x.is_lead);
+    if (!lead || lead.seller_summary?.locked) { syncedLeadRef.current = true; return; }
+    const hasTerms = Array.isArray(lead.seller_summary?.terms) && lead.seller_summary.terms.length > 0;
+    const hasGuide = Boolean(lead.seller_summary?.guide?.cost?.length);
+    if (!hasTerms || !hasGuide) {
+      syncedLeadRef.current = true;
+      const summary = computeSellerSummary(lead, lead.inputs, base, false);
+      if (summary) {
+        setOffers((list) => list.map((x) => (x.id === lead.id ? { ...x, seller_summary: summary } : x)));
+        void supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', lead.id);
+      }
+    } else {
+      syncedLeadRef.current = true;
+    }
+  }, [owner, canPlan, planState, offers, base, comps]);
+
+  const patch = (id, p) => {
+    const existing = (offers || []).find((o) => o.id === id);
+    const nextPatch = { ...p };
+    if (owner && existing && 'inputs' in p && !('seller_summary' in p) && !existing.seller_summary?.locked) {
+      const summary = computeSellerSummary(existing, p.inputs, base, false);
+      if (summary) nextPatch.seller_summary = summary;
+    }
+    setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...nextPatch } : o)));
+    later(id, () => supabase.from('commercial_offers').update({ ...nextPatch, updated_at: new Date().toISOString() }).eq('id', id));
+  };
+
+  const setBase = (nextBase) => {
+    saveBase(nextBase);
+    if (owner && canPlan && planState.lib && planState.plan && offers?.length) {
+      const updates = [];
+      setOffers((list) => list.map((o) => {
+        if (o.seller_summary?.locked) return o;
+        const summary = computeSellerSummary(o, o.inputs, nextBase, false);
+        if (!summary) return o;
+        updates.push([o.id, summary]);
+        return { ...o, seller_summary: summary };
+      }));
+      for (const [id, summary] of updates) {
+        later(`summary-${id}`, () => supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', id));
+      }
+    }
+  };
+
   const add = async (structure, from) => {
     const row = { deal_id: deal.id, structure, name: from ? from.name + ' (copy)' : STRUCTURES[structure].label, inputs: from ? from.inputs : {}, sort: (offers?.length || 0) + 1 };
     if (!owner) { const local = { ...row, id: crypto.randomUUID() }; setOffers([...offers, local]); return setActive(local.id); }
@@ -335,19 +464,31 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
     if (!owner || !o?.id) return;
     const { error } = await supabase.rpc('commercial_set_lead_offer', { p_deal: deal.id, p_offer: o.id });
     setLeadErr(error ? error.message : '');
-    if (!error) setOffers((list) => list.map((x) => ({ ...x, is_lead: x.id === o.id })));
+    if (!error) {
+      const nextSummary = !o.seller_summary?.locked ? computeSellerSummary(o, o.inputs, base, false) : undefined;
+      setOffers((list) => list.map((x) => (x.id === o.id ? { ...x, is_lead: true, ...(nextSummary ? { seller_summary: nextSummary } : {}) } : { ...x, is_lead: false })));
+      if (nextSummary) {
+        await supabase.from('commercial_offers').update({ seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', o.id);
+      }
+    }
   };
 
-  const evals = useMemo(() => Object.fromEntries((offers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [offers, base]);
-  const stories = useMemo(() => Object.fromEntries((offers || []).map((o) => {
+  const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
+  const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [sortedOffers, base]);
+  const stories = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => {
     if (loadPlanLib && canPlan && planState.lib && planState.plan) {
-      const planRes = planState.lib.monthlyPlan(o.structure, o.inputs, base, planState.plan);
-      return [o.id, planState.lib.buildOfferStory(planRes, { base, comps })];
+      return [o.id, planState.lib.offerPlanStory(o, base, planState.plan, comps)];
     }
-    return [o.id, buildLeadStory(o.structure, evals[o.id], { base, comps })];
-  })), [offers, evals, base, comps, canPlan, planState]);
+    const baseStory = buildLeadStory(o.structure, evals[o.id], { base, comps });
+    const guide = o.seller_summary?.guide;
+    if (guide?.cost?.length) {
+      baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
+    }
+    return [o.id, baseStory];
+  })), [sortedOffers, evals, base, comps, canPlan, planState]);
+
   if (offers === null) return <Empty>Loading…</Empty>;
-  const cur = offers.find((o) => o.id === active) || offers[0];
+  const cur = sortedOffers.find((o) => o.id === active) || sortedOffers[0];
   const r = cur && evals[cur.id];
   const o = evaluate('cash', {}, base).operating;
   const showEdit = view === 'edit';
@@ -362,25 +503,25 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
         {owner && <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>}
         <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>{owner ? 'Card view' : 'Lead offer'}</Button>
         <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
-        {owner && offers.length > 0 && (
+        {owner && sortedOffers.length > 0 && (
           <label className="flex items-center gap-2 rounded-full border border-ink bg-white py-1 pl-4 pr-1 text-sm font-semibold">
             Lead offer
-            <select aria-label="Lead offer" value={offers.find((x) => x.is_lead)?.id || ''}
-              onChange={(e) => { const x = offers.find((y) => y.id === e.target.value); if (x) void setLead(x); }}
+            <select aria-label="Lead offer" value={sortedOffers.find((x) => x.is_lead)?.id || ''}
+              onChange={(e) => { const x = sortedOffers.find((y) => y.id === e.target.value); if (x) void setLead(x); }}
               className="rounded-full border border-line bg-white px-3 py-1 text-sm font-normal">
               <option value="" disabled>Pick one</option>
-              {offers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              {sortedOffers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
         )}
         {owner && saved && <span className="ml-auto text-xs text-ink-soft">{saved}</span>}
       </div>
       {leadErr && <p role="alert" className="text-sm text-red-700">{leadErr}</p>}
-      {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No lead offer has been shared with you yet.'}</Empty></Card>}
-      {owner && offers.length > 0 && view === 'table' && <OptionTable offers={offers} stories={stories} planHrefOf={planHrefOf} />}
+      {!sortedOffers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No lead offer has been shared with you yet.'}</Empty></Card>}
+      {owner && offers.length > 0 && view === 'table' && <OptionTable offers={sortedOffers} stories={stories} planHrefOf={planHrefOf} />}
       {offers.length > 0 && (view === 'cards' || (!owner && view === 'table')) && (
         <div className={owner ? 'grid items-start gap-4 lg:grid-cols-2' : 'max-w-xl'}>
-          {(owner ? offers : offers.slice(0, 1)).map((x, i) => (
+          {(owner ? sortedOffers : sortedOffers.slice(0, 1)).map((x, i) => (
             <OptionCard key={x.id} o={x} i={i} story={stories[x.id]} planHref={planHrefOf(x)} />
           ))}
         </div>
@@ -390,7 +531,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
         <>
           {owner && (
             <div className="flex flex-wrap items-center gap-2">
-              {offers.map((x) => (
+              {sortedOffers.map((x) => (
                 <button key={x.id} onClick={() => setActive(x.id)} aria-pressed={cur?.id === x.id}
                   className={`rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
                   {x.is_lead ? '★ ' : ''}{x.name} <span className={cur?.id === x.id ? 'text-white/70' : 'text-ink-soft'}>· {stories[x.id]?.headline?.cashOut?.value || money(evals[x.id].keepMonthly)}</span>
@@ -433,6 +574,14 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                         ? <span className="self-center text-sm font-medium text-good">Lenders see this as the plan</span>
                         : <Button kind="secondary" onClick={() => setBase({ ...base, planOffer: cur.id })}>Show lenders this as the plan</Button>}
                     </div>
+                    <SellerSummaryEditor
+                      offer={cur}
+                      onPatch={(p) => patch(cur.id, p)}
+                      onReset={() => {
+                        const fresh = computeSellerSummary(cur, cur.inputs, base, true);
+                        if (fresh) patch(cur.id, { seller_summary: fresh });
+                      }}
+                    />
                     <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
                       <p className="font-medium">Who can see the lead offer</p>
                       {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
@@ -446,7 +595,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
               <div className="space-y-5">
                 <Results r={r} />
                 <div className="flex justify-end">
-                  <InfoTip label="Underwriting benchmarks" lines={['Targets: 1.20x+ DSCR, 85% or fewer units to break even, 8–12% cash-on-cash, 75% or less total cost vs ARV. Seller loan terms are unconfirmed and nothing here is a lender quote.']} />
+                  <InfoTip label="Underwriting benchmarks" lines={['Targets: 1.20x+ DSCR, 85% or fewer units to break even, 8–12% cash-on-cash, 75% or less total cost vs estimated value after repairs. Seller loan terms are unconfirmed and nothing here is a lender quote.']} />
                 </div>
               </div>
             </div>

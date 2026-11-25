@@ -1,25 +1,27 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { roleLabel } from '../lib/format.js';
 import { setDealNames, buyerName } from '../lib/people.js';
 import Shell, { Card, Empty, PropertyHead } from '../components/Shell.jsx';
-import Owner from './Owner.jsx';
-import Realtor from './Realtor.jsx';
-import Seller from './Seller.jsx';
-import Reviewer from './Reviewer.jsx';
-import Lender from './Lender.jsx';
-import LeadGuest from './LeadGuest.jsx';
 import { PUBLIC_SITE, SITE_KIND, roleAllowedHere } from '../lib/site.js';
+
+const Owner = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Owner.jsx'));
+const Realtor = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Realtor.jsx'));
+const Seller = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./Seller.jsx'));
+const Lender = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Lender.jsx'));
+const LeadGuest = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./LeadGuest.jsx'));
+const Reviewer = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Reviewer.jsx'));
 
 const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'lead_guest', 'viewer'];
 
 function Page({ role, ...p }) {
-  if (role === 'owner') return <Owner {...p} />;
-  if (role === 'realtor') return <Realtor {...p} />;
-  if (role === 'seller') return <Seller {...p} />;
-  if (role === 'lender') return <Lender {...p} />;
-  if (role === 'lead_guest') return <LeadGuest {...p} />;
-  return <Reviewer {...p} role={role} />; // reviewer, viewer, guest
+  if (role === 'owner' && Owner) return <Owner {...p} />;
+  if (role === 'realtor' && Realtor) return <Realtor {...p} />;
+  if (role === 'seller' && Seller) return <Seller {...p} />;
+  if (role === 'lender' && Lender) return <Lender {...p} />;
+  if (role === 'lead_guest' && LeadGuest) return <LeadGuest {...p} />;
+  if (Reviewer) return <Reviewer {...p} role={role} />; // reviewer, viewer, guest
+  return null;
 }
 
 export default function DealRoom({ slug, tab, sub, session }) {
@@ -70,7 +72,9 @@ export default function DealRoom({ slug, tab, sub, session }) {
           <a href={`#/d/${slug}`} className="shrink-0 rounded-full bg-white px-3 py-0.5 font-medium text-ink">Exit</a>
         </div>
         <Shell head={<PropertyHead deal={state.deal} />} wide={sub === 'seller'}>
-          <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview' }} preview tab={innerTab} />
+          <Suspense fallback={<Empty>Loading…</Empty>}>
+            <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview' }} preview tab={innerTab} />
+          </Suspense>
         </Shell>
       </div>
     );
@@ -78,7 +82,9 @@ export default function DealRoom({ slug, tab, sub, session }) {
 
   return (
     <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} />} wide={state.role === 'seller' || state.role === 'owner'}>
-      <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} />
+      <Suspense fallback={<Empty>Loading…</Empty>}>
+        <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} />
+      </Suspense>
     </Shell>
   );
 }

@@ -34,13 +34,12 @@ test('deal at a glance starts with the seller’s offer and our offer, for every
   const glance = d.slice(d.indexOf('Deal at a glance'));
   assert.ok(glance.indexOf('OFFER_TILES.map') < glance.indexOf('Best cash flow'));
   // what-ifs never report offer numbers as changes
-  assert.match(src('src/components/Switches.jsx'), /\['strSource', 'strCheckedAt', 'planOffer', 'askPrice', 'ourOffer'\]\.includes\(k\)/);
+  assert.match(src('src/components/Switches.jsx'), /\['units', 'planOffer', 'askPrice', 'ourOffer'\]\.includes\(k\)/);
 });
 
-test('Airbnb source line is for the owner only', () => {
+test('Switches has no Airbnb controls', () => {
   const s = src('src/components/Switches.jsx');
-  assert.match(s, /\{owner && \(base\.strCheckedAt \|\| base\.strSource\)/);
-  assert.match(s, /<InfoTip/);
+  assert.doesNotMatch(s, /Airbnb|strNightly|strUnits/i);
 });
 
 test('10th unit starts at $30,000', () => {

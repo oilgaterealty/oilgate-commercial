@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Card, CardTitle } from './Shell.jsx';
+import { Button, Card, CardTitle, OverlayTrigger } from './Shell.jsx';
 
 export const CHARLOTTE_PARCELS = '6801234 and 6807893';
 
@@ -80,23 +80,34 @@ export function validProofItems(content = {}) {
 }
 
 // Single plain-English offer card shown to the seller (and lead_guest). Never renders multiple options.
-export function LeadOfferCard({ deal, content, preview, onAsk }) {
+export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
   const lead = normalizeLeadOffer(content);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState('');
 
-  const rows = [
-    ['Parcels included', `Both parcels: ${CHARLOTTE_PARCELS}`],
-    ['Purchase price', lead.price || 'To be agreed upfront in writing'],
-    ['What I take on', lead.buyer_takes_on],
-    ['What you contribute and receive', lead.seller_contributes_receives],
-    ['Where payments come from', lead.payment_source],
-    ['When the purchase happens', lead.closing_timing],
-    ['If the timeline slips', lead.timeline_slip],
-    ['Lender clearance condition', lead.lender_condition],
-  ];
+  const hasSummary = Boolean(summary && Array.isArray(summary.terms) && summary.terms.length > 0);
+  const rows = hasSummary
+    ? summary.terms.map((t) => ({
+        label: String(t?.label || '').trim(),
+        value: String(t?.value || '').trim(),
+        overlay: t?.overlay ? (Array.isArray(t.overlay) ? t.overlay : String(t.overlay).split('\n').filter(Boolean)) : [],
+      })).filter((t) => t.label || t.value)
+    : [
+        { label: 'Parcels included', value: `Both parcels: ${CHARLOTTE_PARCELS}`, overlay: [] },
+        { label: 'Purchase price', value: lead.price || 'To be agreed upfront in writing', overlay: [] },
+        { label: 'What I take on', value: lead.buyer_takes_on, overlay: [] },
+        { label: 'What you contribute and receive', value: lead.seller_contributes_receives, overlay: [] },
+        { label: 'Where payments come from', value: lead.payment_source, overlay: [] },
+        { label: 'When the purchase happens', value: lead.closing_timing, overlay: [] },
+        { label: 'If the timeline slips', value: lead.timeline_slip, overlay: [] },
+        { label: 'Lender clearance condition', value: lead.lender_condition, overlay: [] },
+      ];
+
+  const cleanTitle = hasSummary && summary.title
+    ? String(summary.title).replace(/^(Option\s+)?[A-Z]\s*:\s*/i, '').trim()
+    : '';
 
   const sendQuestion = async (e) => {
     e.preventDefault();
@@ -118,20 +129,24 @@ export function LeadOfferCard({ deal, content, preview, onAsk }) {
     <Card className="border-2 border-ink">
       <CardTitle
         aside={
-          preview && !lead.price ? (
+          preview && !hasSummary && !lead.price ? (
             <a href={`#/d/${deal.slug}/seller-page`} className="text-sm font-medium underline">
               Pick lead terms in Seller page
             </a>
           ) : null
         }
       >
-        The offer
+        {cleanTitle ? `The offer — ${cleanTitle}` : 'The offer'}
       </CardTitle>
       <dl className="divide-y divide-line">
-        {rows.map(([label, value]) => (
-          <div key={label} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[220px_1fr] sm:gap-4">
-            <dt className="text-sm font-semibold text-ink">{label}</dt>
-            <dd className="text-sm leading-relaxed text-ink">{value}</dd>
+        {rows.map((row) => (
+          <div key={row.label} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[220px_1fr] sm:gap-4">
+            <dt className="text-sm font-semibold text-ink">{row.label}</dt>
+            <dd className="text-sm leading-relaxed text-ink">
+              {row.overlay.length > 0 && OverlayTrigger
+                ? <OverlayTrigger lines={row.overlay}>{row.value}</OverlayTrigger>
+                : row.value}
+            </dd>
           </div>
         ))}
       </dl>
@@ -166,8 +181,17 @@ export function LeadOfferCard({ deal, content, preview, onAsk }) {
 }
 
 // "How I'll get this done" right below the offer; verified proof renders ONLY when owner-approved entries exist.
-export function ExecutionPlanCard({ content }) {
-  const steps = normalizeExecutionSteps(content);
+export function ExecutionPlanCard({ content, summary }) {
+  const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
+  const steps = hasSummarySteps
+    ? summary.steps.map((s, i) => ({
+        key: `sum-${i}`,
+        title: String(s?.title || '').trim(),
+        when: String(s?.when || '').trim(),
+        detail: String(s?.detail || '').trim(),
+        items: [],
+      })).filter((s) => s.title)
+    : normalizeExecutionSteps(content);
   const proof = validProofItems(content);
   return (
     <Card>
@@ -175,11 +199,14 @@ export function ExecutionPlanCard({ content }) {
       <ol className="grid gap-4 sm:grid-cols-2">
         {steps.map((s, i) => (
           <li key={s.key} className="rounded-2xl bg-paper p-4">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                {i + 1}
-              </span>
-              <h3 className="font-display text-lg font-semibold leading-snug">{s.title}</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                  {i + 1}
+                </span>
+                <h3 className="font-display text-lg font-semibold leading-snug">{s.title}</h3>
+              </div>
+              {s.when && <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-ink-soft">{s.when}</span>}
             </div>
             {s.detail && <p className="mt-2 text-sm leading-relaxed text-ink">{s.detail}</p>}
             {s.items.length > 0 && (

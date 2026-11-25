@@ -33,7 +33,7 @@ function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Selle
       <label htmlFor={`offer-${field}`} className="text-xs text-warm">{label}</label>
       <div className="relative mt-1">
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-display text-xl text-white/60">$</span>
-        <input id={`offer-${field}`} type="number" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, [field]: e.target.value === '' ? '' : +e.target.value })}
+        <input id={`offer-${field}`} type="number" inputMode="decimal" min={0} step={5000} value={v ?? ''} placeholder="Type it" onChange={(e) => setBase({ ...base, [field]: e.target.value === '' ? '' : +e.target.value })}
           className="w-full rounded-lg border border-white/20 bg-white/10 py-1 pl-6 pr-2 font-display text-xl font-semibold text-white outline-none focus:border-warm" />
       </div>
     </div>
@@ -82,11 +82,11 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
               <Tile label="Best cash flow" strong sub={best ? `${best.x.name} · whole building` : ''}>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
-              <Tile label="Monthly rent / unit" sub={o.strUnits ? `${o.strUnits} unit${o.strUnits > 1 ? 's' : ''} as Airbnb` : 'Regular rentals'}>{money(o.b.rent)}</Tile>
+              <Tile label="Monthly rent / unit" sub="All long-term rentals">{money(o.b.rent)}</Tile>
               <Tile label="Status">{cap(deal.status)}</Tile>
-              <Tile label="Units" sub={o.extraRepair ? `Adds ${money(o.extraRepair)} repair` : undefined}>{o.b.units}</Tile>
+              <Tile label="Units" sub={o.extraRepair ? `Includes ${money(o.extraRepair)} added unit` : undefined}>{o.b.units}</Tile>
               <Tile label="Yearly profit before payments">{money(o.noi)}</Tile>
-              <Tile label="Value after repairs">{money(o.b.value)}</Tile>
+              <Tile label="Estimated value after repairs">{money(o.b.value)}</Tile>
               <Tile label="Repair budget" sub={`Yearly return on value ${pct(o.capRate, 1)}`}>{money(o.b.rehab)}</Tile>
             </dl>
             <div className="mt-4"><Switches base={base} setBase={setBase} owner={owner} /></div>

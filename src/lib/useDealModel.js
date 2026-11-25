@@ -27,7 +27,7 @@ export function useDealModel(deal, { owner, onlyShared } = {}) {
       } else if (!owner) {
         list = list.slice(0, 1).map(({ note: _n, ...rest }) => rest);
       }
-      const loadedBase = { units: 10, ...b.data?.base };
+      const loadedBase = { ...b.data?.base, units: 10, strUnits: 0 };
       setOffers(list);
       setBaseState(loadedBase);
       original.current = { list, base: loadedBase };
@@ -42,8 +42,9 @@ export function useDealModel(deal, { owner, onlyShared } = {}) {
     timers.current[key] = setTimeout(async () => { const { error } = await fn(); setSaved(error ? 'Not saved. Check your connection.' : 'Saved'); }, 600);
   };
   const setBase = (b) => {
-    setBaseState(b);
-    later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: b, updated_at: new Date().toISOString() }));
+    const next = { ...b, units: 10, strUnits: 0 };
+    setBaseState(next);
+    later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: next, updated_at: new Date().toISOString() }));
   };
   const reset = () => { setOffers(original.current.list); setBaseState(original.current.base); };
   const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);

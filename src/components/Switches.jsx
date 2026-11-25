@@ -1,26 +1,11 @@
-import { buyerName, possessive } from '../lib/people.js';
+import { buyerName } from '../lib/people.js';
 import { useState } from 'react';
-import { BASE_DEFAULTS, BASE_FIELDS, STR_FIELDS, STRUCTURES, evaluate, money, pct, strMonthly, strUnitOptions } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, pct } from '../lib/dealmath.js';
 import { sendToOwner } from './Messages.jsx';
-import { Button, InfoTip } from './Shell.jsx';
-import { checkedLabel } from '../lib/v63.js';
+import { Button } from './Shell.jsx';
 
 const val = (base, k) => (base[k] ?? BASE_DEFAULTS[k]);
 const num = (v) => (v === '' ? '' : +v);
-
-function Segmented({ label, options, value, onChange }) {
-  return (
-    <div>
-      <p className="mb-1 text-xs text-ink-soft">{label}</p>
-      <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label={label}>
-        {options.map(([v, l]) => (
-          <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)}
-            className={`rounded-full px-3 py-1 text-sm transition ${value === v ? 'bg-ink text-white' : 'text-ink-soft hover:bg-warm-soft'}`}>{l}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function Money({ label, value, onChange, step = 25, suffix }) {
   return (
@@ -40,68 +25,27 @@ function Money({ label, value, onChange, step = 25, suffix }) {
   );
 }
 
-export function AirbnbSwitch({ base, setBase }) {
-  const strUnits = Math.round(+val(base, 'strUnits')) || 0;
-  return <Segmented label="Units as Airbnb" options={strUnitOptions()} value={strUnits} onChange={(n) => setBase({ ...base, strUnits: n })} />;
-}
-
-// The three switches: units (9 or 10), rent, and how many units run as Airbnb.
+// Always 10 long-term units: rent per unit and added unit rehab.
 // Owner, realtor, reviewer and lender see them. Never the seller or viewers.
-export default function Switches({ base, setBase, owner }) {
-  const [details, setDetails] = useState(false);
+export default function Switches({ base, setBase }) {
   const set = (p) => setBase({ ...base, ...p });
-  const units = +val(base, 'units') >= 10 ? 10 : 9;
-  const strUnits = Math.round(+val(base, 'strUnits')) || 0;
-  const s = strMonthly({ ...BASE_DEFAULTS, ...Object.fromEntries(Object.entries(base).map(([k, v]) => [k, +v || 0])) });
-  const hasStr = +val(base, 'strNightly') > 0;
   return (
     <div className="rounded-2xl bg-paper p-4">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <Segmented label="Units" options={[[9, '9 units'], [10, '10 units']]} value={units} onChange={(u) => set({ units: u })} />
-        {units === 10 && <Money label="Extra repair for the 10th unit" value={val(base, 'tenthUnitRepair')} step={500} onChange={(v) => set({ tenthUnitRepair: v })} />}
         <Money label="Rent per unit / month" value={val(base, 'rent')} onChange={(v) => set({ rent: v })} />
-        <AirbnbSwitch base={base} setBase={setBase} />
+        <Money label="Added unit rehab" value={val(base, 'tenthUnitRepair')} step={500} onChange={(v) => set({ tenthUnitRepair: v })} />
       </div>
-      {strUnits > 0 && (
-        <div className="mt-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            {hasStr
-              ? <p>Each Airbnb unit: <strong>{money(s.net)}/mo</strong> net vs {money(+val(base, 'rent'))}/mo long-term ({money(+val(base, 'strNightly'))}/night, {Math.round(+val(base, 'strOccPct'))}% booked).</p>
-              : <p className="text-ink-soft">No Airbnb numbers entered yet.</p>}
-            {owner && (base.strCheckedAt || base.strSource) && (
-              <InfoTip
-                label="Airbnb source"
-                lines={[
-                  base.strCheckedAt && `Airbnb numbers last checked ${checkedLabel(base.strCheckedAt)}`,
-                  base.strSource && `Source: ${base.strSource}`,
-                ]}
-              />
-            )}
-          </div>
-          <button type="button" onClick={() => setDetails(!details)} className="mt-1 text-xs underline">{details ? 'Hide Airbnb numbers' : 'Change Airbnb numbers'}</button>
-          {details && (
-            <div className="mt-2 grid gap-3 sm:grid-cols-3">
-              {STR_FIELDS.map(([k, l, u]) => (
-                <label key={k} className="text-xs text-ink-soft">{l}
-                  <input type="number" aria-label={l} min={0} step={u === '%' ? 1 : u === 'n' ? 0.5 : 5} value={val(base, k)} onChange={(e) => set({ [k]: num(e.target.value) })}
-                    className="mt-1 block h-8 w-full rounded-lg border border-line bg-white px-2 text-right text-sm text-ink outline-none focus:border-ink" />
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-const LABEL = { ...Object.fromEntries([...BASE_FIELDS, ...STR_FIELDS].map(([k, l]) => [k, l])), units: 'Units', tenthUnitRepair: 'Extra repair for the 10th unit', rent: 'Rent per unit / month', strUnits: 'Units as Airbnb' };
+const LABEL = { ...Object.fromEntries(BASE_FIELDS.map(([k, l]) => [k, l])), tenthUnitRepair: 'Added unit rehab', rent: 'Rent per unit / month' };
 
 // A plain message to the buyer describing what someone changed and what it does to each offer.
 export function whatIfMessage(original, base, offers) {
   const lines = ['What-if from the deal page (nothing was saved):'];
   for (const k of Object.keys({ ...original.base, ...base })) {
-    if (['strSource', 'strCheckedAt', 'planOffer', 'askPrice', 'ourOffer'].includes(k) || original.base[k] === base[k]) continue;
+    if (['units', 'planOffer', 'askPrice', 'ourOffer'].includes(k) || !(k in BASE_DEFAULTS) || original.base[k] === base[k]) continue;
     lines.push(`- ${LABEL[k] || k}: ${original.base[k] ?? 'blank'} → ${base[k]}`);
   }
   for (const o of offers) {
@@ -116,7 +60,7 @@ export function whatIfMessage(original, base, offers) {
     const now = evaluate(o.structure, o.inputs, base);
     const was = original.list.find((x) => x.id === o.id);
     const then = was ? evaluate(was.structure, was.inputs, original.base) : null;
-    lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of value`);
+    lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of estimated value`);
   }
   return lines.join('\n');
 }

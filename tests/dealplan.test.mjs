@@ -23,19 +23,15 @@ test('weeks map to months and costs spread by week', () => {
   assert.deepEqual(spread(500, 6, 6), { 2: 500 });
 });
 
-test('optional unit only counts when the building unit count includes it; occupied units pay from month 1', () => {
-  assert.equal(unitSchedule({ ...B, units: 3 }, P).length, 3);
-  const u = unitSchedule(B, P);
+test('optional added unit is always included and occupied units pay from month 1', () => {
+  const u = unitSchedule({ ...B, tenthUnitRepair: 2000 }, P);
   assert.equal(u.length, 4);
   assert.deepEqual(u.map((x) => [x.id, x.startMonth]), [['C', 1], ['A', 4], ['B', 5], ['D', 7]]);
 });
 
-test('Airbnb units are the first rent-ready vacant units and start sooner', () => {
+test('all units run long-term even if legacy short-term values are passed', () => {
   const u = unitSchedule({ ...B, strUnits: 1 }, { ...P, strSetupWeeks: 1 });
-  const a = u.find((x) => x.id === 'A');
-  assert.equal(a.mode, 'str');
-  assert.equal(a.startMonth, 3);
-  assert.equal(u.find((x) => x.id === 'C').mode, 'ltr');
+  assert.ok(u.every((x) => x.mode === 'ltr'));
 });
 
 test('lease option: seller payment scales with units renting, credits come off the price, refi pays everyone', () => {
@@ -153,16 +149,14 @@ test('expected refinance date is distinguished from lender eligibility without i
   assert.equal(eligible.eligibility.status, 'eligible');
 });
 
-test('Unit 10 rehab starts at $30,000, is omitted at 9 units, and counted once at 10 units', () => {
+test('Added unit rehab starts at $30,000 and is counted once in every plan', () => {
   const nineUnits = Array.from({ length: 9 }, (_, i) => ({ id: String(i + 1), rehab: 5000, ready: 4 }));
-  const plan10 = { ...P, months: 14, refiMonth: 12, units: [...nineUnits, { id: '10', rehab: 0, ready: 8, optional: true }] };
-  const r9 = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 9 }, plan10);
-  const r10Default = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10 }, plan10);
-  const r10Edited = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10, tenthUnitRepair: 45000 }, plan10);
+  const plan10 = { ...P, months: 14, refiMonth: 12, units: [...nineUnits, { id: '4b', rehab: 0, ready: 8, optional: true }] };
+  const rDefault = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10 }, plan10);
+  const rEdited = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10, tenthUnitRepair: 45000 }, plan10);
 
-  assert.equal(r9.units.length, 9);
-  assert.equal(r10Default.units.length, 10);
-  assert.equal(r10Default.eligibility.arvCase, 'stabilized_10_subject_to_approvals');
-  near(r10Default.totals.oneTimeTotal - r9.totals.oneTimeTotal, 30000, 1e-6);
-  near(r10Edited.totals.oneTimeTotal - r9.totals.oneTimeTotal, 45000, 1e-6);
+  assert.equal(rDefault.units.length, 10);
+  assert.equal(rDefault.eligibility.arvCase, 'stabilized_10_subject_to_approvals');
+  near(rDefault.totals.oneTimeTotal, 9 * 5000 + 3000 + 30000, 1e-6);
+  near(rEdited.totals.oneTimeTotal, 9 * 5000 + 3000 + 45000, 1e-6);
 });

@@ -3,7 +3,7 @@ import { evaluate, money, pct } from '../lib/dealmath.js';
 import { plain } from '../lib/plain.js';
 import { useUploads } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
-import { Card, CardTitle, Empty } from '../components/Shell.jsx';
+import { Card, CardTitle, Empty, OverlayTrigger } from '../components/Shell.jsx';
 import { CHARLOTTE_PARCELS, LeadOfferCard } from '../components/LeadOfferCard.jsx';
 
 // Lead-offer-only guest view (e.g., Evan / BIA respondents): deal overview + the one lead offer only.
@@ -37,7 +37,11 @@ export default function LeadGuest({ deal, preview }) {
           </div>
           <div>
             <dt className="text-ink-soft">Units</dt>
-            <dd className="font-semibold">10 units (Unit 10 needs its zoning certificate)</dd>
+            <dd className="font-semibold">
+              {OverlayTrigger
+                ? <OverlayTrigger lines={['The added unit needs its zoning certificate; the math runs on all 10 units.']}>10 units</OverlayTrigger>
+                : '10 units'}
+            </dd>
           </div>
         </dl>
       </Card>
@@ -69,7 +73,7 @@ export default function LeadGuest({ deal, preview }) {
               </dd>
             </div>
             <div className="rounded-xl bg-paper p-3">
-              <dt className="text-xs text-ink-soft">All-in vs ARV</dt>
+              <dt className="text-xs text-ink-soft">Total cost vs estimated value</dt>
               <dd className="mt-1 font-display text-xl font-semibold">{pct(evalResult.allInPct)}</dd>
             </div>
           </dl>

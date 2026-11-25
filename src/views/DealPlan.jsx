@@ -4,9 +4,11 @@ import { supabase } from '../lib/supabase.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useHashRoute } from '../lib/useHashRoute.js';
-import { monthlyPlan, rentStrategy, derivations, normalizePlan, ordinal } from '../lib/dealplan.js';
-import { money, valueSummary } from '../lib/dealmath.js';
-import { AirbnbSwitch } from '../components/Switches.jsx';
+import { OPTION_E_OVERLAY, addedUnitId, buildCostSummary, monthlyPlan, rentStrategy, derivations, normalizePlan, ordinal } from '../lib/dealplan.js';
+import { money, sellerLoanText, valueSummary } from '../lib/dealmath.js';
+import { loadReadinessMap } from '../lib/readiness.js';
+import CostSummary from '../components/CostSummary.jsx';
+import ReadinessBadge from '../components/ReadinessBadge.jsx';
 import { Card, CardTitle, Empty } from '../components/Shell.jsx';
 
 // Portals keep the month table's overlays outside its horizontal scroll area.
@@ -74,20 +76,28 @@ const stageNames = { vacant: 'Fixing up', partial: 'Filling up', full: 'Full', a
 const stageColors = { vacant: 'bg-amber-50', partial: 'bg-orange-50', full: 'bg-emerald-50', after: 'bg-sky-50' };
 const tone = (value) => value < 0 ? 'text-red-700' : 'text-ink';
 
-export function DealPlanView({ result, base, offers, selected, onSelect, setBase, comps = [] }) {
+export function DealPlanView({ result, base, offers, selected, onSelect, setBase, comps = [], readiness = {} }) {
   const explanations = derivations(result);
   const explain = (...titles) => explanations.filter(([title]) => titles.includes(title)).map(([title, text]) => `${title}: ${text}`);
   const sources = Object.entries(result.plan.sources).map(([key, value]) => `${key}: ${String(value)}`);
   const sellerDetails = explain('Seller payment', ...explanations.filter(([title]) => title.startsWith('Seller') && title !== 'Seller payment').map(([title]) => title));
   const runningDetails = [...sources, base.taxesSource && `Taxes: ${base.taxesSource}`,
-    `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance, utilities, admin and turns divided by 12; Airbnb costs are per active unit.`];
+    `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance, utilities, admin and turns divided by 12.`];
   const strategy = rentStrategy(base, result.plan);
   const { exit, totals, eligibility } = result;
   const val = valueSummary({ base: { ...result.operating.b, ...base }, noi: result.full.noi * 12, units: result.units.length || result.operating.b.units, comps });
-  const unit10Rehab = base.tenthUnitRepair ?? result.operating.b.tenthUnitRepair;
-  const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership' ? result.inputs.sellerAdvances : 0;
+  const addedId = addedUnitId(result.plan);
+  const costSummary = buildCostSummary(base, result.plan);
+  const addedUnitRehab = base.tenthUnitRepair ?? result.operating.b.tenthUnitRepair;
+  const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership'
+    ? result.inputs.sellerAdvances
+    : result.structure === 'seller_rehab'
+      ? result.inputs.sellerFund
+      : 0;
   const coverParts = [];
-  if (advancesStart > 0 && result.rows.some((r) => r.fromPool > 0)) coverParts.push('the seller’s upfront money');
+  if (advancesStart > 0 && result.rows.some((r) => r.fromPool > 0)) {
+    coverParts.push(result.structure === 'seller_rehab' ? 'the seller’s rehab money' : 'the seller’s upfront money');
+  }
   if (totals.peakLender > 0) coverParts.push('the rehab loan');
   const coveredBy = coverParts.length ? coverParts.join(' and ') : 'your cash';
   const fullSellerPay = result.structure === 'master_lease' ? result.inputs.payment : result.structure === 'partnership' ? result.inputs.stepUp : null;
@@ -100,10 +110,12 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
         : 'No lender has confirmed yet';
   const stageSellerLine = (stage) => {
     if (stage.key === 'after' && exit) return `Seller paid off at month ${exit.month} refinance (${money(exit.sellerPayoff)}).`;
+    if (result.structure === 'seller_rehab') return `${OPTION_E_OVERLAY}`;
     if (fullSellerPay !== null) return `${money(fullSellerPay)} full payment × ${stage.renting} of ${result.units.length} units renting = ${money(stage.seller)}/mo.`;
     return null;
   };
   return <div className="space-y-3">
+    <CostSummary summary={costSummary} Trigger={PlanOverlay} />
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap gap-2" aria-label="Plan options">
         {offers.map((offer) => <button key={offer.id} type="button" aria-pressed={offer.id === selected.id}
@@ -111,8 +123,8 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
-          <span>Unit 10 rehab</span>
-          <input type="number" min={0} step={1000} aria-label="Unit 10 rehab estimate" value={unit10Rehab}
+          <span>Added unit (Unit {addedId}) rehab</span>
+          <input type="number" inputMode="decimal" min={0} step={1000} aria-label={`Added unit (Unit ${addedId}) rehab`} value={addedUnitRehab}
             onChange={(e) => setBase({ ...base, tenthUnitRepair: e.target.value === '' ? 0 : +e.target.value })}
             className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
         </label>
@@ -139,7 +151,7 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
     {exit && <Card className="!p-4">
       <h2 className="font-display text-xl font-semibold"><PlanOverlay lines={explain('Refinance', 'Lender eligibility')}>Expected refinance (Month {exit.month}): {money(exit.loan)}</PlanOverlay></h2>
       <div className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-        <div className="flex justify-between gap-2"><span>Seller paid</span><PlanOverlay lines={explain('Buy price', 'Buyout', 'Seller payment')}>{money(exit.sellerPayoff)}</PlanOverlay></div>
+        <div className="flex justify-between gap-2"><span>Seller paid</span><PlanOverlay lines={explain('Buy price', 'Buyout', 'Seller payment')}>{result.structure === 'seller_rehab' ? sellerLoanText(exit.sellerPayoff, false) : money(exit.sellerPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Short-term loan paid off</span><PlanOverlay lines={explain('Short-term lender')}>{money(exit.lenderPayoff)}</PlanOverlay></div>
         <div className="flex justify-between gap-2"><span>Closing</span><PlanOverlay lines={explain('Refinance')}>{money(exit.closing)}</PlanOverlay></div>
         <div className={`flex justify-between gap-2 font-semibold ${tone(exit.left)}`}><span>{exit.left < 0 ? 'You bring' : 'You take home'}</span><PlanOverlay lines={explain('Refinance', 'Buyer cash')}>{exit.left > 0 ? '+' : ''}{money(exit.left)}</PlanOverlay></div>
@@ -157,7 +169,7 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
         ['Your cash in', totals.buyerCashTotal, explain('Buyer cash', 'Refinance', 'Bank payment')],
         ['Short-term loan at its peak', totals.peakLender, explain('Short-term lender')],
         ['Loan interest + points', totals.interestTotal + totals.pointsTotal, explain('Short-term lender')],
-        ['One-time costs', totals.oneTimeTotal, result.items.map((item) => `${item.label}: ${money(item.cost)}`)],
+        ['One-time costs', totals.oneTimeTotal, result.items.map((item) => (item.toInspect ? `${item.label}: To inspect (Not budgeted yet; checked at inspection.)` : `${item.label}: ${money(item.cost)}`))],
       ].map(([label, value, lines]) => <div key={label} className="rounded-xl border border-line bg-white p-3">
         <div className="text-xs font-medium text-ink-soft">{label}</div>
         <PlanOverlay className="mt-1 font-display text-xl font-semibold" lines={lines}>{money(value)}</PlanOverlay>
@@ -177,7 +189,7 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
               {row.renting} of {row.total}<span className="ml-1 inline-flex flex-wrap gap-1">{row.newIds.map((id) => <span key={id} className="rounded bg-white/80 px-1.5 py-0.5">+{id}</span>)}</span>
             </PlanOverlay></td>
             <td className="px-3 py-2">{money(row.collected)}</td>
-            <td className="px-3 py-2"><PlanOverlay lines={[`Management ${money(row.mgmt)}; fixed ${money(row.fixed)}; Airbnb ${money(row.strCosts)}`, ...runningDetails]}>{money(row.mgmt + row.fixed + row.strCosts)}</PlanOverlay></td>
+            <td className="px-3 py-2"><PlanOverlay lines={[`Management ${money(row.mgmt)}; fixed ${money(row.fixed)}`, ...runningDetails]}>{money(row.mgmt + row.fixed)}</PlanOverlay></td>
             <td className="px-3 py-2"><PlanOverlay lines={sellerDetails}>{money(row.seller)}</PlanOverlay></td>
             <td className="px-3 py-2">{money(row.bank)}</td>
             <td className="px-3 py-2">{money(row.interest)}</td>
@@ -192,20 +204,26 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
     <div className="grid gap-3 lg:grid-cols-[3fr_2fr]">
       <Card className="!p-4">
         <CardTitle>Renting strategy</CardTitle>
-        <AirbnbSwitch base={base} setBase={setBase} />
         <div className="mt-3 overflow-x-auto"><table className="w-full text-right text-sm tabular-nums">
           <thead><tr>{['Option', 'Rent', 'Collected', 'Net per unit/mo'].map((label) => <th key={label} scope="col" className="px-2 py-2 first:text-left text-xs text-ink-soft">{label}</th>)}</tr></thead>
           <tbody>{strategy.options.map((option) => <tr key={option.key} className={option.key === strategy.best?.key ? 'bg-warm-soft font-semibold' : 'border-t border-line'}>
-            <th scope="row" className="px-2 py-2 text-left"><PlanOverlay lines={[...sources, base.strSource && option.mode === 'str' && String(base.strSource), `Rent ${money(option.rent)}, collected after vacancy and fees ${money(option.collected)}, net after management and unit costs ${money(option.net)}/mo.`]}>{option.label}</PlanOverlay></th>
+            <th scope="row" className="px-2 py-2 text-left"><PlanOverlay lines={[...sources, `Rent ${money(option.rent)}, collected after vacancy ${money(option.collected)}, net after management ${money(option.net)}/mo.`]}>{option.label}</PlanOverlay></th>
             <td className="px-2 py-2">{money(option.rent)}</td><td className="px-2 py-2">{money(option.collected)}</td><td className={`px-2 py-2 ${tone(option.net)}`}>{money(option.net)}</td>
           </tr>)}</tbody>
         </table></div>
       </Card>
       <Card className="!p-4"><CardTitle>Lease-up order</CardTitle>
-        <div className="flex flex-wrap gap-2">{result.units.map((unit, idx) => <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`]}
-          className={`rounded-full border px-3 py-2 text-xs ${unit.mode === 'str' ? 'border-ink bg-warm-soft' : 'border-line bg-paper'}`}>
-          {ordinal(idx + 1)} Unit {unit.id} · month {unit.startMonth} · {money(unit.rent)}{unit.mode === 'str' ? ' · Airbnb' : ''}
-        </PlanOverlay>)}</div>
+        <div className="flex flex-wrap gap-2">{result.units.map((unit, idx) => {
+          const rLabel = readiness[Number(unit.id)]?.body;
+          return (
+            <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`, unit.optional ? `Unit ${unit.id} needs its zoning certificate.` : null]}
+              className="inline-flex flex-wrap items-center gap-1.5 rounded-full border border-line bg-paper px-3 py-2 text-xs">
+              <span>{ordinal(idx + 1)} Unit {unit.id}</span>
+              {rLabel && <ReadinessBadge unitNumber={Number(unit.id)} label={rLabel} compact />}
+              <span>· month {unit.startMonth} · {money(unit.rent)}</span>
+            </PlanOverlay>
+          );
+        })}</div>
       </Card>
     </div>
   </div>;
@@ -215,19 +233,20 @@ function LoadedDealPlan({ deal }) {
   const model = useDealModel(deal, { owner: true });
   const route = useHashRoute();
   const [chosen, setChosen] = useState(null);
-  const [state, setState] = useState({ slug: null, plan: null, comps: [], status: 'loading' });
+  const [state, setState] = useState({ slug: null, plan: null, comps: [], readiness: {}, status: 'loading' });
   useEffect(() => {
     let alive = true;
-    setState({ slug: deal.slug, plan: null, comps: [], status: 'loading' });
+    setState({ slug: deal.slug, plan: null, comps: [], readiness: {}, status: 'loading' });
     (async () => {
       try {
-        const [{ data: row, error }, { data: compRows }] = await Promise.all([
+        const [{ data: row, error }, { data: compRows }, readiness] = await Promise.all([
           supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${deal.slug}`).maybeSingle(),
           supabase.from('commercial_comps').select('units,sale_price').eq('deal_id', deal.id),
+          loadReadinessMap(supabase, deal.id),
         ]);
-        if (alive) setState({ slug: deal.slug, plan: row ? normalizePlan(row.value) : null, comps: compRows || [], status: error ? 'error' : 'ready' });
+        if (alive) setState({ slug: deal.slug, plan: row ? normalizePlan(row.value) : null, comps: compRows || [], readiness, status: error ? 'error' : 'ready' });
       } catch {
-        if (alive) setState({ slug: deal.slug, plan: null, comps: [], status: 'error' });
+        if (alive) setState({ slug: deal.slug, plan: null, comps: [], readiness: {}, status: 'error' });
       }
     })();
     return () => { alive = false; };
@@ -242,7 +261,7 @@ function LoadedDealPlan({ deal }) {
   if (!selected) return <Card><Empty>No offers yet</Empty></Card>;
   const planBase = { ...model.base, units: 10 };
   const result = monthlyPlan(selected.structure, selected.inputs, planBase, state.plan);
-  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={model.setBase} comps={state.comps}
+  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={model.setBase} comps={state.comps} readiness={state.readiness}
     onSelect={(offer) => { setChosen(offer.id); window.location.hash = `#/d/${deal.slug}/plans/${offer.structure}`; }} />;
 }
 

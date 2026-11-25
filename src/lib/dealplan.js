@@ -3,9 +3,10 @@
 // plan inputs (unit schedule, one-time costs, lender terms) all flow through here, so every page that
 // shows a plan updates the moment any input changes. Real deal numbers live only in the owner's private
 // database row, never in this public code. Defaults below are blank templates.
-import { BASE_DEFAULTS, operating, strMonthly, pmt, pv, STRUCTURES, money, valueSummary } from './dealmath.js';
+import { BASE_DEFAULTS, operating, pmt, pv, STRUCTURES, money, moneyK, sellerLoanText, valueSummary } from './dealmath.js';
 
 export const WEEKS_PER_MONTH = 52 / 12;
+export const OPTION_E_OVERLAY = 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.';
 
 export function ordinal(n) {
   const k = Math.abs(Math.round(n));
@@ -16,10 +17,8 @@ export function ordinal(n) {
 
 export const PLAN_DEFAULTS = {
   months: 24, // how many months the table runs
-  refiMonth: 12, // month the bank refinance closes (lease and wrap). Partnership uses its own buyout month.
+  refiMonth: 12, // month the bank refinance closes (lease, wrap, seller_rehab). Partnership uses its own buyout month.
   leaseUpWeeks: 4, // from rent-ready to a signed lease and a passed inspection
-  strSetupWeeks: 2, // from rent-ready to the first Airbnb guest
-  strFurnishPerUnit: 0, // one-time furnishing per Airbnb unit
   rehabStartWeek: 0, // when unit work begins
   lenderRate: 0, // short-term lender, interest only, % per year
   lenderPoints: 0, // % of each draw
@@ -30,7 +29,7 @@ export const PLAN_DEFAULTS = {
   sellerLoanYears: 30,
   units: [], // { id, rehab, ready (week), occupied, rent, optional, note }
   costs: [], // { label, cost, start (week), end (week), group }
-  rentOptions: [], // { key, label, rent } long-term rent levels to compare (e.g. payment standards)
+  rentOptions: [], // { key, label, rent } long-term rent levels to compare
 };
 
 const num = (v, d = 0) => (Number.isFinite(+v) && v !== '' && v !== null && v !== undefined ? +v : d);
@@ -70,6 +69,15 @@ export function normalizePlan(raw) {
   return out;
 }
 
+export function addedUnitOf(planIn) {
+  const plan = normalizePlan(planIn);
+  return plan.units.find((u) => u.optional) || null;
+}
+
+export function addedUnitId(planIn) {
+  return addedUnitOf(planIn)?.id || '10';
+}
+
 // Owner-only helper so Offers never embeds the deal_plan settings key in public/seller builds.
 export async function loadDealPlan(supabase, slug) {
   const { data: row, error } = await supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${slug}`).maybeSingle();
@@ -77,81 +85,149 @@ export async function loadDealPlan(supabase, slug) {
   return row ? normalizePlan(row.value) : null;
 }
 
-// Which units are in the plan, in lease-up order, and when each starts paying.
+// Which units are in the plan, in lease-up order, and when each starts paying. Always includes the added unit.
 export function unitSchedule(baseIn, planIn) {
   const o = operating(baseIn);
   const plan = normalizePlan(planIn);
-  const required = plan.units.filter((u) => !u.optional);
-  const optional = plan.units.filter((u) => u.optional);
-  const extra = Math.max(0, o.b.units - required.length);
-  const hasEditableTenth = baseIn && baseIn.tenthUnitRepair !== undefined && baseIn.tenthUnitRepair !== null && baseIn.tenthUnitRepair !== '';
-  const pickedOptional = optional.slice(0, extra).map((u) => {
-    const rehab = hasEditableTenth ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : (u.rehab > 0 ? u.rehab : BASE_DEFAULTS.tenthUnitRepair);
+  const hasEditableAdded = baseIn && baseIn.tenthUnitRepair !== undefined && baseIn.tenthUnitRepair !== null && baseIn.tenthUnitRepair !== '';
+  const hasOptional = plan.units.some((u) => u.optional);
+  const chosen = plan.units.map((u) => {
+    if (!u.optional) return { ...u };
+    const rehab = hasEditableAdded ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : (u.rehab > 0 ? u.rehab : BASE_DEFAULTS.tenthUnitRepair);
     return { ...u, rehab };
   });
-  const chosen = [...required, ...pickedOptional];
-  if (o.b.units >= 10 && plan.units.length > 0 && chosen.length === 9 && optional.length === 0) {
+  if (!hasOptional && chosen.length === 9) {
     const maxReady = chosen.reduce((m, u) => Math.max(m, u.ready), 0);
     chosen.push({
       id: '10',
-      rehab: hasEditableTenth ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : BASE_DEFAULTS.tenthUnitRepair,
+      rehab: hasEditableAdded ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : BASE_DEFAULTS.tenthUnitRepair,
       ready: maxReady || 16,
       occupied: false,
       rent: null,
       optional: true,
-      note: 'Unit 10 rehab (subject to approvals)',
+      note: 'Unit 10 needs its zoning certificate',
     });
   }
-  const strCount = o.strUnits;
-  const byReady = [...chosen].sort((a, b) => (a.occupied - b.occupied) || (a.ready - b.ready));
-  const strIds = new Set(byReady.filter((u) => !u.occupied).slice(0, strCount).map((u) => u.id));
   return chosen.map((u) => {
-    const str = strIds.has(u.id);
-    const startMonth = u.occupied ? 1 : monthOfWeek(u.ready + (str ? plan.strSetupWeeks : plan.leaseUpWeeks)) + 1;
-    return { ...u, mode: str ? 'str' : 'ltr', rent: u.rent ?? o.b.rent, startMonth };
+    const startMonth = u.occupied ? 1 : monthOfWeek(u.ready + plan.leaseUpWeeks) + 1;
+    return { ...u, mode: 'ltr', rent: u.rent ?? o.b.rent, startMonth };
   }).sort((a, b) => a.startMonth - b.startMonth || a.ready - b.ready);
 }
 
-// Monthly money from one renting unit, after vacancy and platform fees (before management).
-const unitCollected = (u, b, str) => (u.mode === 'str' ? str.collected : u.rent * (1 - b.vacancyPct / 100));
+// Monthly money from one long-term renting unit, after vacancy (before management).
+const unitCollected = (u, b) => u.rent * (1 - b.vacancyPct / 100);
 
-function sellerPayoff(structure, x, credits) {
+function sellerPayoff(structure, x, credits, sellerLoanRemaining = 0) {
   if (structure === 'master_lease') return Math.max(0, x.optionPrice + x.sellerAdvances - credits);
   if (structure === 'wrap') return x.note;
   if (structure === 'partnership') return x.buyout + x.sellerAdvances;
+  if (structure === 'seller_rehab') return sellerLoanRemaining + (x.addFundToBuyout ? num(x.sellerFund) : 0);
   return 0;
+}
+
+function capFirst(s) {
+  const t = String(s || '').trim();
+  return t ? t[0].toUpperCase() + t.slice(1) : '';
+}
+
+function joinLabels(labels) {
+  const list = labels.map((s) => String(s || '').trim()).filter(Boolean);
+  if (!list.length) return '';
+  if (list.length === 1) return capFirst(list[0]);
+  if (list.length === 2) return `${capFirst(list[0])} and ${list[1].toLowerCase()}`;
+  return `${capFirst(list[0])}, ${list.slice(1, -1).map((x) => x.toLowerCase()).join(', ')}, and ${list.at(-1).toLowerCase()}`;
+}
+
+export function buildCostSummary(baseIn = {}, planIn = {}) {
+  const plan = normalizePlan(planIn);
+  const units = unitSchedule(baseIn, plan);
+  const added = units.find((u) => u.optional) || null;
+  const unitsTotal = units.reduce((s, u) => s + num(u.rehab), 0);
+  const topUnits = [...units].filter((u) => u.rehab > 0).sort((a, b) => b.rehab - a.rehab).slice(0, 2);
+  const unitsInline = topUnits.map((u) => `Unit ${u.id} ${moneyK(u.rehab)}`).join(', ');
+  const unitsOverlay = [
+    ...units.map((u) => `Unit ${u.id}${u.optional ? ' (added unit)' : ''}: ${money(u.rehab)}`),
+    ...(added ? [`Unit ${added.id} needs its zoning certificate.`] : []),
+    `Total units: ${money(unitsTotal)}.`,
+  ];
+
+  const systemsPriced = plan.costs.filter((c) => c.group === 'systems' && c.cost > 0);
+  const buildingTotal = systemsPriced.reduce((s, c) => s + c.cost, 0);
+  const buildingInline = systemsPriced.map((c) => `${c.label.toLowerCase()} ${moneyK(c.cost)}`).join(', ');
+  const buildingOverlay = [
+    ...(systemsPriced.length ? systemsPriced.map((c) => `${c.label}: ${money(c.cost)}`) : ['No priced building items.']),
+    `Total building: ${money(buildingTotal)}.`,
+  ];
+
+  const setupItems = plan.costs.filter((c) => c.group !== 'systems' && c.cost > 0);
+  const setupTotal = setupItems.reduce((s, c) => s + c.cost, 0);
+  const setupInline = setupItems.slice(0, 4).map((c) => c.label.toLowerCase()).join(', ');
+  const setupOverlay = [
+    ...(setupItems.length ? setupItems.map((c) => `${c.label}: ${money(c.cost)}`) : ['No setup items entered.']),
+    `Total setup: ${money(setupTotal)}.`,
+  ];
+
+  const systemsInspect = plan.costs.filter((c) => c.group === 'systems' && c.cost === 0);
+  const inspectTitle = joinLabels(systemsInspect.map((c) => c.label));
+  const inspectOverlay = systemsInspect.length
+    ? [...systemsInspect.map((c) => `${c.label}: To inspect`), 'Not budgeted yet; checked at inspection.']
+    : [];
+
+  const wholeTotal = unitsTotal + buildingTotal + setupTotal;
+  const heading = `Whole job about ${moneyK(wholeTotal)}`;
+  const headingOverlay = [
+    `Units: ${money(unitsTotal)}`,
+    `Building: ${money(buildingTotal)}`,
+    `Setup: ${money(setupTotal)}`,
+    `Total job: ${money(wholeTotal)}.`,
+  ];
+  const lines = [
+    { key: 'units', label: `Units ${moneyK(unitsTotal)}`, detail: unitsInline, overlay: unitsOverlay },
+    { key: 'building', label: `Building ${moneyK(buildingTotal)}`, detail: buildingInline, overlay: buildingOverlay },
+    { key: 'setup', label: `Setup about ${moneyK(setupTotal)}`, detail: setupInline, overlay: setupOverlay },
+    ...(systemsInspect.length ? [{ key: 'inspect', label: `${inspectTitle}: $0, to inspect`, detail: '', overlay: inspectOverlay }] : []),
+  ];
+  const oneLine = `${heading} — Units ${moneyK(unitsTotal)}, Building ${moneyK(buildingTotal)}, Setup about ${moneyK(setupTotal)}${systemsInspect.length ? `, ${inspectTitle}: $0, to inspect` : ''}`;
+  return { total: wholeTotal, heading, headingOverlay, oneLine, lines, inspectItems: systemsInspect };
 }
 
 export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) {
   const o = operating(baseIn);
   const b = o.b;
   const plan = normalizePlan(planIn);
-  const str = strMonthly(b);
   const def = STRUCTURES[structure]?.defaults || {};
-  const x = { ...def, ...Object.fromEntries(Object.entries(inputsIn || {}).map(([k, v]) => [k, num(v, def[k])])) };
+  const x = {
+    ...def,
+    ...Object.fromEntries(
+      Object.entries(inputsIn || {}).map(([k, v]) => [k, typeof def[k] === 'boolean' ? Boolean(v) : num(v, def[k])])
+    ),
+  };
   const units = unitSchedule(baseIn, plan);
   const total = units.length;
   const fixedMo = (b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12;
 
-  // One-time costs by month: every listed cost, each unit's rent-ready work, Airbnb furnishing.
+  // One-time costs by month: every listed cost and each unit's rent-ready work (added unit counted once).
   const oneTime = {};
   const items = [];
   const add = (label, group, cost, start, end) => {
-    if (!num(cost)) return;
-    items.push({ label, group, cost: num(cost), start, end });
-    for (const [m, v] of Object.entries(spread(cost, start, end))) (oneTime[m] ||= []).push({ label, group, amount: v });
+    const amt = num(cost);
+    if (!amt) {
+      if (group === 'systems') items.push({ label, group, cost: 0, start, end, toInspect: true });
+      return;
+    }
+    items.push({ label, group, cost: amt, start, end, toInspect: false });
+    for (const [m, v] of Object.entries(spread(amt, start, end))) (oneTime[m] ||= []).push({ label, group, amount: v });
   };
   for (const c of plan.costs) add(c.label, c.group, c.cost, c.start, c.end);
   for (const u of units) {
-    add(`Unit ${u.id} rent-ready work`, 'units', u.rehab, Math.min(plan.rehabStartWeek, u.ready), u.ready);
-    if (u.mode === 'str') add(`Unit ${u.id} Airbnb furnishing`, 'units', plan.strFurnishPerUnit, u.ready, u.ready);
+    const label = u.optional ? `Unit ${u.id} (added unit) rehab` : `Unit ${u.id} rent-ready work`;
+    add(label, 'units', u.rehab, Math.min(plan.rehabStartWeek, u.ready), u.ready);
   }
   if (structure === 'cash') items.unshift({ label: 'Down payment and closing', group: 'closing', cost: x.price * (x.downPct / 100 + x.closingPct / 100), start: 0, end: 0 });
 
-  // Stabilized: every unit renting. Sizes the bank refinance and the "full" stage.
-  const fullCollected = units.reduce((s, u) => s + unitCollected(u, b, str), 0);
-  const fullStrCosts = units.filter((u) => u.mode === 'str').length * b.strCostsMo;
-  const fullNoi = fullCollected * (1 - b.mgmtPct / 100) - fixedMo - fullStrCosts;
+  // Stabilized: every unit renting long-term. Sizes the bank refinance and the "full" stage.
+  const fullCollected = units.reduce((s, u) => s + unitCollected(u, b), 0);
+  const fullNoi = fullCollected * (1 - b.mgmtPct / 100) - fixedMo;
   const fullReserves = (total * b.reservesPerUnit) / 12;
   const fullCashFlow = fullNoi - fullReserves;
   const refiLoan = Math.min(Math.max(0, pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr)), (b.refiLtv / 100) * b.value);
@@ -160,13 +236,24 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
 
   const bankLoan = structure === 'cash' ? x.price * (1 - x.downPct / 100) : 0;
   const bankPayment = structure === 'cash' ? pmt(x.rate, x.years, bankLoan) : 0;
-  const exitMonth = structure === 'cash' ? null : structure === 'partnership' ? Math.max(1, Math.round(x.monthsToBuyout)) : Math.max(1, Math.round(plan.refiMonth));
-  const exitClosing = structure === 'master_lease' ? x.exerciseClosing : structure === 'partnership' ? x.closing : 0;
-  const sellerLoanPayment = plan.sellerLoanBalance > 0 && plan.sellerLoanRate > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : 0;
+  const exitMonth = structure === 'cash'
+    ? null
+    : structure === 'partnership'
+      ? Math.max(1, Math.round(x.monthsToBuyout))
+      : structure === 'seller_rehab'
+        ? Math.max(1, Math.round(num(inputsIn?.refiMonth) > 0 ? num(inputsIn.refiMonth) : plan.refiMonth))
+        : Math.max(1, Math.round(plan.refiMonth));
+  const exitClosing = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab') ? x.closing : 0;
+  const sellerLoanPayment = plan.sellerLoanBalance > 0
+    ? (plan.sellerLoanRate > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : (plan.sellerLoanYears > 0 ? plan.sellerLoanBalance / (plan.sellerLoanYears * 12) : 0))
+    : 0;
 
   const advancesStart = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : 0;
+  const sellerFundStart = structure === 'seller_rehab' ? Math.max(0, num(x.sellerFund)) : 0;
   const startingBuyerCash = structure === 'cash' ? items[0].cost : num(x.buyerCash);
   let sellerPool = advancesStart;
+  let sellerFundPool = sellerFundStart;
+  let sellerLoanBal = Math.max(0, plan.sellerLoanBalance);
   let buyerPool = structure === 'cash' ? 0 : num(x.buyerCash);
   let lender = 0, credits = 0, refied = false;
   let peakLender = 0, interestTotal = 0, pointsTotal = 0, sellerTotal = structure === 'cash' ? x.price : 0, buyerKeepsTotal = 0, buyerCashTotal = startingBuyerCash, oneTimeTotal = 0;
@@ -175,49 +262,105 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
 
   for (let m = 1; m <= plan.months; m++) {
     const renting = units.filter((u) => u.startMonth <= m);
-    const collected = renting.reduce((s, u) => s + unitCollected(u, b, str), 0);
+    const collected = renting.reduce((s, u) => s + unitCollected(u, b), 0);
     const mgmt = collected * (b.mgmtPct / 100);
-    const strCosts = renting.filter((u) => u.mode === 'str').length * b.strCostsMo;
-    const operatingCosts = fixedMo + strCosts + mgmt;
+    const operatingCosts = fixedMo + mgmt;
     const noi = collected - operatingCosts;
     const reserves = (renting.length * b.reservesPerUnit) / 12;
     const share = total ? renting.length / total : 0;
 
-    let seller = 0, bank = 0;
-    if (refied) bank = refiPayment;
-    else if (structure === 'master_lease') seller = x.payment * share;
-    else if (structure === 'partnership') seller = x.stepUp * share;
-    else if (structure === 'wrap') seller = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
-    if (structure === 'cash') bank = bankPayment;
-    if (structure === 'master_lease' && !refied) credits += (seller * x.creditPct) / 100;
-
     const interest = (lender * plan.lenderRate) / 100 / 12;
     const costs = oneTime[m] || [];
     const costTotal = costs.reduce((s, c) => s + c.amount, 0);
-    let net = noi - reserves - seller - bank - interest - costTotal;
 
-    let fromPool = 0, draw = 0, points = 0, keeps = 0, refi = null;
-    if (net < 0) {
-      const fromSellerPool = Math.min(sellerPool, -net); sellerPool -= fromSellerPool; net += fromSellerPool;
-      const fromBuyerPool = Math.min(buyerPool, -net); buyerPool -= fromBuyerPool; net += fromBuyerPool;
-      fromPool = fromSellerPool + fromBuyerPool;
-      if (net < 0) {
-        if (structure === 'cash') { buyerCashTotal += -net; } else {
-          const f = 1 - plan.lenderPoints / 100;
-          draw = f > 0 ? -net / f : -net; points = draw - -net; lender += draw;
+    let seller = 0, bank = 0, fromPool = 0, draw = 0, points = 0, keeps = 0, refi = null;
+
+    if (structure === 'seller_rehab') {
+      if (refied) {
+        bank = refiPayment;
+        let net = noi - reserves - bank - interest - costTotal;
+        if (net < 0) {
+          const fromBuyerPool = Math.min(buyerPool, -net); buyerPool -= fromBuyerPool; net += fromBuyerPool;
+          fromPool = fromBuyerPool;
+          if (net < 0) {
+            const f = 1 - plan.lenderPoints / 100;
+            draw = f > 0 ? -net / f : -net; points = draw - -net; lender += draw;
+            net = 0;
+          }
+        } else {
+          keeps = net;
         }
-        net = 0;
+      } else {
+        const loanInt = (sellerLoanBal * plan.sellerLoanRate) / 100 / 12;
+        const paidSellerLoan = sellerLoanBal > 0 ? Math.min(sellerLoanPayment, sellerLoanBal + loanInt) : 0;
+        if (sellerLoanBal > 0) {
+          const principalPaid = Math.max(0, paidSellerLoan - loanInt);
+          sellerLoanBal = Math.max(0, sellerLoanBal - principalPaid);
+        }
+        bank = paidSellerLoan;
+        const extra = noi - reserves - paidSellerLoan - interest;
+        let need = costTotal + (extra < 0 ? -extra : 0);
+        if (need > 0) {
+          const fromBuyer = Math.min(buyerPool, need); buyerPool -= fromBuyer; need -= fromBuyer;
+          const fromSellerFund = Math.min(sellerFundPool, need); sellerFundPool -= fromSellerFund; need -= fromSellerFund;
+          fromPool = fromBuyer + fromSellerFund;
+          if (need > 0) {
+            const f = 1 - plan.lenderPoints / 100;
+            draw = f > 0 ? need / f : need; points = draw - need; lender += draw;
+          }
+        }
+        if (extra > 0) {
+          if (renting.length < x.fillTarget) {
+            seller = extra;
+            keeps = 0;
+          } else {
+            const buyerPct = Math.max(0, Math.min(100, x.buyerSplitPct)) / 100;
+            keeps = extra * buyerPct;
+            seller = extra - keeps;
+          }
+        }
       }
-    } else keeps = net;
+    } else {
+      if (refied) bank = refiPayment;
+      else if (structure === 'master_lease') seller = x.payment * share;
+      else if (structure === 'partnership') seller = x.stepUp * share;
+      else if (structure === 'wrap') seller = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
+      if (structure === 'cash') bank = bankPayment;
+      if (structure === 'master_lease' && !refied) credits += (seller * x.creditPct) / 100;
+
+      let net = noi - reserves - seller - bank - interest - costTotal;
+      if (net < 0) {
+        const fromSellerPool = Math.min(sellerPool, -net); sellerPool -= fromSellerPool; net += fromSellerPool;
+        const fromBuyerPool = Math.min(buyerPool, -net); buyerPool -= fromBuyerPool; net += fromBuyerPool;
+        fromPool = fromSellerPool + fromBuyerPool;
+        if (net < 0) {
+          if (structure === 'cash') { buyerCashTotal += -net; } else {
+            const f = 1 - plan.lenderPoints / 100;
+            draw = f > 0 ? -net / f : -net; points = draw - -net; lender += draw;
+          }
+          net = 0;
+        }
+      } else keeps = net;
+    }
 
     // Measure peak bridge balance before the refinance payoff clears it to zero.
     const lenderBeforePayoff = lender;
     peakLender = Math.max(peakLender, lenderBeforePayoff);
 
     if (exitMonth === m && !refied) {
-      const payoff = sellerPayoff(structure, x, credits);
+      const payoff = sellerPayoff(structure, x, credits, sellerLoanBal);
       const due = payoff + lenderBeforePayoff + exitClosing;
-      refi = { loan: refiLoan, net: refiNet, sellerPayoff: payoff, lenderPayoff: lenderBeforePayoff, closing: exitClosing, left: refiNet - due, maxSellerPayoff: refiNet - lenderBeforePayoff - exitClosing };
+      refi = {
+        loan: refiLoan,
+        net: refiNet,
+        sellerPayoff: payoff,
+        sellerLoanRemaining: structure === 'seller_rehab' ? sellerLoanBal : null,
+        sellerFundInBuyout: structure === 'seller_rehab' && x.addFundToBuyout ? num(x.sellerFund) : 0,
+        lenderPayoff: lenderBeforePayoff,
+        closing: exitClosing,
+        left: refiNet - due,
+        maxSellerPayoff: refiNet - lenderBeforePayoff - exitClosing,
+      };
       sellerTotal += payoff; lender = 0; refied = true;
       if (refi.left >= 0) keeps += refi.left; else buyerCashTotal += -refi.left;
       exit = { month: m, ...refi, credits };
@@ -229,8 +372,10 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     const stage = refied ? 'after' : renting.length >= total ? 'full' : renting.length > units.filter((u) => u.occupied).length ? 'partial' : 'vacant';
     rows.push({
       month: m, stage, renting: renting.length, total, rentingIds: renting.map((u) => u.id), newIds: renting.filter((u) => u.startMonth === m).map((u) => u.id),
-      collected, mgmt, fixed: fixedMo, strCosts, noi, reserves, seller, bank, interest, costs, costTotal,
-      fromPool, draw, points, lender, lenderBeforePayoff, keeps, refi, cumulative: buyerKeepsTotal + (refi && refi.left > 0 ? refi.left : 0) + exitCash - buyerCashTotal, sellerGap: sellerLoanPayment ? seller - sellerLoanPayment : null,
+      collected, mgmt, fixed: fixedMo, strCosts: 0, noi, reserves, seller, bank, interest, costs, costTotal,
+      fromPool, draw, points, lender, lenderBeforePayoff, keeps, refi, cumulative: buyerKeepsTotal + (refi && refi.left > 0 ? refi.left : 0) + exitCash - buyerCashTotal,
+      sellerGap: sellerLoanPayment ? (structure === 'seller_rehab' ? seller : seller - sellerLoanPayment) : null,
+      sellerLoanRemaining: structure === 'seller_rehab' ? sellerLoanBal : null,
     });
   }
 
@@ -254,33 +399,62 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     seasoningMet,
     lenderConfirmed,
     status: eligibilityStatus,
-    arvCase: total >= 10 ? 'stabilized_10_subject_to_approvals' : 'nine_units',
+    arvCase: 'stabilized_10_subject_to_approvals',
   };
 
   const stages = ['vacant', 'partial', 'full', 'after'].map((key) => {
     const rs = rows.filter((r) => r.stage === key && !r.refi);
     if (!rs.length) return { key, from: null, to: null };
     const last = rs[rs.length - 1];
-    return { key, from: rs[0].month, to: last.month, renting: last.renting, collected: last.collected, noi: last.noi, seller: last.seller, bank: last.bank, interest: last.interest, keeps: last.noi - last.reserves - last.seller - last.bank - last.interest, sellerGap: last.sellerGap };
+    return {
+      key,
+      from: rs[0].month,
+      to: last.month,
+      renting: last.renting,
+      collected: last.collected,
+      noi: last.noi,
+      seller: last.seller,
+      sellerAvg: rs.reduce((s, r) => s + r.seller, 0) / rs.length,
+      bank: last.bank,
+      interest: last.interest,
+      keeps: last.noi - last.reserves - last.seller - last.bank - last.interest,
+      sellerGap: last.sellerGap,
+    };
   });
 
   return {
     structure, inputs: x, operating: o, plan, units, items, rows, stages, exit, eligibility,
     full: { collected: fullCollected, noi: fullNoi, reserves: fullReserves, cashFlow: fullCashFlow, refiLoan, refiNet, refiPayment, refiLimitedBy: pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr) < (b.refiLtv / 100) * b.value ? 'DSCR' : 'LTV' },
-    totals: { sellerTotal, sellerNet: plan.sellerLoanBalance ? sellerTotal - plan.sellerLoanBalance : null, buyerKeepsTotal, refiCashOut: exit && exit.left > 0 ? exit.left : 0, startingBuyerCash, unusedBuyerPool: buyerPool, buyerCashTotal, peakLender, interestTotal, pointsTotal, oneTimeTotal, advancesUsed: advancesStart - sellerPool, cashPrice: structure === 'cash' ? x.price : null },
+    totals: {
+      sellerTotal,
+      sellerNet: plan.sellerLoanBalance ? sellerTotal - plan.sellerLoanBalance : null,
+      buyerKeepsTotal,
+      refiCashOut: exit && exit.left > 0 ? exit.left : 0,
+      startingBuyerCash,
+      unusedBuyerPool: buyerPool,
+      buyerCashTotal,
+      peakLender,
+      interestTotal,
+      pointsTotal,
+      oneTimeTotal,
+      advancesUsed: advancesStart - sellerPool,
+      sellerFundUsed: sellerFundStart - sellerFundPool,
+      cashPrice: structure === 'cash' ? x.price : null,
+    },
     sellerLoanPayment, bankLoan, bankPayment,
   };
 }
 
-// Compare long-term rent levels and Airbnb for one unit, per month, after vacancy, fees and management.
+// Compare long-term rent levels for one unit, per month, after vacancy and management.
 export function rentStrategy(baseIn = {}, planIn = {}) {
   const o = operating(baseIn);
-  const b = o.b, s = strMonthly(b), plan = normalizePlan(planIn);
-  const keep = (collected, extra = 0) => collected * (1 - b.mgmtPct / 100) - extra;
-  const longTerm = [{ key: 'market', label: 'Market rent', rent: b.rent }, ...plan.rentOptions].filter((r) => r.rent > 0).map((r) => ({ ...r, mode: 'ltr', collected: r.rent * (1 - b.vacancyPct / 100), net: keep(r.rent * (1 - b.vacancyPct / 100)) }));
-  const airbnb = b.strNightly > 0 ? [{ key: 'str', label: 'Airbnb', mode: 'str', rent: s.gross, collected: s.collected, net: keep(s.collected, b.strCostsMo), nights: s.nights }] : [];
-  const best = [...longTerm, ...airbnb].sort((a, z) => z.net - a.net)[0] || null;
-  return { options: [...longTerm, ...airbnb], best, furnish: plan.strFurnishPerUnit };
+  const b = o.b, plan = normalizePlan(planIn);
+  const keep = (collected) => collected * (1 - b.mgmtPct / 100);
+  const longTerm = [{ key: 'market', label: 'Market rent', rent: b.rent }, ...plan.rentOptions]
+    .filter((r) => r.rent > 0)
+    .map((r) => ({ ...r, mode: 'ltr', collected: r.rent * (1 - b.vacancyPct / 100), net: keep(r.rent * (1 - b.vacancyPct / 100)) }));
+  const best = [...longTerm].sort((a, z) => z.net - a.net)[0] || null;
+  return { options: longTerm, best };
 }
 
 // Plain lines that show how each headline number is built. Shown only in tap/hover overlays.
@@ -288,7 +462,8 @@ export function derivations(p) {
   const x = p.inputs, $ = (v) => (Number.isFinite(v) ? (v < 0 ? '−$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US') : '—');
   const L = [];
   const full = p.full;
-  L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy and fees. Less management, taxes, insurance, utilities, admin and turns leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
+  const addedId = addedUnitId(p.plan);
+  L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy. Less management, taxes, insurance, utilities, admin and turns leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
   if (p.structure === 'master_lease') {
     L.push(['Seller payment', `${$(x.payment)}/mo is the payment once all ${p.units.length} units rent. Each month the seller gets that times the share of units renting, so it grows as units fill. ${x.creditPct}% of every payment comes off the price.`]);
     if (p.exit) L.push(['Buy price', `${$(x.optionPrice)} locked price + ${$(x.sellerAdvances)} the seller fronted − ${$(p.exit.credits)} already credited = ${$(p.exit.sellerPayoff)} due in month ${p.exit.month}.`]);
@@ -299,6 +474,10 @@ export function derivations(p) {
   }
   if (p.structure === 'wrap') L.push(['Seller payment', `${$(x.note)} owed × ${x.rate}% ÷ 12 = ${$((x.note * x.rate) / 1200)}/mo from month 1${x.amortYears > 0 ? `, paid down over ${x.amortYears} years` : ', interest only'}. The balance is paid in full at the refinance.`]);
   if (p.structure === 'cash') L.push(['Bank payment', `${$(p.bankLoan)} loan at ${x.rate}% over ${x.years} years = ${$(p.bankPayment)}/mo from month 1.`]);
+  if (p.structure === 'seller_rehab') {
+    L.push(['Seller payment', `Before ${x.fillTarget} units rent, the seller gets all extra cash after his loan payment and rehab loan interest. From ${x.fillTarget} units on, you get ${x.buyerSplitPct}% and the seller gets ${100 - x.buyerSplitPct}%. ${OPTION_E_OVERLAY}`]);
+    if (p.exit) L.push(['Buyout', `Seller’s remaining loan balance ${sellerLoanText(p.exit.sellerLoanRemaining ?? 0, false)}${x.addFundToBuyout ? ` + ${$(x.sellerFund)} rehab money` : ''} = ${$(p.exit.sellerPayoff)}, paid in month ${p.exit.month} from the refinance.`]);
+  }
   if (p.totals.startingBuyerCash > 0 || p.totals.buyerCashTotal > 0) {
     L.push(['Buyer cash', `${$(p.totals.startingBuyerCash)} starting buyer-funded cash${p.exit && p.exit.left < 0 ? ` + ${$(-p.exit.left)} needed at refinance` : ''} = ${$(p.totals.buyerCashTotal)} total buyer cash in.`]);
   }
@@ -313,38 +492,53 @@ export function derivations(p) {
         ? `Expected refinance is month ${el.expectedRefiMonth} (${el.monthsStabilizedAtRefi} months stabilized), below the ${el.seasoningRequired}-month lender seasoning requirement.`
         : el.status === 'eligible'
           ? `Stabilizes month ${el.stabilizedMonth}; lender terms confirmed for month ${el.expectedRefiMonth}.`
-          : `No lender has confirmed yet. Expected refinance is month ${el.expectedRefiMonth} (all ${p.units.length} units renting by month ${el.stabilizedMonth}). A lender still has to confirm terms and Unit 10 needs its zoning certificate; the math still runs on today’s numbers.`;
+          : `No lender has confirmed yet. Expected refinance is month ${el.expectedRefiMonth} (all ${p.units.length} units renting by month ${el.stabilizedMonth}). A lender still has to confirm terms and Unit ${addedId} needs its zoning certificate; the math still runs on today’s numbers.`;
     L.push(['Lender eligibility', msg]);
   }
   if (p.units.length >= 10) {
-    L.push(['10-unit value', '10-unit plan uses the editable Unit 10 rehab estimate once. A lender still has to confirm terms and Unit 10 needs its zoning certificate; the math still runs on today’s numbers.']);
+    L.push(['10-unit value', `10-unit plan uses the editable Unit ${addedId} (added unit) rehab estimate once. A lender still has to confirm terms and Unit ${addedId} needs its zoning certificate; the math still runs on today’s numbers.`]);
   }
   if (p.totals.peakLender > 0) L.push(['Short-term lender', `Covers what rent and upfront funds don’t, peaking at ${$(p.totals.peakLender)} before refinance payoff. Interest ${$(p.totals.interestTotal)} + points ${$(p.totals.pointsTotal)} through the refinance.`]);
-  if (p.sellerLoanPayment) L.push(['Seller’s own loan', `About ${$(p.sellerLoanPayment)}/mo on ${$(p.plan.sellerLoanBalance)} at ${p.plan.sellerLoanRate}% (estimate). Months where the seller gets less than that, they cover the difference.`]);
+  if (p.sellerLoanPayment) L.push(['Seller’s own loan', `About ${$(p.sellerLoanPayment)}/mo on ${sellerLoanText(p.plan.sellerLoanBalance, false)} at ${p.plan.sellerLoanRate}%.${p.structure === 'seller_rehab' ? ' Paid from rent each month while his balance pays down.' : ' Months where the seller gets less than that, they cover the difference.'}`]);
   return L;
+}
+
+function runningSellerThrough(rows, exit, month) {
+  if (!month) return 0;
+  let total = 0;
+  for (const r of rows) {
+    if (r.month <= month) total += r.seller;
+  }
+  if (exit && exit.month <= month) total += exit.sellerPayoff;
+  return total;
 }
 
 // Build the full 7-step story and headline row for an offer from its monthlyPlan() result.
 export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
   const x = result.inputs;
   const b = result.operating.b;
-  const o = result.operating;
   const plan = result.plan;
   const full = result.full;
   const exit = result.exit;
   const totals = result.totals;
   const rows = result.rows;
+  const addedId = addedUnitId(plan);
+  const costSummary = buildCostSummary(b, plan);
   const val = valueSummary({ base: { ...b, ...base }, noi: full.noi * 12, units: result.units.length || b.units, comps });
   const row1 = rows[0] || {
     renting: 0, total: result.units.length, seller: 0, bank: 0, interest: 0,
     noi: 0, reserves: 0, collected: 0, mgmt: 0, fixed: 0, strCosts: 0, fromPool: 0,
   };
-  const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership' ? x.sellerAdvances : 0;
+  const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership'
+    ? x.sellerAdvances
+    : result.structure === 'seller_rehab'
+      ? x.sellerFund
+      : 0;
 
   const usedSellerPool = advancesStart > 0 && rows.some((r) => r.fromPool > 0);
   const usedLender = totals.peakLender > 0;
   const coverParts = [];
-  if (usedSellerPool) coverParts.push('the seller’s upfront money');
+  if (usedSellerPool) coverParts.push(result.structure === 'seller_rehab' ? 'the seller’s rehab money' : 'the seller’s upfront money');
   if (usedLender) coverParts.push('the rehab loan');
   const coveredBy = coverParts.length ? coverParts.join(' and ') : 'your cash';
 
@@ -383,7 +577,8 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
   const payoffAtExit = exit ? exit.sellerPayoff : (result.structure === 'cash' ? x.price : 0);
   const sellerTotalOverlay = [
     `${money(monthlySellerSum)} in monthly payments + ${money(payoffAtExit)} at ${exit ? `month ${exit.month} refi` : 'closing'} = ${money(totals.sellerTotal)}.`,
-    plan.sellerLoanBalance > 0 ? `Seller’s own loan is estimated at ${money(plan.sellerLoanBalance)} (${money(result.sellerLoanPayment)}/mo estimate).` : null,
+    plan.sellerLoanBalance > 0 ? `Seller’s own loan is ${sellerLoanText(plan.sellerLoanBalance, false)} (${money(result.sellerLoanPayment)}/mo estimate).` : null,
+    result.structure === 'seller_rehab' ? OPTION_E_OVERLAY : null,
   ].filter(Boolean);
 
   // Headline: Most seller can get at refi with $0 from you
@@ -399,21 +594,26 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
       ? `${money(x.stepUp)} full payment × ${row1.renting} of ${row1.total} units renting = ${money(row1.seller)}/mo.`
       : result.structure === 'wrap'
         ? `${money(x.note)} owed × ${x.rate}% ÷ 12 = ${money(row1.seller)}/mo from month 1${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'} (seller loan terms are estimates).`
-        : `${money(x.price)} paid to seller at closing; bank payment ${money(result.bankPayment)}/mo (${money(result.bankLoan)} at ${x.rate}% / ${x.years} yrs).`;
+        : result.structure === 'seller_rehab'
+          ? `Month 1 extra rent after his loan payment goes ${row1.renting < x.fillTarget ? 'all to seller' : `${100 - x.buyerSplitPct}% to seller`}: ${money(row1.seller)}/mo. ${OPTION_E_OVERLAY}`
+          : `${money(x.price)} paid to seller at closing; bank payment ${money(result.bankPayment)}/mo (${money(result.bankLoan)} at ${x.rate}% / ${x.years} yrs).`;
 
+  const runningM1 = runningSellerThrough(rows, exit, 1);
   const takeOverLines = [
     {
       label: 'Seller gets',
-      value: result.structure === 'cash' ? `Paid ${money(x.price)} at closing` : `${money(row1.seller)}/mo`,
+      value: result.structure === 'cash' ? `Paid ${money(x.price)} at closing` : `${money(row1.seller)}/mo · total ${money(runningM1)}`,
       overlay: [
         sellerFormula,
-        result.sellerLoanPayment > 0 ? `Seller’s own loan: ${money(result.sellerLoanPayment)}/mo on ${money(plan.sellerLoanBalance)} at ${plan.sellerLoanRate}% (estimate).` : null,
+        result.sellerLoanPayment > 0 ? `Seller’s own loan: ${money(result.sellerLoanPayment)}/mo on ${sellerLoanText(plan.sellerLoanBalance, false)} at ${plan.sellerLoanRate}%.` : null,
       ].filter(Boolean),
     },
     {
-      label: 'Seller fronts',
+      label: result.structure === 'seller_rehab' ? 'Seller’s rehab money' : 'Seller fronts',
       value: money(advancesStart),
-      overlay: [advancesStart > 0 ? `${money(advancesStart)} fronted up front for rehab and holding, paid back at the refinance.` : 'No upfront advance from the seller.'],
+      overlay: result.structure === 'seller_rehab'
+        ? [advancesStart > 0 ? `${money(advancesStart)} put toward rehab (used before rehab draws). ${OPTION_E_OVERLAY}` : OPTION_E_OVERLAY]
+        : [advancesStart > 0 ? `${money(advancesStart)} fronted up front for rehab and holding, paid back at the refinance.` : 'No upfront advance from the seller.'],
     },
   ];
 
@@ -425,7 +625,7 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
       label: 'Total rehab',
       value: money(rehabTotal),
       overlay: [
-        ...rehabItems.map((item) => `${item.label}: ${money(item.cost)}`),
+        ...rehabItems.map((item) => (item.toInspect ? `${item.label}: To inspect (Not budgeted yet; checked at inspection.)` : `${item.label}: ${money(item.cost)}`)),
         `Total rehab: ${money(rehabTotal)}.`,
       ],
     },
@@ -446,12 +646,21 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
   const holdingTotal = row1.seller + row1.bank + avgInterest + taxesMo + insMo + utilMo + adminMo + turnsMo;
   const fixupRow = rows.find((r) => r.stage === 'vacant') || row1;
   const fixupNet = fixupRow.noi - fixupRow.reserves - fixupRow.seller - fixupRow.bank - fixupRow.interest;
+  const vacantStage = result.stages.find((s) => s.key === 'vacant');
+  const partialStage = result.stages.find((s) => s.key === 'partial');
+  const fullStage = result.stages.find((s) => s.key === 'full');
+  const holdEndMonth = vacantStage?.to || 1;
+  const runningHold = runningSellerThrough(rows, exit, holdEndMonth);
+  const fillEndMonth = partialStage?.to || holdEndMonth;
+  const runningFill = runningSellerThrough(rows, exit, fillEndMonth);
+  const fullEndMonth = fullStage?.to || (exit ? exit.month - 1 : rows.at(-1)?.month);
+  const runningFull = runningSellerThrough(rows, exit, fullEndMonth);
 
   const holdingOverlay = [
     `Seller payment (month 1): ${money(row1.seller)}/mo${Math.abs(avgSeller - row1.seller) >= 1 ? ` (avg ${money(avgSeller)}/mo while filling up)` : ''}${result.structure === 'wrap' ? ' (estimate)' : ''}`,
-    row1.bank > 0 ? `Bank payment: ${money(row1.bank)}/mo` : null,
+    row1.bank > 0 ? `${result.structure === 'seller_rehab' ? 'Seller loan payment' : 'Bank payment'}: ${money(row1.bank)}/mo` : null,
     `Short-term (rehab) loan interest: avg ${money(avgInterest)}/mo, up to ${money(peakInterest)}/mo at ${plan.lenderRate}% (estimate)`,
-    result.sellerLoanPayment > 0 ? `Seller’s own loan: ${money(result.sellerLoanPayment)}/mo (estimate)` : null,
+    result.sellerLoanPayment > 0 && result.structure !== 'seller_rehab' ? `Seller’s own loan: ${money(result.sellerLoanPayment)}/mo on ${sellerLoanText(plan.sellerLoanBalance, false)}` : null,
     `Taxes: ${money(taxesMo)}/mo`,
     `Insurance: ${money(insMo)}/mo`,
     `Utilities: ${money(utilMo)}/mo`,
@@ -463,39 +672,81 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
   const holdingLines = [
     { label: 'Holding cost / mo', value: `${money(holdingTotal)}/mo`, overlay: holdingOverlay },
     {
+      label: 'Seller gets',
+      value: result.structure === 'cash' ? '$0/mo' : `${money(vacantStage?.sellerAvg ?? row1.seller)}/mo · total ${money(runningHold)}`,
+      overlay: [
+        result.structure === 'cash'
+          ? `Paid ${money(x.price)} at closing.`
+          : `Fixing up stage (Months ${vacantStage?.from ?? 1}–${holdEndMonth}): running seller total ${money(runningHold)}.`,
+      ],
+    },
+    {
       label: fixupNet < 0 ? `Short ${money(-fixupNet)} a month while fixing up (covered by ${coveredBy})` : 'Left over each month after every bill',
       value: fixupNet < 0 ? '' : `${money(fixupNet)}/mo`,
       tone: fixupNet < 0 ? 'fail' : 'pass',
-      overlay: [`${money(fixupRow.collected)} rent − ${money(fixupRow.mgmt + fixupRow.fixed + fixupRow.strCosts + fixupRow.reserves)} running costs − ${money(fixupRow.seller + fixupRow.bank + fixupRow.interest)} payments & interest = ${money(fixupNet)}/mo.`],
+      overlay: [`${money(fixupRow.collected)} rent − ${money(fixupRow.mgmt + fixupRow.fixed + fixupRow.reserves)} running costs − ${money(fixupRow.seller + fixupRow.bank + fixupRow.interest)} payments & interest = ${money(fixupNet)}/mo.`],
     },
   ];
 
   // Step 4: Lease-up
   const leaseUpPills = result.units.map((u, idx) => ({
-    label: `${ordinal(idx + 1)} Unit ${u.id} · month ${u.startMonth}${u.mode === 'str' ? ' · Airbnb' : ''}`,
-    overlay: [`${money(u.rent)}/mo rent, ready week ${u.ready}, rent-ready work ${money(u.rehab)}`, u.note || null].filter(Boolean),
+    label: `${ordinal(idx + 1)} Unit ${u.id} · month ${u.startMonth}`,
+    overlay: [`${money(u.rent)}/mo rent, ready week ${u.ready}, rent-ready work ${money(u.rehab)}`, u.optional ? `Unit ${u.id} needs its zoning certificate.` : null, u.note || null].filter(Boolean),
   }));
+  const fillAvgSeller = partialStage ? partialStage.sellerAvg : avgSeller;
+  const leaseUpLines = [
+    {
+      label: 'Seller gets',
+      value: result.structure === 'cash' ? '$0/mo' : `${money(fillAvgSeller)}/mo · total ${money(runningFill)}`,
+      overlay: [
+        result.structure === 'cash'
+          ? `Paid ${money(x.price)} at closing.`
+          : `Filling up (Months ${partialStage?.from ?? holdEndMonth}–${fillEndMonth}): average ${money(fillAvgSeller)}/mo, running seller total ${money(runningFill)}.`,
+        result.structure === 'seller_rehab' ? OPTION_E_OVERLAY : null,
+      ].filter(Boolean),
+    },
+  ];
 
   // Step 5: Full
   const fullRunning = full.collected - full.noi + full.reserves;
-  const fullSellerPay = result.structure === 'master_lease' ? x.payment : result.structure === 'partnership' ? x.stepUp : row1.seller;
+  const fullSellerPay = result.structure === 'master_lease'
+    ? x.payment
+    : result.structure === 'partnership'
+      ? x.stepUp
+      : result.structure === 'seller_rehab'
+        ? Math.max(0, (full.cashFlow - result.sellerLoanPayment) * (1 - Math.max(0, Math.min(100, x.buyerSplitPct)) / 100))
+        : row1.seller;
   const fullPayment = exit ? fullSellerPay : result.bankPayment;
-  const fullLeft = full.cashFlow - fullPayment;
+  const fullLeft = result.structure === 'seller_rehab'
+    ? full.cashFlow - result.sellerLoanPayment - fullSellerPay
+    : full.cashFlow - fullPayment;
   const fullSellerOverlay = result.structure === 'master_lease'
     ? [`${money(x.payment)} full payment × ${result.units.length} of ${result.units.length} units renting = ${money(fullPayment)}/mo.`]
     : result.structure === 'partnership'
       ? [`${money(x.stepUp)} full payment × ${result.units.length} of ${result.units.length} units renting = ${money(fullPayment)}/mo.`]
-      : [sellerFormula];
+      : result.structure === 'seller_rehab'
+        ? [
+            `Rent cash flow ${money(full.cashFlow)} − seller loan payment ${money(result.sellerLoanPayment)} = ${money(full.cashFlow - result.sellerLoanPayment)}/mo extra; ${100 - x.buyerSplitPct}% to seller (${money(fullSellerPay)}/mo) and ${x.buyerSplitPct}% to you (${money(fullLeft)}/mo).`,
+            OPTION_E_OVERLAY,
+          ]
+        : [sellerFormula];
 
   const fullLines = [
-    { label: 'Rent in', value: `${money(full.collected)}/mo`, overlay: [`${result.units.length} units after ${b.vacancyPct}% vacancy${o.strUnits ? ` (${o.strUnits} Airbnb)` : ''} = ${money(full.collected)}/mo.`] },
+    { label: 'Rent in', value: `${money(full.collected)}/mo`, overlay: [`${result.units.length} units after ${b.vacancyPct}% vacancy = ${money(full.collected)}/mo.`] },
     { label: 'Running costs', value: `${money(fullRunning)}/mo`, overlay: [`Management ${money(full.collected * (b.mgmtPct / 100))}/mo + fixed bills ${money((b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12)}/mo + reserves ${money(full.reserves)}/mo = ${money(fullRunning)}/mo.`] },
-    { label: result.structure === 'cash' ? 'Bank payment' : 'Seller payment', value: `${money(fullPayment)}/mo`, overlay: fullSellerOverlay },
+    ...(result.structure === 'seller_rehab' && result.sellerLoanPayment > 0
+      ? [{ label: 'Seller loan payment', value: `${money(result.sellerLoanPayment)}/mo`, overlay: [`Paid from rent toward ${sellerLoanText(plan.sellerLoanBalance, false)}.`] }]
+      : []),
+    {
+      label: result.structure === 'cash' ? 'Bank payment' : 'Seller gets',
+      value: result.structure === 'cash' ? `${money(fullPayment)}/mo` : `${money(fullPayment)}/mo · total ${money(runningFull)}`,
+      overlay: fullSellerOverlay,
+    },
     {
       label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month (covered by ${coveredBy})`,
       value: fullLeft >= 0 ? `${money(fullLeft)}/mo` : '',
       tone: fullLeft >= 0 ? 'pass' : 'fail',
-      overlay: [`${money(full.collected)} rent − ${money(fullRunning)} running costs − ${money(fullPayment)} payment = ${money(fullLeft)}/mo.`],
+      overlay: [`${money(full.collected)} rent − ${money(fullRunning)} running costs${result.structure === 'seller_rehab' ? ` − ${money(result.sellerLoanPayment)} seller loan` : ''} − ${money(fullPayment)} payment = ${money(fullLeft)}/mo.`],
     },
   ];
 
@@ -512,20 +763,25 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
           value: '',
           overlay: [
             ...val.incomeOverlay,
-            !result.eligibility?.lenderConfirmed ? 'No lender has confirmed yet. A lender still has to confirm terms and Unit 10 needs its zoning certificate; the math still runs on today’s numbers.' : null,
+            !result.eligibility?.lenderConfirmed ? `No lender has confirmed yet. A lender still has to confirm terms and Unit ${addedId} needs its zoning certificate; the math still runs on today’s numbers.` : null,
           ].filter(Boolean),
         },
         ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
         { label: 'Loan', value: money(exit.loan), overlay: [`${money(exit.loan)} (${full.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − fees & holdback = ${money(exit.net)} net.`] },
         {
-          label: 'Pays seller',
-          value: money(exit.sellerPayoff),
+          label: 'Seller gets',
+          value: result.structure === 'seller_rehab'
+            ? `${sellerLoanText(exit.sellerPayoff, false)} · total ${money(totals.sellerTotal)}`
+            : `${money(exit.sellerPayoff)} · total ${money(totals.sellerTotal)}`,
           overlay: [
             result.structure === 'master_lease'
               ? `${money(x.optionPrice)} locked price + ${money(x.sellerAdvances)} fronted − ${money(exit.credits)} credited = ${money(exit.sellerPayoff)}.`
               : result.structure === 'partnership'
                 ? `${money(x.buyout)} buyout + ${money(x.sellerAdvances)} fronted = ${money(exit.sellerPayoff)}.`
-                : `${money(x.note)} note payoff = ${money(exit.sellerPayoff)}.`,
+                : result.structure === 'seller_rehab'
+                  ? `Remaining seller loan ${sellerLoanText(exit.sellerLoanRemaining ?? 0, false)}${x.addFundToBuyout ? ` + ${money(x.sellerFund)} rehab money` : ''} = ${money(exit.sellerPayoff)}. ${OPTION_E_OVERLAY}`
+                  : `${money(x.note)} note payoff = ${money(exit.sellerPayoff)}.`,
+            `Total to seller across all months + refinance: ${money(totals.sellerTotal)}.`,
           ],
         },
         {
@@ -556,6 +812,7 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
   ];
 
   return {
+    costSummary,
     headline: {
       moneyIn: { label: 'Your money in', value: moneyInValue, overlay: moneyInOverlay },
       cashOut: { label: 'Cash out at refinance', value: cashOutValue, positive: exit ? exit.left >= 0 : null, overlay: cashOutOverlay },
@@ -566,7 +823,7 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
       { num: 1, title: 'Take over', when: 'Month 1', lines: takeOverLines },
       { num: 2, title: 'Rehab', lines: rehabLines },
       { num: 3, title: 'Holding cost per month', lines: holdingLines },
-      { num: 4, title: 'Lease-up', pills: leaseUpPills },
+      { num: 4, title: 'Lease-up', pills: leaseUpPills, lines: leaseUpLines },
       { num: 5, title: 'Full', lines: fullLines },
       { num: 6, title: 'Refinance', when: exit ? `Month ${exit.month}` : 'No refinance', lines: refiLines },
       { num: 7, title: 'After', lines: afterLines },
@@ -574,4 +831,207 @@ export function buildOfferStory(result, { base = {}, comps = [] } = {}) {
     value: val,
     coveredBy,
   };
+}
+
+function monthRange(stage, fallback) {
+  if (!stage || stage.from === null) return fallback;
+  return stage.from === stage.to ? `Month ${stage.from}` : `Months ${stage.from}–${stage.to}`;
+}
+
+// Build plain-English seller_summary JSONB from monthlyPlan (owner-only; never embeds option letters or buyer returns).
+export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}) {
+  const x = result.inputs;
+  const b = result.operating.b;
+  const plan = result.plan;
+  const exit = result.exit;
+  const totals = result.totals;
+  const story = buildOfferStory(result, { base, comps });
+  const costSummary = story.costSummary;
+  const val = story.value;
+  const structure = offer?.structure || result.structure;
+  const title = STRUCTURES[structure]?.label || String(offer?.name || '').replace(/^[A-Z]\s*:\s*/, '');
+
+  const vacant = result.stages.find((s) => s.key === 'vacant');
+  const partial = result.stages.find((s) => s.key === 'partial');
+  const full = result.stages.find((s) => s.key === 'full');
+
+  const rehabItems = result.items.filter((i) => i.group !== 'closing' && !i.toInspect);
+  const maxRehabWeek = rehabItems.reduce((m, i) => Math.max(m, num(i.end, i.start)), 0);
+  const rehabEndMonth = Math.max(1, monthOfWeek(maxRehabWeek));
+  const fillStart = result.units.find((u) => !u.occupied)?.startMonth || 1;
+  const fillEnd = result.eligibility?.stabilizedMonth || fillStart;
+  const fullStart = fillEnd;
+  const fullEnd = exit ? Math.max(fullStart, exit.month - 1) : plan.months;
+
+  const terms = [];
+  if (structure === 'master_lease') {
+    terms.push({
+      label: 'Locked purchase price',
+      value: money(x.optionPrice + x.sellerAdvances),
+      overlay: x.sellerAdvances > 0
+        ? `${money(x.optionPrice)} agreed price + ${money(x.sellerAdvances)} upfront rehab money = ${money(x.optionPrice + x.sellerAdvances)}.`
+        : `${money(x.optionPrice)} agreed purchase price, closed by refinance in month ${exit?.month || plan.refiMonth}.`,
+    });
+  } else if (structure === 'wrap') {
+    terms.push({
+      label: 'Purchase price',
+      value: money(x.note),
+      overlay: `${money(x.note)} at ${x.rate}%${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'}, paid off at refinance in month ${exit?.month || plan.refiMonth}.`,
+    });
+  } else if (structure === 'partnership') {
+    terms.push({
+      label: 'Buyout price',
+      value: money(x.buyout + x.sellerAdvances),
+      overlay: `${money(x.buyout)} agreed buyout${x.sellerAdvances > 0 ? ` + ${money(x.sellerAdvances)} upfront money paid back` : ''} at month ${exit?.month || Math.round(x.monthsToBuyout)}.`,
+    });
+  } else if (structure === 'cash') {
+    terms.push({
+      label: 'Purchase price',
+      value: money(x.price),
+      overlay: `Paid in full at closing.`,
+    });
+  } else if (structure === 'seller_rehab') {
+    terms.push({
+      label: 'Buyout at refinance',
+      value: x.addFundToBuyout && x.sellerFund > 0
+        ? `${sellerLoanText(exit?.sellerLoanRemaining ?? plan.sellerLoanBalance, true)} + ${money(x.sellerFund)} rehab money`
+        : sellerLoanText(exit?.sellerLoanRemaining ?? plan.sellerLoanBalance, true),
+      overlay: `Your loan balance is paid off from the refinance in month ${exit?.month || plan.refiMonth}. ${OPTION_E_OVERLAY}`,
+    });
+  }
+
+  const sellerRehabMoney = structure === 'seller_rehab' ? x.sellerFund : (structure === 'master_lease' || structure === 'partnership') ? x.sellerAdvances : 0;
+  if (sellerRehabMoney > 0) {
+    terms.push({
+      label: 'Your rehab money',
+      value: money(sellerRehabMoney),
+      overlay: structure === 'seller_rehab'
+        ? OPTION_E_OVERLAY
+        : `${money(sellerRehabMoney)} fronted for rehab and holding, paid back in full at the refinance.`,
+    });
+  }
+
+  if (structure !== 'cash') {
+    const stageTerms = [];
+    if (vacant && vacant.from !== null) {
+      stageTerms.push(`Fixing up (${monthRange(vacant)}): ${money(vacant.sellerAvg)}/mo`);
+    }
+    if (partial && partial.from !== null) {
+      stageTerms.push(`Filling up (${monthRange(partial)}): ~${money(partial.sellerAvg)}/mo`);
+    }
+    if (full && full.from !== null) {
+      stageTerms.push(`Once full (${monthRange(full)}): ${money(full.sellerAvg)}/mo`);
+    }
+    terms.push({
+      label: 'Monthly payments to you',
+      value: stageTerms.join(' · ') || `${money(result.rows[0]?.seller || 0)}/mo`,
+      overlay: stageTerms.join('\n') || 'Monthly payments from rent collections as units fill.',
+    });
+  }
+
+  if (exit) {
+    terms.push({
+      label: `Payment at refinance (Month ${exit.month})`,
+      value: structure === 'seller_rehab' ? sellerLoanText(exit.sellerPayoff, true) : money(exit.sellerPayoff),
+      overlay: `Paid directly at the month ${exit.month} bank refinance.`,
+    });
+  } else if (structure === 'cash') {
+    terms.push({
+      label: 'Payment at closing',
+      value: money(x.price),
+      overlay: 'Paid in full at closing.',
+    });
+  }
+
+  terms.push({
+    label: 'Total to you',
+    value: structure === 'seller_rehab' && plan.sellerLoanBalance <= 0 ? `${money(totals.sellerTotal)} + your loan payoff` : money(totals.sellerTotal),
+    overlay: `Sum of monthly payments plus ${exit ? `month ${exit.month} refinance payoff` : 'closing payment'}.`,
+  });
+
+  terms.push({
+    label: 'What I take on',
+    value: 'Rehab, leasing, day-to-day management, city approvals, and permanent bank financing.',
+    overlay: 'I coordinate contractors, fill vacant units, manage tenants, and secure the refinance.',
+  });
+
+  if (plan.sellerLoanBalance > 0) {
+    terms.push({
+      label: 'Your current loan',
+      value: sellerLoanText(plan.sellerLoanBalance, true),
+      overlay: result.sellerLoanPayment > 0
+        ? `Estimated ${money(result.sellerLoanPayment)}/mo at ${plan.sellerLoanRate}% (${plan.sellerLoanYears}-yr schedule).`
+        : 'Current loan payoff is confirmed by your lender payoff letter.',
+    });
+  }
+
+  const steps = [
+    {
+      title: 'Take over',
+      when: 'Month 1',
+      detail: structure === 'cash'
+        ? `Purchase closes at ${money(x.price)} with bank financing.`
+        : `I take over day-to-day operations, maintenance, and leasing across all 10 units.`,
+    },
+    {
+      title: 'Rehab',
+      when: `Months 1–${rehabEndMonth}`,
+      detail: costSummary.oneLine,
+    },
+    {
+      title: 'Fill',
+      when: fillStart === fillEnd ? `Month ${fillStart}` : `Months ${fillStart}–${fillEnd}`,
+      detail: structure === 'seller_rehab'
+        ? `Units lease up; extra rent pays you while all 10 units reach occupancy (sharing ${100 - x.buyerSplitPct}%/${x.buyerSplitPct}% once ${x.fillTarget} units rent).`
+        : `Vacant units lease up one by one; monthly payments to you scale up as units move in.`,
+    },
+    {
+      title: 'Full',
+      when: fullStart === fullEnd ? `Month ${fullStart}` : `Months ${fullStart}–${fullEnd}`,
+      detail: full && full.from !== null
+        ? `All 10 units occupied; you receive ${money(full.sellerAvg)}/mo while the building seasons for refinance.`
+        : `All 10 units occupied and documented rent roll supports permanent financing.`,
+    },
+    {
+      title: 'Refinance',
+      when: exit ? `Month ${exit.month}` : 'Closing',
+      detail: exit
+        ? `Permanent bank loan closes in Month ${exit.month} and pays ${structure === 'seller_rehab' ? sellerLoanText(exit.sellerPayoff, true) : money(exit.sellerPayoff)}.`
+        : `Closed with permanent bank financing at ${money(x.price)}.`,
+    },
+  ];
+
+  return {
+    version: 1,
+    locked: false,
+    title,
+    terms,
+    steps,
+    guide: {
+      costHeading: costSummary.heading,
+      costHeadingOverlay: costSummary.headingOverlay,
+      cost: costSummary.lines,
+      estimatedValue: val.incomeLine,
+      estimatedComps: val.compsLine,
+      steps: story.steps,
+    },
+  };
+}
+
+export function nextSellerSummary(offer, result, opts = {}) {
+  if (offer?.seller_summary?.locked) return offer.seller_summary;
+  return buildSellerSummary(offer, result, opts);
+}
+
+// Convenience wrappers used by Offers.jsx so the owner-only dynamic module never exposes monthlyPlan/buildOfferStory identifiers in public/seller bundles.
+export function offerPlanStory(offer, base, plan, comps) {
+  const planRes = monthlyPlan(offer.structure, offer.inputs, base, plan);
+  return buildOfferStory(planRes, { base, comps });
+}
+
+export function offerSellerSummary(offer, base, plan, comps, force = false) {
+  const planRes = monthlyPlan(offer.structure, offer.inputs, base, plan);
+  return force
+    ? buildSellerSummary(offer, planRes, { base, comps })
+    : nextSellerSummary(offer, planRes, { base, comps });
 }

@@ -24,6 +24,9 @@ button, input, textarea, select { font: inherit; }
 button, a, input, textarea, select { touch-action: manipulation; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--color-warm); outline-offset: 3px; }
 textarea, input { font-size: max(16px, 1em); }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* v6.3 readability (realtor and seller pages): body text 16px, small print 14px, never thinner than 13px,
    slightly darker secondary text, roomier line height. Same layout, easier to read on a phone. */
 .readable { font-size: 1rem; line-height: 1.6; }
