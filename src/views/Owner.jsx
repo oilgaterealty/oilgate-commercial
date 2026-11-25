@@ -20,7 +20,7 @@ import LoanPosition from '../components/LoanPosition.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
 import { DEFAULT_EXECUTION_PLAN, DEFAULT_LEAD_OFFER } from '../components/LeadOfferCard.jsx';
 
-const CityRecords = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./CityRecords.jsx'));
+const CityRecords = lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./DealPlan.jsx'));
 
 const BASE_TABS = [
@@ -38,7 +38,7 @@ const BASE_TABS = [
 const TABS = siteRules(SITE_KIND).ownerAllowed
   ? [...BASE_TABS.slice(0, 2), ['plans', 'Plans'], ...BASE_TABS.slice(2, 8), ['city-records', 'City records'], ...BASE_TABS.slice(8)]
   : BASE_TABS;
-const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
+const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['lead_guest', 'Lead guest'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
 
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
@@ -94,7 +94,8 @@ function People({ deal }) {
             <option value="realtor">Realtor: deal, offers, walkthrough, tenants, messages, files</option>
             <option value="seller">Seller: the seller page only</option>
             <option value="reviewer">Reviewer: unit photos, comps, and offers and files you share</option>
-            <option value="lender">Lender: the plan, unit photos, and every lender’s terms</option>
+            <option value="lender">Lender: the plan, city records, unit photos, and terms</option>
+            <option value="lead_guest">Lead guest: deal overview and the one lead offer</option>
             <option value="viewer">Viewer: cover photo, unit photos and an overview, read only</option>
           </select>
           {err && <p className="text-sm text-red-700">{err}</p>}
@@ -110,28 +111,37 @@ function People({ deal }) {
   );
 }
 
-const LINK_ROLES = [['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['viewer', 'Viewer'], ['seller', 'Seller']];
+const LINK_ROLES = [['lead_guest', 'Lead guest'], ['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['viewer', 'Viewer'], ['seller', 'Seller']];
 
-// One private link per person or role. Turning a link off also removes everyone who joined with it.
+// One private link per verified recipient email. Turning a link off or letting it expire removes access.
 function RoleLinks({ deal, onJoined }) {
   const [links, setLinks] = useState(null);
-  const [f, setF] = useState({ role: 'lender', label: '' });
+  const [f, setF] = useState({ role: 'lead_guest', label: '', recipient_email: '', expires_days: 14 });
   const [fresh, setFresh] = useState(null);
   const [msg, setMsg] = useState('');
-  const load = () => supabase.from('commercial_role_links').select('id,role,label,created_at,expires_at,revoked_at,uses').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setLinks(data || []));
+  const load = () => supabase.from('commercial_role_links').select('id,role,label,recipient_email,created_at,expires_at,revoked_at,uses').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setLinks(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
   const make = async (e) => {
     e.preventDefault();
     setMsg('');
-    const { data: token, error } = await supabase.rpc('commercial_create_role_link', { p_deal: deal.id, p_role: f.role, p_label: f.label.trim() });
+    const recipient = f.recipient_email.trim().toLowerCase();
+    const expiresDays = Math.min(90, Math.max(1, Math.round(+f.expires_days || 14)));
+    if (!recipient) return setMsg('Recipient email is required.');
+    const { data: token, error } = await supabase.rpc('commercial_create_role_link', {
+      p_deal: deal.id,
+      p_role: f.role,
+      p_label: f.label.trim(),
+      p_recipient_email: recipient,
+      p_expires_days: expiresDays,
+    });
     if (error || !token) return setMsg('That link couldn’t be made. Try again.');
-    setFresh({ url: roleLinkUrl(token), label: f.label.trim() || roleLabel[f.role] });
-    setF({ ...f, label: '' });
+    setFresh({ url: roleLinkUrl(token), label: f.label.trim() || roleLabel[f.role], recipient });
+    setF({ ...f, label: '', recipient_email: '' });
     load();
   };
   const turnOff = async (l) => {
-    if (!window.confirm(`Turn off the link for ${l.label || roleLabel[l.role]}? Anyone who joined with it loses access now.`)) return;
+    if (!window.confirm(`Turn off the link for ${l.recipient_email || l.label || roleLabel[l.role]}? Anyone who joined with it loses access now.`)) return;
     const { error } = await supabase.rpc('commercial_revoke_role_link', { p_link: l.id });
     setMsg(error ? 'That link couldn’t be turned off. Try again.' : 'Link turned off.');
     load(); onJoined?.();
@@ -141,28 +151,30 @@ function RoleLinks({ deal, onJoined }) {
   return (
     <Card className="lg:col-span-2">
       <CardTitle>Private links</CardTitle>
-      <form onSubmit={make} className="flex flex-wrap gap-2">
-        <select className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+      <form onSubmit={make} className="grid gap-2 sm:grid-cols-[160px_1fr_1fr_96px_auto]">
+        <select aria-label="Link role" className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
           {LINK_ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <div className="min-w-48 flex-1"><Field placeholder="Who it’s for, e.g. Jake, lender" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></div>
+        <Field type="email" required aria-label="Recipient email" placeholder="Recipient email" value={f.recipient_email} onChange={(e) => setF({ ...f, recipient_email: e.target.value })} />
+        <Field aria-label="Recipient label" placeholder="Name or note (e.g. Evan)" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} />
+        <Field type="number" min={1} max={90} aria-label="Expires in days" title="Expires in days" value={f.expires_days} onChange={(e) => setF({ ...f, expires_days: e.target.value })} />
         <Button type="submit">Make link</Button>
       </form>
       {fresh && (
         <div className="mt-3 rounded-xl border border-good/40 bg-good/5 p-3 text-sm">
-          <p className="font-medium">Link for {fresh.label}. It shows only once.</p>
+          <p className="font-medium">Link for {fresh.label} ({fresh.recipient}). Shown once.</p>
           <p className="mt-1 break-all font-mono text-xs select-all">{fresh.url}</p>
           <button type="button" className="mt-2 rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
         </div>
       )}
-      {msg && <p className="mt-2 text-sm text-ink-soft">{msg}</p>}
+      {msg && <p role="status" className="mt-2 text-sm text-ink-soft">{msg}</p>}
       {links === null ? <Empty>Loading…</Empty> : links.length === 0 ? <p className="mt-3 text-sm text-ink-soft">No links yet.</p> : (
         <ul className="mt-3 divide-y divide-line">
           {links.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
               <div>
                 <p className="text-sm font-medium">{l.label || roleLabel[l.role]} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[l.role]}</span></p>
-                <p className="text-xs text-ink-soft">{state(l)} · used {l.uses} {l.uses === 1 ? 'time' : 'times'} · made {when(l.created_at)}</p>
+                <p className="text-xs text-ink-soft">{l.recipient_email ? `${l.recipient_email} · ` : ''}{state(l)} · expires {when(l.expires_at)} · used {l.uses} {l.uses === 1 ? 'time' : 'times'}</p>
               </div>
               {!l.revoked_at && <Button kind="secondary" onClick={() => turnOff(l)}>Turn off</Button>}
             </li>

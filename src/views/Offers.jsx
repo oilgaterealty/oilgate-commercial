@@ -174,6 +174,11 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
     setOffers(rest);
     setActive(rest[0]?.id || null);
   };
+  const setLead = async (o) => {
+    if (!owner || !o?.id) return;
+    const { error } = await supabase.rpc('commercial_set_lead_offer', { p_deal: deal.id, p_offer: o.id });
+    if (!error) setOffers((list) => list.map((x) => ({ ...x, is_lead: x.id === o.id })));
+  };
 
   const evals = useMemo(() => Object.fromEntries((offers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [offers, base]);
   if (offers === null) return <Empty>Loading…</Empty>;
@@ -188,29 +193,37 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
       <Switches base={base} setBase={setBase} owner={owner} />
       {!owner && <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />}
       <div className="flex flex-wrap items-center gap-2" aria-label="Offer layout">
-        <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>
-        <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>Card view</Button>
+        {owner && <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>}
+        <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>{owner ? 'Card view' : 'Lead offer'}</Button>
         <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
         {owner && saved && <span className="ml-auto text-xs text-ink-soft">{saved}</span>}
       </div>
-      {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No offers have been shared with you yet.'}</Empty></Card>}
-      {offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
-      {offers.length > 0 && view === 'cards' && <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4">{offers.map((x, i) => <OptionCard key={x.id} o={x} i={i} e={evals[x.id]} planHref={role === 'owner' && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) ? `#/d/${deal.slug}/plans/${x.structure}` : null} />)}</div>}
+      {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No lead offer has been shared with you yet.'}</Empty></Card>}
+      {owner && offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
+      {offers.length > 0 && (view === 'cards' || (!owner && view === 'table')) && (
+        <div className={owner ? 'grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-4' : 'max-w-xl'}>
+          {(owner ? offers : offers.slice(0, 1)).map((x, i) => (
+            <OptionCard key={x.id} o={x} i={i} e={evals[x.id]} planHref={role === 'owner' && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) ? `#/d/${deal.slug}/plans/${x.structure}` : null} />
+          ))}
+        </div>
+      )}
 
       {showEdit && (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            {offers.map((x) => (
-              <button key={x.id} onClick={() => setActive(x.id)} aria-pressed={cur?.id === x.id}
-                className={`rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
-                {x.name} <span className={cur?.id === x.id ? 'text-white/70' : 'text-ink-soft'}>· {money(evals[x.id].keepMonthly)}/mo</span>
-              </button>
-            ))}
-            <select aria-label="Add an option" value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
-              <option value="">{owner ? '+ Add an offer' : '+ Try another kind of offer'}</option>
-              {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
-            </select>
-          </div>
+          {owner && (
+            <div className="flex flex-wrap items-center gap-2">
+              {offers.map((x) => (
+                <button key={x.id} onClick={() => setActive(x.id)} aria-pressed={cur?.id === x.id}
+                  className={`rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
+                  {x.is_lead ? '★ ' : ''}{x.name} <span className={cur?.id === x.id ? 'text-white/70' : 'text-ink-soft'}>· {money(evals[x.id].keepMonthly)}/mo</span>
+                </button>
+              ))}
+              <select aria-label="Add an option" value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
+                <option value="">+ Add an offer</option>
+                {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
+              </select>
+            </div>
+          )}
           {cur && (
             <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
               <Card>
@@ -228,25 +241,29 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
                   return <NumberRow key={k} label={l} unit={u} value={v ?? d} changed={v !== undefined && v !== d}
                     onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
                 })}
-                {owner ? (
+                {owner && (
                   <>
                     <DictatedField as="textarea" aria-label="Notes on this offer" value={cur.note || ''} onChange={(e) => patch(cur.id, { note: e.target.value.slice(0, 2000) })} placeholder="Notes on this offer"
                       className="mt-3 min-h-20 w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-ink" />
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button kind="secondary" onClick={() => add(cur.structure, cur)}>Duplicate</Button>
                       <Button kind="secondary" onClick={() => remove(cur)}>Delete</Button>
+                      {cur.is_lead
+                        ? <span className="self-center rounded-full bg-good/10 px-3 py-1 text-xs font-semibold text-good">Lead offer</span>
+                        : <Button kind="secondary" onClick={() => void setLead(cur)}>Set as lead offer</Button>}
                       {base.planOffer === cur.id
                         ? <span className="self-center text-sm font-medium text-good">Lenders see this as the plan</span>
                         : <Button kind="secondary" onClick={() => setBase({ ...base, planOffer: cur.id })}>Show lenders this as the plan</Button>}
                     </div>
                     <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
-                      <p className="font-medium">Who else can see this offer</p>
+                      <p className="font-medium">Who can see the lead offer</p>
                       {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
+                      {'share_lead_guest' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(cur.share_lead_guest)} onChange={(e) => patch(cur.id, { share_lead_guest: e.target.checked })} /> Lead guest</label>}
                     </div>
                   </>
-                ) : cur.note ? <p className="mt-3 whitespace-pre-line rounded-xl bg-warm-soft/60 px-3 py-2 text-sm">{cur.note}</p> : null}
+                )}
               </Card>
               <div className="space-y-5">
                 <Results r={r} />

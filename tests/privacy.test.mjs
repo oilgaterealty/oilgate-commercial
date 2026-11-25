@@ -84,14 +84,14 @@ test('messages are fixed by role: nobody picks people by hand, and research boar
   }
 });
 
-test('v5 strategy is owner-only: RLS, UI and zero seeded strategy text in repo', () => {
+test('v5 strategy was owner-only in 0009 (isolated realtor/reviewer ideas added later) and never leaked to lender/seller/guest', () => {
   const v5 = readFileSync(new URL('../supabase/migrations/0009_v5_leaseup.sql', import.meta.url), 'utf8');
   const pols = [...v5.matchAll(/create policy [^;]+ on public\.commercial_strategy_ideas[\s\S]*?;/gi)].map((m) => m[0]);
   assert.equal(pols.length, 1);
   assert.match(pols[0], /commercial_member_role\(deal_id\) = 'owner'/);
   assert.doesNotMatch(pols[0], /'realtor'|'reviewer'|'lender'|'seller'|'viewer'/);
   assert.doesNotMatch(v5, /insert\s+into\s+public\.commercial_strategy_ideas/i);
-  for (const f of ['views/Realtor.jsx', 'views/Reviewer.jsx', 'views/Lender.jsx', 'views/Seller.jsx']) {
+  for (const f of ['views/Lender.jsx', 'views/Seller.jsx', 'views/LeadGuest.jsx']) {
     const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
     assert.doesNotMatch(s, /StrategyIdeas|commercial_strategy_ideas|'strategy'/, f);
   }
@@ -132,9 +132,10 @@ test('v5 comps tab and tables are hidden from lender, seller and viewer', () => 
     assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
   }
   const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
-  // v6.3: reviewer and viewer also get a per-unit Photos tab; Comps stays off for the viewer.
-  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\], \['photos', 'Photos'\]\] : \[\['overview', 'Overview'\], \['photos', 'Photos'\], \['comps', 'Comps'\], \['messages', 'Messages'\]\]/);
+  // v6.3+: reviewer gets Overview, Photos, Comps, private Ideas, Messages; viewer gets Overview + Photos.
+  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\], \['photos', 'Photos'\]\] : \[\['overview', 'Overview'\], \['photos', 'Photos'\], \['comps', 'Comps'\], \['ideas', 'Ideas'\], \['messages', 'Messages'\]\]/);
   assert.match(rev, /!viewer && active === 'comps'/);
+  assert.match(rev, /!viewer && active === 'ideas'/);
 });
 
 test('v5 migration only creates commercial_ objects and storage.objects policies', () => {

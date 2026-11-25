@@ -11,19 +11,29 @@ export function useDealModel(deal, { owner, onlyShared } = {}) {
   const timers = useRef({});
 
   useEffect(() => {
+    const offersQuery = owner || onlyShared
+      ? supabase.from('commercial_offers').select('*').eq('deal_id', deal.id).order('sort')
+      : supabase.rpc('commercial_get_lead_offer', { p_deal: deal.id });
     Promise.all([
-      supabase.from('commercial_offers').select('*').eq('deal_id', deal.id).order('sort'),
+      offersQuery,
       supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
     ]).then(([a, b]) => {
-      const shared = (x) => !onlyShared || (x['share_' + onlyShared] ?? onlyShared === 'realtor');
-      const list = (a.data || []).filter(shared);
+      let list = a.data || [];
+      if (onlyShared) {
+        list = list
+          .filter((x) => x.is_lead && Boolean(x['share_' + onlyShared]))
+          .slice(0, 1)
+          .map(({ note: _n, ...rest }) => rest);
+      } else if (!owner) {
+        list = list.slice(0, 1).map(({ note: _n, ...rest }) => rest);
+      }
       const loadedBase = { units: 9, ...b.data?.base };
       setOffers(list);
       setBaseState(loadedBase);
       original.current = { list, base: loadedBase };
       setError(a.error || b.error ? 'Some numbers could not load. Refresh to try again.' : '');
     });
-  }, [deal.id, onlyShared]);
+  }, [deal.id, owner, onlyShared]);
 
   const later = (key, fn) => {
     if (!owner) return;

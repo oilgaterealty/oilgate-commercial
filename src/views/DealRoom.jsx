@@ -8,14 +8,16 @@ import Realtor from './Realtor.jsx';
 import Seller from './Seller.jsx';
 import Reviewer from './Reviewer.jsx';
 import Lender from './Lender.jsx';
+import LeadGuest from './LeadGuest.jsx';
 
-const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'viewer'];
+const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'lead_guest', 'viewer'];
 
 function Page({ role, ...p }) {
   if (role === 'owner') return <Owner {...p} />;
   if (role === 'realtor') return <Realtor {...p} />;
   if (role === 'seller') return <Seller {...p} />;
   if (role === 'lender') return <Lender {...p} />;
+  if (role === 'lead_guest') return <LeadGuest {...p} />;
   return <Reviewer {...p} role={role} />; // reviewer, viewer, guest
 }
 

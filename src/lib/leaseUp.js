@@ -29,8 +29,8 @@ export function v5Access(role) {
     tenants: owner || realtor,
     comps: owner || realtor || reviewer,
     strategy: owner,
-    // v6.3: strategy ideas live under Tenants; the realtor reads all, adds and deletes her own.
-    ideas: owner || realtor,
+    // v8: strategy ideas are private per author (realtor or reviewer) + owner.
+    ideas: owner || realtor || reviewer,
     // v6.3: per-unit photos and videos for everyone except the seller.
     unitPhotos: owner || realtor || reviewer || role === 'lender' || role === 'viewer' || role === 'guest',
     editWalkthrough: owner || realtor,

@@ -16,7 +16,7 @@ const checkPage = !process.argv.includes('--data-only');
 const h = { apikey: anon, Authorization: `Bearer ${anon}` };
 const fails = [];
 
-const TABLES = ['activity', 'bia', 'comp_picks', 'comp_settings', 'comps', 'conversations', 'deal_private', 'deals',
+const TABLES = ['access_requests', 'activity', 'bia', 'comp_picks', 'comp_settings', 'comps', 'conversations', 'deal_private', 'deals',
   'interest', 'lender_terms', 'members', 'messages', 'models', 'offers', 'owner_notes', 'owners', 'role_links', 'seller_loans',
   'settings', 'strategy_ideas', 'tenant_leads', 'tenant_suggestions', 'unit_notes', 'uploads',
   'walkthrough_notes', 'walkthrough_photos', 'walkthrough_videos', 'work_items'].map((t) => `commercial_${t}`);
@@ -31,7 +31,10 @@ for (const t of TABLES) {
 }
 
 for (const [fn, body] of [['commercial_create_role_link', { p_deal: '00000000-0000-0000-0000-000000000000', p_role: 'viewer' }],
-  ['commercial_redeem_role_link', { p_token: '0'.repeat(64) }], ['commercial_revoke_role_link', { p_link: '00000000-0000-0000-0000-000000000000' }]]) {
+  ['commercial_redeem_role_link', { p_token: '0'.repeat(64) }], ['commercial_revoke_role_link', { p_link: '00000000-0000-0000-0000-000000000000' }],
+  ['commercial_get_lead_offer', { p_deal: '00000000-0000-0000-0000-000000000000' }],
+  ['commercial_set_lead_offer', { p_deal: '00000000-0000-0000-0000-000000000000', p_offer: null }],
+  ['commercial_request_charlotte_access', { p_submit: false, p_requested_role: null }]]) {
   const r = await fetch(`${url}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (r.ok) fails.push(`${fn}: callable without signing in`);
 }

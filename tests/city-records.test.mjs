@@ -526,16 +526,19 @@ test('compact sections cap visible rows at 5, render counts, dates, and expanded
   assert.equal((active.match(/role="tooltip"/g) || []).length, 1);
 });
 
-test('City Records page never loads on the public site or for non-owner roles', async () => {
+test('City Records page is restricted to non-preview owner (owner site) and non-preview lender', async () => {
   assert.equal(siteRules('public').ownerAllowed, false);
   assert.equal(canAccessCityRecords('public', 'owner', false), false);
   assert.equal(canAccessCityRecords('owner', 'owner', true), false);
-  for (const r of ['seller', 'realtor', 'reviewer', 'lender', 'viewer', 'guest', '']) {
+  assert.equal(canAccessCityRecords('owner', 'lender', true), true);
+  assert.equal(canAccessCityRecords('owner', 'lender', false), true);
+  assert.equal(canAccessCityRecords('public', 'lender', false), true);
+  for (const r of ['seller', 'realtor', 'reviewer', 'viewer', 'guest', 'lead_guest', '']) {
     assert.equal(canAccessCityRecords('owner', r, false), false, `blocked for ${r}`);
   }
   assert.equal(canAccessCityRecords('owner', 'owner', false), true);
 
-  for (const view of ['Seller.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'Lender.jsx', 'Home.jsx', 'Join.jsx']) {
+  for (const view of ['Seller.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'LeadGuest.jsx', 'Home.jsx', 'Join.jsx']) {
     const s = read(`src/views/${view}`);
     assert.doesNotMatch(s, /CityRecords|city-records|city_records:/, `${view} must not reference City Records`);
   }
@@ -544,7 +547,7 @@ test('City Records page never loads on the public site or for non-owner roles', 
   assert.match(ownerSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \? null : lazy/);
   assert.match(ownerSrc, /siteRules\(SITE_KIND\)\.ownerAllowed/);
 
-  // Verify real VITE_SITE_KIND=public Vite build omits CityRecords & city_records: completely.
+  // Verify real VITE_SITE_KIND=public Vite build omits owner-only DealPlan & keeps zero real city-record data in static chunks.
   const outDir = mkdtempSync(join(tmpdir(), 'public-site-check-'));
   const prevKind = process.env.VITE_SITE_KIND;
   process.env.VITE_SITE_KIND = 'public';
@@ -568,7 +571,8 @@ test('City Records page never loads on the public site or for non-owner roles', 
     assert.ok(emitted.length > 0);
     for (const file of emitted) {
       const content = readFileSync(file, 'utf8');
-      assert.doesNotMatch(content, /city_records:|CityRecordsView/, `public bundle leaked CityRecords into ${file}`);
+      assert.doesNotMatch(content, /deal_plan:|DealPlan/, `public bundle leaked DealPlan into ${file}`);
+      assert.doesNotMatch(content, /23C Properties|C\/O THE FAHEY BANK/i, `public bundle leaked real city record data into ${file}`);
     }
   } finally {
     if (prevKind === undefined) delete process.env.VITE_SITE_KIND;

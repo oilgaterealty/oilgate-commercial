@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { roleLabel, when } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty } from './Shell.jsx';
 
-const roles = ['realtor', 'seller', 'reviewer', 'lender', 'viewer'];
+const roles = ['realtor', 'seller', 'reviewer', 'lender', 'lead_guest', 'viewer'];
 
 export default function AccessRequests({ dealId, onApproved }) {
   const [rows, setRows] = useState(null);
@@ -13,7 +13,7 @@ export default function AccessRequests({ dealId, onApproved }) {
 
   async function load() {
     const { data, error } = await supabase.from('commercial_access_requests')
-      .select('id,email,created_at').eq('deal_id', dealId).eq('status', 'pending').order('created_at');
+      .select('id,email,requested_role,created_at').eq('deal_id', dealId).eq('status', 'pending').order('created_at');
     setRows(data || []);
     if (error) setStatus('Couldn’t load access requests.');
   }
@@ -49,7 +49,10 @@ export default function AccessRequests({ dealId, onApproved }) {
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <div>
                 <p className="break-all font-medium">{row.email}</p>
-                <p className="text-xs text-ink-soft">{when(row.created_at)}</p>
+                <p className="text-xs text-ink-soft">
+                  {row.requested_role ? `Requested: ${roleLabel[row.requested_role] || row.requested_role} · ` : ''}
+                  {when(row.created_at)}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <select aria-label={`Role for ${row.email}`} className="rounded-xl border border-line bg-white px-3 py-2 text-sm"

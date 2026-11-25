@@ -12,9 +12,18 @@ export default function Join({ token, session }) {
     (async () => {
       const { data: slug, error } = await supabase.rpc('commercial_redeem_role_link', { p_token: token });
       if (error || !slug) {
-        setMsg(/removed/.test(error?.message || '')
-          ? 'Your access to this property was removed. Ask the person who sent the link.'
-          : 'This link was turned off or has expired. Ask the person who sent it for a new one.');
+        const m = error?.message || '';
+        setMsg(
+          /wrong recipient/.test(m)
+            ? 'This link was issued for a different verified email address.'
+            : /expired/.test(m)
+              ? 'This link has expired. Ask the person who sent it for a new one.'
+              : /removed/.test(m)
+                ? 'Your access to this property was removed. Ask the person who sent the link.'
+                : /already used/.test(m)
+                  ? 'This link has already been used.'
+                  : 'This link was turned off or is invalid. Ask the person who sent it for a new one.'
+        );
         return;
       }
       window.location.replace(`${window.location.pathname}#/d/${slug}`);

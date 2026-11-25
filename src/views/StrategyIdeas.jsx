@@ -7,10 +7,9 @@ import { canDeleteIdea, canEditIdea } from '../lib/v63.js';
 
 const BLANK = { title: '', notes: '' };
 
-// Strategy cards, shown under Tenants. The buyer (owner) adds, edits and deletes any card; the realtor reads all,
-// adds her own and deletes only her own. Never rendered for any other role or in a "See as" preview.
+// Strategy cards. The buyer (owner) reads and edits all; realtor and reviewer read and add only their own.
 export default function StrategyIdeas({ deal, me, role, preview }) {
-  const allowed = (role === 'owner' || role === 'realtor') && !preview;
+  const allowed = (role === 'owner' || role === 'realtor' || role === 'reviewer') && !preview;
   const owner = role === 'owner';
   const [rows, setRows] = useState(null);
   const [form, setForm] = useState(BLANK);

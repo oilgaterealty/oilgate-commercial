@@ -16,8 +16,8 @@ export function visibleUnitNotes(role, uid, rows) {
 }
 export const canWriteUnitNotes = (role) => role === 'owner' || role === 'realtor' || role === 'reviewer';
 
-// Strategy ideas: the owner changes anything; the realtor deletes only her own.
-export const canDeleteIdea = (role, row, uid) => role === 'owner' || (role === 'realtor' && Boolean(uid) && row?.author_uid === uid);
+// Strategy ideas: the owner changes anything; the realtor or reviewer deletes only their own.
+export const canDeleteIdea = (role, row, uid) => role === 'owner' || ((role === 'realtor' || role === 'reviewer') && Boolean(uid) && row?.author_uid === uid);
 export const canEditIdea = (role) => role === 'owner';
 
 // Comps.

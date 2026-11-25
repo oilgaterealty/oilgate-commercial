@@ -158,11 +158,14 @@ test('9. comps: easy numbers, sources, picks with tight RLS', () => {
   assert.match(c, /autoComplete="street-address"/);
 });
 
-test('10. strategy ideas under Tenants: realtor adds and deletes her own; owner controls all', () => {
+test('10. strategy ideas: realtor and reviewer add/delete their own; owner controls all', () => {
   assert.equal(v5Access('realtor').ideas, true);
-  assert.equal(v5Access('reviewer').ideas, false);
+  assert.equal(v5Access('reviewer').ideas, true);
+  assert.equal(v5Access('lender').ideas, false);
+  assert.equal(v5Access('lead_guest').ideas, false);
   assert.equal(canDeleteIdea('owner', { author_uid: 'r' }, 'o'), true);
   assert.equal(canDeleteIdea('realtor', { author_uid: 'r' }, 'r'), true);
+  assert.equal(canDeleteIdea('reviewer', { author_uid: 'v' }, 'v'), true);
   assert.equal(canDeleteIdea('realtor', { author_uid: 'o' }, 'r'), false);
   assert.equal(canEditIdea('realtor'), false);
   assert.match(src('src/views/Tenants.jsx'), /<StrategyIdeas /);
@@ -211,7 +214,7 @@ test('12. lender terms board: every lender reads all, writes only their own', ()
   const lt = src('src/views/LenderTerms.jsx');
   assert.match(lt, /sendToOwner\(deal, me, 'lender'/); // the private message still goes to the buyer
   assert.match(lt, /onConflict: 'deal_id,lender_uid'/);
-  assert.match(lt, /const \{ Questions: _private, \.\.\.shared \} = filled;/); // questions stay private
+  assert.match(lt, /setRows\(role === 'owner' \? list : list\.filter\(\(r\) => r\.lender_uid === me\?\.uid\)\)/); // lenders read only their own rows in v8
 });
 
 test('13. files say who can see them', () => {

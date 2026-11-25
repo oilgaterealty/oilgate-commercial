@@ -1,17 +1,18 @@
 import { buyerName } from '../lib/people.js';
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { evaluate, money, STR_UNIT_CHOICES, strUnitOptions } from '../lib/dealmath.js';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
-import { useUploads } from '../components/Files.jsx';
+import { useUploads, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import { Card, CardTitle, Empty, Tabs, Button } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
-import { OptionTable, letterOf, titleOf } from './Offers.jsx';
 import LenderTerms from './LenderTerms.jsx';
+
+const CityRecords = lazy(() => import('./CityRecords.jsx'));
 
 const RENTS = [850, 875, 900, 925, 950, 975, 1000];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -42,12 +43,20 @@ function Stat({ label, value, sub }) {
   );
 }
 
-// The lender's page: one plan, stated plainly, with the few switches a lender would test.
+// The lender's page: single lead plan, full read-only City Records, approved supporting documents, and required questionnaire.
 export default function Lender({ deal, me, preview, tab }) {
-  const tabs = [['overview', 'The plan'], ['photos', 'Photos'], ['messages', 'Messages']];
+  const tabs = [
+    ['overview', 'The plan'],
+    ['city-records', 'City records'],
+    ['documents', 'Documents'],
+    ['photos', 'Photos'],
+    ['messages', 'Messages'],
+  ];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   const [rows] = useUploads(deal);
-  const photos = photosOf(preview ? seenBy('lender', rows) : rows || []);
+  const visible = preview ? seenBy('lender', rows) : rows || [];
+  const photos = photosOf(visible);
+  const docs = visible.filter((r) => r.kind === 'document');
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [pickUnits, setUnits] = useState(null);
   const [pickStr, setStr] = useState(null);
@@ -60,16 +69,10 @@ export default function Lender({ deal, me, preview, tab }) {
   const rent = pickRent ?? baseRent;
   const b = { ...base, units, strUnits: str, rent };
 
-  const plan = useMemo(() => {
-    if (!offers?.length) return null;
-    const chosen = offers.find((x) => x.id === base.planOffer);
-    if (chosen) return chosen;
-    return offers.reduce((a, x) => (!a || evaluate(x.structure, x.inputs, base).keepMonthly > evaluate(a.structure, a.inputs, base).keepMonthly ? x : a), null);
-  }, [offers, base]);
-
+  const plan = offers?.[0] || null;
   const e = plan && evaluate(plan.structure, plan.inputs, b);
   const o = e?.operating;
-  // The low end of everything a lender can switch here: still the answer we stand behind.
+
   const floor = useMemo(() => {
     if (!plan) return null;
     let worst = null;
@@ -92,6 +95,17 @@ export default function Lender({ deal, me, preview, tab }) {
       <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`} />
       {active === 'messages' && <Messages deal={deal} me={me} role="lender" preview={preview} />}
       {active === 'photos' && <UnitGallery deal={deal} me={me} role="lender" preview={preview} />}
+      {active === 'city-records' && (
+        <Suspense fallback={<Empty>Loading…</Empty>}>
+          <CityRecords deal={deal} role="lender" preview={preview} />
+        </Suspense>
+      )}
+      {active === 'documents' && (
+        <Card>
+          <CardTitle>Supporting documents</CardTitle>
+          {rows === null ? <Empty>Loading…</Empty> : docs.length ? <FileList rows={docs} canShare={false} owner={false} /> : <Empty>No supporting documents shared yet.</Empty>}
+        </Card>
+      )}
       {active === 'overview' && (
         <>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
@@ -99,7 +113,7 @@ export default function Lender({ deal, me, preview, tab }) {
             <>
               <section className="rounded-3xl bg-ink p-6 text-white">
                 <p className="text-xs uppercase tracking-[0.18em] text-warm">The plan</p>
-                <h2 className="mt-1 font-display text-3xl font-semibold">{titleOf(plan)}</h2>
+                <h2 className="mt-1 font-display text-3xl font-semibold">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</h2>
                 <p className="mt-2 max-w-3xl text-white/80">{plain(plan.structure, e).glance}</p>
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
                   <div><p className="text-xs text-white/60">Left each month after the payment</p><p className="font-display text-4xl font-semibold">{money(e.keepMonthly)}</p></div>
@@ -117,7 +131,7 @@ export default function Lender({ deal, me, preview, tab }) {
                   <Button kind="secondary" onClick={randomize}>Randomize</Button>
                 </div>
                 {lastRandom && <p role="status" className="mt-3 text-sm text-white/80">Random check: {lastRandom}</p>}
-                {floor && <p className="mt-3 text-sm text-white/80">Lowest case you can set here ({money(floor.r)} rent, {floor.s ? `${floor.s} Airbnb` : 'no Airbnb'}, {floor.u} units): {money(floor.e.keepMonthly)}/mo left after the payment, rent covers it {times(floor.e.dscr)}.</p>}
+                {floor && <p className="mt-3 text-sm text-white/80">Lowest case ({money(floor.r)} rent, {floor.s ? `${floor.s} Airbnb` : 'no Airbnb'}, {floor.u} units): {money(floor.e.keepMonthly)}/mo left after payment, {times(floor.e.dscr)} coverage.</p>}
               </section>
 
               <Cover rows={photos} />
@@ -136,14 +150,6 @@ export default function Lender({ deal, me, preview, tab }) {
                 </dl>
                 <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm">{plain(plan.structure, e).lines.map((t, i) => <li key={i}>{t}</li>)}</ol>
               </Card>
-
-              {offers.length > 1 && (
-                <section>
-                  <h2 className="mb-3 font-display text-2xl font-semibold">Every option we looked at</h2>
-                  <p className="mb-3 text-sm text-ink-soft">Option {letterOf(plan, offers.indexOf(plan))} is the plan. The rest are shown for comparison.</p>
-                  <OptionTable offers={offers} evals={Object.fromEntries(offers.map((x) => [x.id, evaluate(x.structure, x.inputs, b)]))} />
-                </section>
-              )}
             </>
           )}
           <LenderTerms deal={deal} me={me} preview={preview} />

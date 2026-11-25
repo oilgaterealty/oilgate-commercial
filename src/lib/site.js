@@ -6,6 +6,7 @@ export const SITE_KIND = import.meta.env?.VITE_SITE_KIND || '';
 
 // The guest site. Role links and "Copy site link" always point here, never at the owner's address.
 export const PUBLIC_SITE = 'https://2327charlotte.oilgateai.com/';
+export const GUEST_SITE = import.meta.env?.VITE_GUEST_SITE || PUBLIC_SITE;
 
 export const siteRules = (kind) => ({
   ownerAllowed: kind !== 'public',
@@ -13,10 +14,11 @@ export const siteRules = (kind) => ({
 });
 
 export const canAccessCityRecords = (kind, role, preview = false) =>
-  Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);
+  role === 'lender' || Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);
 
-export const canAccessDealPlan = canAccessCityRecords;
+export const canAccessDealPlan = (kind, role, preview = false) =>
+  Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);
 
 // Role links: #/join/<token>. 64 hex characters, made by the database.
 export const isLinkToken = (t) => /^[a-f0-9]{64}$/.test(t || '');
-export const roleLinkUrl = (token) => `${PUBLIC_SITE}#/join/${token}`;
+export const roleLinkUrl = (token) => `${GUEST_SITE}#/join/${token}`;

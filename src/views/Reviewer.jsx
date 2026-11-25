@@ -9,6 +9,7 @@ import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import Offers from './Offers.jsx';
+import StrategyIdeas from './StrategyIdeas.jsx';
 import { seenBy } from '../lib/visibility.js';
 
 function Facts({ deal, numbers }) {
@@ -47,12 +48,13 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const photos = photosOf(shared);
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
-  const tabs = viewer ? [['overview', 'Overview'], ['photos', 'Photos']] : [['overview', 'Overview'], ['photos', 'Photos'], ['comps', 'Comps'], ['messages', 'Messages']];
+  const tabs = viewer ? [['overview', 'Overview'], ['photos', 'Photos']] : [['overview', 'Overview'], ['photos', 'Photos'], ['comps', 'Comps'], ['ideas', 'Ideas'], ['messages', 'Messages']];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
   return (
     <div className="space-y-5">
       {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
       {!viewer && active === 'comps' && <Comps deal={deal} me={me} role={role} preview={preview} />}
+      {!viewer && active === 'ideas' && <StrategyIdeas deal={deal} me={me} role={role} preview={preview} />}
       {active === 'photos' && <UnitGallery deal={deal} me={me} role={viewer ? 'viewer' : role} preview={preview} />}
       {active === 'overview' && (
         <>
@@ -60,7 +62,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
           <Facts deal={deal} numbers={!viewer} />
           {!viewer && (
             <section>
-              <h2 className="mb-3 font-display text-2xl font-semibold">The offers</h2>
+              <h2 className="mb-3 font-display text-2xl font-semibold">The lead offer</h2>
               <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} />
             </section>
           )}
