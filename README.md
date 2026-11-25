@@ -46,6 +46,27 @@ That's it: same pages, no code changes.
 
 ## Setup
 
+### Phase 1 owner snapshot bridge
+
+Apply all missing migrations in numeric order through `0019_bridge.sql` (including
+0010–0018 on older installations). 0019 is additive and changes no existing policy.
+It adds private, deal-scoped `commercial_bridge_tokens` and owner-readable
+`commercial_erwin_facts`. Only `commercial_bridge_snapshot(text,text)` is executable
+by anon. Tokens are 32 random bytes represented as 64 hex characters; store only
+SHA-256 in the database and the raw value only in the Super Lab host secret.
+Only the `superlab_owner` read scope exists. No business-data write RPC is included.
+Accepted reads update the token's last-used timestamp and call counter, with a
+60-accepted-reads-per-minute per-token limit. Revocation is `active=false` on the token row.
+Uploads contain metadata only; no storage paths, file bytes or signed URLs.
+
+`node tests/bridge.db.mjs` runs opt-in isolated PostgreSQL checks with PGlite
+(`PGLITE_MODULE` can identify an external installation). It applies migrations
+0001–0019 in memory and verifies grants, non-owner denial and token revocation.
+Existing role policies remain intact, including the seller's existing loan access
+and reviewer/lender model access where currently allowed; the bridge grants them
+no new access. Rollback: set the bridge token inactive, then revert the release
+commit. Retain the additive tables and history.
+
 1. Use the designated Supabase project and apply the SQL files in `supabase/migrations` in numeric order (0001 through 0009). On an existing deployment, apply only missing migrations; 0004 adds the workspace and private loan table, 0005 seeds the Charlotte realtor due-diligence desk, 0006 adds scoped task completion, 0007 restricts viewer documents while sharing the existing listing photos, 0008 adds v3 roles and tasks, and 0009 adds v5 lease-up CRM tables (walkthrough photos/voice notes, tenant pipeline, owner-only strategy ideas, comps/ARV) and role-scoped storage policies. Verify RLS and the routing triggers after applying. These files do not delete existing history.
 2. In SQL, add the owner: `insert into commercial_owners(email) values ('you@example.com');`
    and set the first deal's Drive folder:
