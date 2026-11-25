@@ -67,7 +67,28 @@ test('no other oilgateai.com address appears anywhere in the code', () => {
 
 test('public site build blocks the owner page', () => {
   const wf = readFileSync(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
-  assert.match(wf, /VITE_SITE_KIND: public/);
+  assert.match(wf, /VITE_SITE_KIND: seller/);
   assert.equal(siteRules('public').ownerAllowed, false);
   assert.equal(siteRules('public').guestsAllowed, true);
+});
+test('Seller only on 2327; every other role on the one shared private address', async () => {
+  const { roleLinkUrl, roleAllowedHere, requestAccessAllowed, siteRules: rules } = await import('../src/lib/site.js');
+  const t = 'a'.repeat(64);
+  assert.equal(roleLinkUrl(t, 'seller'), 'https://2327charlotte.oilgateai.com/#/join/' + t);
+  for (const r of ['realtor', 'lender', 'reviewer', 'viewer', 'lead_guest']) {
+    assert.equal(roleAllowedHere('seller', r), false);
+    assert.equal(roleAllowedHere('public', r), true);
+  }
+  assert.equal(roleAllowedHere('seller', 'seller'), true);
+  assert.equal(roleAllowedHere('public', 'seller'), false);
+  assert.equal(rules('seller').ownerAllowed, false);
+  assert.equal(requestAccessAllowed('seller'), false);
+  assert.equal(requestAccessAllowed('public'), true);
+  assert.match(read('src/views/DealRoom.jsx'), /roleAllowedHere\(SITE_KIND, state\.role\)/);
+});
+
+test('Owner can pick the lead offer from the default Offers view', () => {
+  const src = read('src/views/Offers.jsx');
+  assert.match(src, /aria-label="Lead offer"/);
+  assert.ok(src.indexOf('aria-label="Lead offer"') < src.indexOf("view === 'table' && <OptionTable"));
 });

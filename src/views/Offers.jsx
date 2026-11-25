@@ -156,6 +156,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
   const { offers, setOffers, base, setBase, later, saved } = model;
   const [active, setActive] = useState(null);
   const [view, setView] = useState('table');
+  const [leadErr, setLeadErr] = useState('');
 
   const patch = (id, p) => {
     setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...p } : o)));
@@ -177,6 +178,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
   const setLead = async (o) => {
     if (!owner || !o?.id) return;
     const { error } = await supabase.rpc('commercial_set_lead_offer', { p_deal: deal.id, p_offer: o.id });
+    setLeadErr(error ? error.message : '');
     if (!error) setOffers((list) => list.map((x) => ({ ...x, is_lead: x.id === o.id })));
   };
 
@@ -196,8 +198,20 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview })
         {owner && <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>}
         <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>{owner ? 'Card view' : 'Lead offer'}</Button>
         <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
+        {owner && offers.length > 0 && (
+          <label className="flex items-center gap-2 rounded-full border border-ink bg-white py-1 pl-4 pr-1 text-sm font-semibold">
+            Lead offer
+            <select aria-label="Lead offer" value={offers.find((x) => x.is_lead)?.id || ''}
+              onChange={(e) => { const x = offers.find((y) => y.id === e.target.value); if (x) void setLead(x); }}
+              className="rounded-full border border-line bg-white px-3 py-1 text-sm font-normal">
+              <option value="" disabled>Pick one</option>
+              {offers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+        )}
         {owner && saved && <span className="ml-auto text-xs text-ink-soft">{saved}</span>}
       </div>
+      {leadErr && <p role="alert" className="text-sm text-red-700">{leadErr}</p>}
       {!offers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No lead offer has been shared with you yet.'}</Empty></Card>}
       {owner && offers.length > 0 && view === 'table' && <OptionTable offers={offers} evals={evals} />}
       {offers.length > 0 && (view === 'cards' || (!owner && view === 'table')) && (

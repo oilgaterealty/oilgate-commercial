@@ -1,6 +1,7 @@
 // Which site this build serves. Set at build time only, never from the address bar.
 //   'owner'  = the owner's private address: only the owner's page loads.
-//   'public' = the guest site (seller, realtor, lender ...): the owner's page never loads here.
+//   'seller' = 2327charlotte: the seller's page only.
+//   'public' = the shared private address for realtor, lender, reviewer, viewer and lead guest: no owner or seller page here.
 //   unset    = both (local dev and older builds).
 export const SITE_KIND = import.meta.env?.VITE_SITE_KIND || '';
 
@@ -9,7 +10,7 @@ export const PUBLIC_SITE = 'https://2327charlotte.oilgateai.com/';
 export const GUEST_SITE = import.meta.env?.VITE_GUEST_SITE || PUBLIC_SITE;
 
 export const siteRules = (kind) => ({
-  ownerAllowed: kind !== 'public',
+  ownerAllowed: kind !== 'public' && kind !== 'seller',
   guestsAllowed: kind !== 'owner',
 });
 
@@ -21,4 +22,12 @@ export const canAccessDealPlan = (kind, role, preview = false) =>
 
 // Role links: #/join/<token>. 64 hex characters, made by the database.
 export const isLinkToken = (t) => /^[a-f0-9]{64}$/.test(t || '');
-export const roleLinkUrl = (token) => `${GUEST_SITE}#/join/${token}`;
+export const roleLinkUrl = (token, role) => `${role === 'seller' ? PUBLIC_SITE : GUEST_SITE}#/join/${token}`;
+
+// Which roles may open their page on this build.
+export const roleAllowedHere = (kind, role) => {
+  if (kind === 'seller') return role === 'seller';
+  if (kind === 'public') return role !== 'seller' && role !== 'owner';
+  return true;
+};
+export const requestAccessAllowed = (kind) => kind !== 'seller' && kind !== 'owner';

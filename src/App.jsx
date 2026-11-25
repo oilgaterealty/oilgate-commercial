@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase, configured } from './lib/supabase.js';
 import { useHashRoute } from './lib/useHashRoute.js';
-import { SITE_KIND, siteRules } from './lib/site.js';
+import { SITE_KIND, siteRules, requestAccessAllowed } from './lib/site.js';
 import SignIn from './views/SignIn.jsx';
 import Home from './views/Home.jsx';
 import DealRoom from './views/DealRoom.jsx';
@@ -35,11 +35,11 @@ export default function App() {
 
   if (!configured) return <Shell><p className="text-ink-soft">This site isn't connected to its database yet.</p></Shell>;
   if (session === undefined) return <Shell><p className="text-ink-soft">Loading…</p></Shell>;
-  if (!session) return <SignIn canRequestAccess={rules.guestsAllowed && route.name !== 'join'} requestingAccess={route.name === 'request-access' && rules.guestsAllowed} />;
+  if (!session) return <SignIn canRequestAccess={rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name !== 'join'} requestingAccess={route.name === 'request-access' && rules.guestsAllowed && requestAccessAllowed(SITE_KIND)} />;
   if (isOwner === undefined) return <Shell session={session}><p className="text-ink-soft">Loading…</p></Shell>;
   if (isOwner && !rules.ownerAllowed) return <Closed session={session} text="You’re signed in as the buyer. Your page opens only at your private address." />;
   if (!isOwner && !rules.guestsAllowed) return <Closed session={session} text="There’s nothing here for this email." />;
-  if (!isOwner && rules.guestsAllowed && route.name === 'request-access') return <RequestAccess key={session.user.id} session={session} />;
+  if (!isOwner && rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name === 'request-access') return <RequestAccess key={session.user.id} session={session} />;
   if (route.name === 'join') return <Join token={route.token} session={session} />;
   return route.name === 'deal'
     ? <DealRoom key={`${session.user.id}:${route.slug}`} slug={route.slug} tab={route.tab} sub={route.sub} session={session} />

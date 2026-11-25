@@ -21,7 +21,7 @@ import AccessRequests from '../components/AccessRequests.jsx';
 import { DEFAULT_EXECUTION_PLAN, DEFAULT_LEAD_OFFER } from '../components/LeadOfferCard.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
-const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./DealPlan.jsx'));
+const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./DealPlan.jsx'));
 
 const BASE_TABS = [
   ['overview', 'Overview'],
@@ -136,7 +136,7 @@ function RoleLinks({ deal, onJoined }) {
       p_expires_days: expiresDays,
     });
     if (error || !token) return setMsg('That link couldn’t be made. Try again.');
-    setFresh({ url: roleLinkUrl(token), label: f.label.trim() || roleLabel[f.role], recipient });
+    setFresh({ url: roleLinkUrl(token, f.role), label: f.label.trim() || roleLabel[f.role], recipient });
     setF({ ...f, label: '', recipient_email: '' });
     load();
   };

@@ -9,6 +9,7 @@ import Seller from './Seller.jsx';
 import Reviewer from './Reviewer.jsx';
 import Lender from './Lender.jsx';
 import LeadGuest from './LeadGuest.jsx';
+import { PUBLIC_SITE, SITE_KIND, roleAllowedHere } from '../lib/site.js';
 
 const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'lead_guest', 'viewer'];
 
@@ -46,6 +47,14 @@ export default function DealRoom({ slug, tab, sub, session }) {
     return (
       <Shell session={session} head={<h1 className="font-display text-3xl font-semibold">No access yet</h1>}>
         <Card><Empty>This email ({session.user.email}) hasn’t been added to this property. Ask the person who invited you to add it, then refresh.</Empty></Card>
+      </Shell>
+    );
+  }
+
+  if (!roleAllowedHere(SITE_KIND, state.role)) {
+    return (
+      <Shell session={session} head={<h1 className="font-display text-3xl font-semibold">Not here</h1>}>
+        <Card><Empty>{state.role === 'seller' ? <>Your page is at <a className="underline" href={PUBLIC_SITE}>{PUBLIC_SITE.replace(/^https:\/\/|\/$/g, '')}</a>.</> : 'Open the private link you were sent.'}</Empty></Card>
       </Shell>
     );
   }

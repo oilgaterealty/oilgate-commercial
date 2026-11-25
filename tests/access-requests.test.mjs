@@ -11,8 +11,8 @@ test('request access preserves both existing deal and invitation routes', () => 
   assert.deepEqual(parseHash('#/join/invite'), { name: 'join', token: 'invite' });
   assert.deepEqual(parseHash('#/d/charlotte/overview'), { name: 'deal', slug: 'charlotte', tab: 'overview', sub: '' });
   const app = read('src/App.jsx');
-  assert.match(app, /canRequestAccess=\{rules\.guestsAllowed && route\.name !== 'join'\}/);
-  assert.match(app, /!isOwner && rules\.guestsAllowed && route\.name === 'request-access'/);
+  assert.match(app, /canRequestAccess=\{rules\.guestsAllowed && requestAccessAllowed\(SITE_KIND\) && route\.name !== 'join'\}/);
+  assert.match(app, /!isOwner && rules\.guestsAllowed && requestAccessAllowed\(SITE_KIND\) && route\.name === 'request-access'/);
   assert.match(read('src/views/RequestAccess.jsx'), /p_submit: false[\s\S]*p_submit: true/);
 });
 

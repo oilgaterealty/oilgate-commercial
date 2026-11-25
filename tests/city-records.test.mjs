@@ -544,7 +544,7 @@ test('City Records page is restricted to non-preview owner (owner site) and non-
   }
 
   const ownerSrc = read('src/views/Owner.jsx');
-  assert.match(ownerSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \? null : lazy/);
+  assert.match(ownerSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \|\| import\.meta\.env\.VITE_SITE_KIND === 'seller' \? null : lazy/);
   assert.match(ownerSrc, /siteRules\(SITE_KIND\)\.ownerAllowed/);
 
   // Verify real VITE_SITE_KIND=public Vite build omits owner-only DealPlan & keeps zero real city-record data in static chunks.
