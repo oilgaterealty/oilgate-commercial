@@ -50,10 +50,22 @@ export function normalizeLeadOffer(content = {}) {
 }
 
 export function normalizeExecutionSteps(content = {}) {
+  if (Array.isArray(content?.execution_steps)) {
+    const steps = content.execution_steps
+      .map((step, i) => ({
+        key: `step-${i}`,
+        title: String(step?.title || '').trim(),
+        detail: String(step?.detail || '').trim(),
+        items: Array.isArray(step?.items) ? step.items.map((x) => String(x || '').trim()).filter(Boolean) : [],
+      }))
+      .filter((step) => step.title && (step.detail || step.items.length));
+    if (steps.length) return steps;
+  }
   const raw = content?.execution && typeof content.execution === 'object' ? content.execution : {};
   return DEFAULT_EXECUTION_PLAN.map((step) => ({
     ...step,
     detail: String(raw[step.key] || '').trim() || step.detail,
+    items: [],
   }));
 }
 
@@ -169,7 +181,14 @@ export function ExecutionPlanCard({ content }) {
               </span>
               <h3 className="font-display text-lg font-semibold leading-snug">{s.title}</h3>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-ink">{s.detail}</p>
+            {s.detail && <p className="mt-2 text-sm leading-relaxed text-ink">{s.detail}</p>}
+            {s.items.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
+                {s.items.map((item, j) => (
+                  <li key={j}>{item}</li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ol>

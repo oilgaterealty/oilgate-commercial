@@ -74,3 +74,23 @@ test('Subtext sweep removes visible Source lines from Switches and Comps', () =>
   assert.doesNotMatch(read('src/views/Comps.jsx'), />Source:/);
   assert.match(read('src/views/Comps.jsx'), /<InfoTip/);
 });
+
+test('How I will get this done renders the owner-set step-by-step plan in order', () => {
+  const { ExecutionPlanCard } = loadLeadOfferModule();
+  const html = renderToStaticMarkup(
+    React.createElement(ExecutionPlanCard, {
+      content: {
+        execution_steps: [
+          { title: 'Check the building', items: ['Gas pressure test', 'Title and payoff letter'] },
+          { title: 'Empty occupied units', detail: 'Court process only.' },
+          { title: '', detail: 'dropped' },
+        ],
+      },
+    })
+  );
+  assert.ok(html.indexOf('Check the building') < html.indexOf('Empty occupied units'));
+  assert.match(html, /<li>Gas pressure test<\/li>/);
+  assert.match(html, /Court process only\./);
+  assert.doesNotMatch(html, /dropped/);
+  assert.doesNotMatch(html, /Getting the property ready/);
+});
