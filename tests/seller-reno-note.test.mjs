@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STRUCTURES, evaluate, buildLeadStory } from '../src/lib/dealmath.js';
+import { STRUCTURES, evaluate, buildLeadStory, applyGuideRefi } from '../src/lib/dealmath.js';
 import { buildLeadGuide, deferredAtRefi, offerSellerSummary, refi, sellerNote, unitsRentedTable } from '../src/lib/dealplan.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -136,4 +136,15 @@ test('seller page function passes the on/off switches the offer card needs', () 
   const sql = readFileSync(join(root, 'supabase/migrations/0025_seller_offer_flags.sql'), 'utf8');
   assert.match(sql, /'billsFromRent'/);
   assert.match(sql, /'renoFromSeller'/);
+});
+
+test('non-owner snapshot uses the guide refi payoff (both notes + deferred costs)', () => {
+  const ev = evaluate('wrap', LEAD.inputs, BASE);
+  const g = buildLeadGuide(BASE, PLAN, LEAD);
+  const st = applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi);
+  const left = g.refi.leftForYou;
+  assert.equal(st.headline.cashOut.value, left >= 0 ? '$' + Math.round(left).toLocaleString('en-US') : 'Bring $' + Math.round(-left).toLocaleString('en-US'));
+  assert.equal(st.headline.sellerTotal.value, '$' + Math.round(g.refi.sellerTotalPayoff).toLocaleString('en-US'));
+  const pays = st.steps.find((s) => s.title === 'Refinance').lines.find((l) => l.label === 'Pays seller');
+  assert.equal(pays.value, st.headline.sellerTotal.value);
 });

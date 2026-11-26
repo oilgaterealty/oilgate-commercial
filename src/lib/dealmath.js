@@ -497,3 +497,31 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
     value: val,
   };
 }
+
+// Snapshot story for non-owner roles: when the saved units-rented guide has refi numbers, use them so every
+// role shows the same payoff (both seller notes, deferred holding costs, closing, what is left).
+export function applyGuideRefi(story, rf) {
+  if (!story || !rf || !Number.isFinite(+rf.leftForYou)) return story;
+  const left = +rf.leftForYou;
+  const sellerTotal = +(rf.sellerTotalPayoff ?? rf.sellerPayoff ?? 0);
+  const leftLines = Array.isArray(rf.leftForYouOverlay) ? rf.leftForYouOverlay : [];
+  const sellerLines = [
+    `Purchase note: ${money(+(rf.sellerNotePrincipal ?? 0))}`,
+    rf.renoFromSeller ? `Renovation note: ${money(+(rf.renoNotePrincipal ?? 0))}` : null,
+    +(rf.sellerCarriedBills ?? 0) > 0 ? `Deferred holding costs: ${money(+rf.sellerCarriedBills)}` : null,
+    `Total: ${money(sellerTotal)}.`,
+  ].filter(Boolean);
+  const next = { ...story, headline: { ...story.headline } };
+  next.headline.cashOut = { ...story.headline.cashOut, value: left >= 0 ? money(left) : `Bring ${money(-left)}`, positive: left >= 0, overlay: leftLines };
+  next.headline.sellerTotal = { ...story.headline.sellerTotal, value: money(sellerTotal), overlay: sellerLines };
+  next.steps = (story.steps || []).map((s) => (s.title !== 'Refinance' ? s : {
+    ...s,
+    lines: s.lines.map((l) => {
+      if (l.label === 'Pays seller') return { ...l, value: money(sellerTotal), overlay: sellerLines };
+      if (l.label === 'Closing') return { ...l, value: money(+(rf.closing ?? 0)), overlay: [`Closing costs at refinance: ${money(+(rf.closing ?? 0))}.`] };
+      if (l.big) return { ...l, label: left >= 0 ? `You take home ${money(left)}` : `You bring ${money(-left)}`, tone: left >= 0 ? 'pass' : 'fail', overlay: leftLines };
+      return l;
+    }),
+  }));
+  return next;
+}

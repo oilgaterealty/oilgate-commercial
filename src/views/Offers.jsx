@@ -6,7 +6,7 @@ import { useDealModel } from '../lib/useDealModel.js';
 import { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
 import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
@@ -519,6 +519,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
         || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
         || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
       if (g) {
+        if (g.refi) Object.assign(baseStory, applyGuideRefi(baseStory, g.refi));
         baseStory.unitsGuide = g;
         if (g.costSummary) baseStory.costSummary = g.costSummary;
         else if (g.cost?.length) baseStory.costSummary = { heading: g.costHeading, headingOverlay: g.costHeadingOverlay || [], lines: g.cost };
