@@ -546,6 +546,7 @@ export function applyGuideRefi(story, rf, guide = null) {
       return { ...s, lines: [
         ...(budget !== null ? [{ label: 'Repair budget', value: money(budget), overlay: s.lines[0]?.overlay || [] }] : s.lines),
         ...(+(rf.closingInLoan ?? 0) > 0 ? [{ label: 'Closing costs rolled in', value: money(+rf.closingInLoan), overlay: [] }] : []),
+        ...(+(guide?.costSummary?.contingency ?? 0) > 0 ? [{ label: 'Contingency', value: `${money(+guide.costSummary.contingency)}, only if used`, overlay: ['Not in the note unless it is used.'] }] : []),
         { label: 'Seller renovation note', value: rc ? `${money(reno)} at ${rc.sellerRate}%, no points` : money(reno), overlay: rc ? [`Interest only: ${money(rc.sellerMo)}/mo, paid from rent once units are rented.`] : [] },
         ...(rc ? [{ label: 'Or a repair loan', value: `${rc.regularRate}% + ${rc.regularPointsPct} points`, overlay: [`Interest only: ${money(rc.regularMo)}/mo, plus ${money(rc.regularPoints)} in points upfront.`] }] : []),
       ] };

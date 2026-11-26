@@ -919,8 +919,9 @@ function repairLoanNumbers(baseIn = {}, planIn = {}, offerIn = {}) {
   const pointsPct = fromSeller ? 0 : lenderPointsPct;
   const fullLoan = fromSeller ? loanBase + contingency : regularLoan;
   const points = fromSeller ? 0 : regular.points;
-  // One repair budget: the seller note is the whole budget, so contingency used or unused pays off the same.
-  const drawnUnused = fromSeller ? fullLoan : loanBase + points;
+  // One repair budget. The contingency is drawn only if it is used, so the seller note's payments and payoff
+  // count it only when used (drawnUsed).
+  const drawnUnused = fromSeller ? loanBase : loanBase + points;
   const drawnUsed = fullLoan;
   const lenderRate = fromSeller ? Math.max(0, num(x.renoRate, 8)) : regularRate;
   const interestUnused = (drawnUnused * (lenderRate / 100)) / 12;
@@ -953,7 +954,7 @@ export function deferredAtRefi(baseIn = {}, planIn = {}, offerIn = {}) {
   if (!noteInfo.isNote) return { bills: 0, purchaseNote: 0, renoNote: 0, total: 0 };
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
   const loanInfo = repairLoanNumbers(baseIn, plan, offerIn);
-  const renoMo = loanInfo.fromSeller ? loanInfo.interestUsed : 0;
+  const renoMo = loanInfo.fromSeller ? loanInfo.interestUnused : 0;
 
   const rent = Math.max(0, num(baseIn?.rent, 0));
   const taxesMo = Math.max(0, num(baseIn?.taxes, 0)) / 12;
@@ -1074,6 +1075,7 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
   const repairLoanOverlay = fromSeller ? [
     rehabBudget + contingency > 0 ? `Repair budget: ${money(rehabBudget + contingency)}` : null,
     closingInLoan > 0 ? `Closing costs: ${money(closingInLoan)}` : null,
+    contingency > 0 ? `Contingency: ${money(contingency)}, added only if used` : null,
     shortCarry > 0 ? `Short months: ${money(shortCarry)}` : null,
     `${lenderRate}% interest only, no points.`,
     `Seller renovation note paid off: ${money(repairLoanPayoff)}.`,
@@ -1128,7 +1130,7 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
     renoNoteLabel: 'Seller renovation note paid off',
     renoRate: fromSeller ? lenderRate : null,
     renoCompare: fromSeller
-      ? { sellerRate: lenderRate, sellerAmount: fullLoan, sellerMo: interestUsed, regularRate: regular.rate, regularPointsPct: regular.pointsPct, regularPoints: regular.points, regularLoan: regular.loan, regularMo: regular.interestMo }
+      ? { sellerRate: lenderRate, sellerAmount: drawnUnused, sellerMo: (drawnUnused * lenderRate) / 100 / 12, regularRate: regular.rate, regularPointsPct: regular.pointsPct, regularPoints: regular.points, regularLoan: regular.loan, regularMo: regular.interestMo }
       : null,
     deferred,
     sellerTotalPayoff: sellerPayoff + (fromSeller ? repairLoanPayoff : 0),
@@ -1166,7 +1168,7 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
     ? noteInfo.notePay
     : (plan.sellerLoanBalance > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : 0);
   // Seller renovation note: interest only, paid from rent after the bills and the purchase note; any part rent does not cover yet waits.
-  const renoMo = fromSeller ? interestUsed : 0;
+  const renoMo = fromSeller ? interestUnused : 0;
   const costsWord = billsFromRent ? 'Paid at refi' : (isNote ? 'Note and bills' : 'Seller’s costs');
 
   const rows = [];
@@ -1602,6 +1604,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
   const repairLendOverlay = [
     rl.rehabBudget + rl.contingency > 0 ? `Repair budget: ${money(num(rl.rehabBudget, 0) + num(rl.contingency, 0))}` : null,
     rl.closingInLoan > 0 ? `Closing costs: ${money(rl.closingInLoan)}` : null,
+    num(rl.contingency, 0) > 0 ? `Contingency: ${money(rl.contingency)}, added only if used` : null,
     'A second seller note. Paid monthly, then paid back in full.',
   ].filter(Boolean);
   const rc = rf.renoCompare || null;

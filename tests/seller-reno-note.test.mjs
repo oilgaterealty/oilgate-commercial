@@ -16,6 +16,7 @@ const PLAN = { refiMonth: 12, lenderRate: 11, lenderPoints: 2.5, contingency: 20
 const LEAD = { structure: 'wrap', inputs: { note: 250000, rate: 6.5, amortYears: 25, closing: 5000, billsFromRent: true, renoFromSeller: true, renoRate: 8 } };
 const OUTSIDE = { structure: 'wrap', inputs: { ...LEAD.inputs, renoFromSeller: false } };
 const BUDGET = 60000 + 20000 + 20000; // units + costs + contingency: one repair budget
+const DRAWN = BUDGET - 20000 + 5000; // what the renovation note lends when the contingency is not used, plus closing
 
 test('wrap has an owner-editable seller repair note: off by default, 8% when on', () => {
   const keys = STRUCTURES.wrap.fields.map(([k]) => k);
@@ -27,16 +28,16 @@ test('wrap has an owner-editable seller repair note: off by default, 8% when on'
   assert.equal(n.renoRate, 8);
 });
 
-test('renovation note = whole repair budget + closing, no points, seller rate; cheaper than the regular lender', () => {
+test('renovation note = repair budget + closing, contingency only if used, no points, seller rate; cheaper than the regular lender', () => {
   const r = refi(BASE, PLAN, LEAD);
   assert.equal(r.renoFromSeller, true);
-  near(r.renoNotePrincipal, BUDGET + 5000);
-  near(r.repairLoanPayoff, r.repairLoanPayoffContUsed);
+  near(r.renoNotePrincipal, DRAWN);
+  near(r.repairLoanPayoffContUsed, r.repairLoanPayoff + 20000);
   const c = r.renoCompare;
   assert.equal(c.sellerRate, 8);
   assert.equal(c.regularRate, 11);
   assert.equal(c.regularPointsPct, 2.5);
-  near(c.sellerMo, (BUDGET + 5000) * 0.08 / 12);
+  near(c.sellerMo, DRAWN * 0.08 / 12);
   near(c.regularLoan, (BUDGET + 5000) / 0.975);
   near(c.regularPoints, (BUDGET + 5000) / 0.975 - (BUDGET + 5000));
   assert.ok(c.sellerMo < c.regularMo);
@@ -53,7 +54,7 @@ test('refi payoff: 75% loan, both seller notes, deferred costs, closing, what is
   near(r.sellerPayoff, 250000 + d.total);
   near(r.sellerTotalPayoff, 250000 + d.total + r.renoNotePrincipal);
   near(r.leftForYou, r.inHand - 250000 - d.total - r.renoNotePrincipal - r.closing);
-  near(r.leftForYou, r.leftForYouContUsed);
+  near(r.leftForYouContUsed, r.leftForYou - 20000);
   assert.equal(r.sellerPayoffLabel, 'Seller purchase note paid off');
   assert.equal(r.renoNoteLabel, 'Seller renovation note paid off');
   assert.equal(r.sellerCarriedBillsLabel, 'Deferred holding costs, paid at refi');
@@ -62,7 +63,7 @@ test('refi payoff: 75% loan, both seller notes, deferred costs, closing, what is
 test('units rented: rent pays bills, then purchase note, then renovation note; the rest waits; buyer pays no repair interest', () => {
   const t = unitsRentedTable(BASE, PLAN, LEAD);
   const n = sellerNote(LEAD, PLAN).notePay;
-  const reno = (BUDGET + 5000) * 0.08 / 12;
+  const reno = DRAWN * 0.08 / 12;
   assert.equal(t.rows.length, 11);
   assert.equal(t.oneBudget, true);
   near(t.renoPay, reno);
@@ -99,7 +100,7 @@ test('seller page: two notes, no regular lender rate, no buyer numbers, no carry
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Paid back in full']);
   assert.match(s.refiLine, /paid back in full/);
   assert.match(s.steps[1].detail, /You earn 8% every month until you are paid back in full/);
-  assert.match(s.refiLine, /Purchase note \$250,000, renovation note \$105,000/);
+  assert.match(s.refiLine, /Purchase note \$250,000, renovation note \$85,000/);
   const visible = JSON.stringify([s.intro, s.terms, s.steps, s.refiLine, s.sellerTable]);
   assert.doesNotMatch(visible, /carr(y|ies|ied)|refi|net\b|cash flow|left for you|DSCR|reserve/i);
   const t = unitsRentedTable(BASE, PLAN, LEAD);
@@ -170,4 +171,18 @@ test('shared offer story adds up: purchase note, repairs by seller note or a rep
   assert.ok(!pay.some((l) => l.big));
   const full = st.steps.find((s) => s.title === 'Full').lines.find((l) => l.label === 'Both note payments');
   assert.ok(full);
+});
+
+test('contingency counts in the seller renovation note only if used', () => {
+  const g = buildLeadGuide(BASE, PLAN, LEAD);
+  const rf = g.refi;
+  near(rf.renoNotePrincipal, 60000 + 20000 + 5000); // units + setup + closing; contingency not drawn
+  near(rf.renoCompare.sellerMo, (85000 * 8) / 100 / 12);
+  const s = offerSellerSummary({ name: 'A: Seller financing', ...LEAD }, BASE, PLAN, [], false);
+  const t = s.terms.find((x) => x.label === 'Renovation note');
+  assert.ok(t.overlay.some((l) => /Repair budget: \$100,000/.test(l)));
+  assert.ok(t.overlay.some((l) => /Contingency: \$20,000, added only if used/.test(l)));
+  const st = applyGuideRefi(buildLeadStory('wrap', evaluate('wrap', LEAD.inputs, BASE), { base: BASE }), rf, g);
+  const rehab = st.steps.find((x) => x.title === 'Rehab').lines.map((l) => l.label);
+  assert.ok(rehab.includes('Contingency'));
 });
