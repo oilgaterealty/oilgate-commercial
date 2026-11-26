@@ -87,7 +87,7 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
   );
 }
 
-const AUD = [['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
+const AUD = [['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 
 const setUpload = async (r, patch, onChange) => { await supabase.from('commercial_uploads').update(patch).eq('id', r.id); onChange?.(); };
 const toggleAudience = (r, k) => ({ audience: (r.audience || []).includes(k) ? r.audience.filter((x) => x !== k) : [...(r.audience || []), k] });
@@ -96,6 +96,7 @@ const toggleAudience = (r, k) => ({ audience: (r.audience || []).includes(k) ? r
 // "Seller" for anyone who can share; "Lender" only for the owner.
 export function uploadShareButtons(r, owner, onChange) {
   const list = [{ key: 'seller', icon: 'S', label: 'Share with seller', pressed: r.visibility === 'seller', onClick: () => void setUpload(r, { visibility: r.visibility === 'seller' ? 'team' : 'seller' }, onChange) }];
+  if (owner) list.push({ key: 'realtor', icon: 'R', label: 'Share with realtor', pressed: (r.audience || []).includes('realtor'), onClick: () => void setUpload(r, toggleAudience(r, 'realtor'), onChange) });
   if (owner) list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: (r.audience || []).includes('lender'), onClick: () => void setUpload(r, toggleAudience(r, 'lender'), onChange) });
   return list;
 }

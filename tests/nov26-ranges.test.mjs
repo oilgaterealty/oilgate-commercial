@@ -61,3 +61,14 @@ test('lender page: no unit-by-unit table, identical views merge, terms before th
   assert.match(read('src/views/LenderTerms.jsx'), /Your name/);
   void mergeViews;
 });
+
+test('realtor file access is owner-controlled; people show who has opened their page', () => {
+  const sql = read('supabase/migrations/0026_realtor_file_audience.sql');
+  assert.match(sql, /array_append\(coalesce\(audience, '\{\}'::text\[\]\), 'realtor'\)/);
+  assert.doesNotMatch(sql, /array\['owner'::text, 'realtor'::text, 'guest'::text\]/);
+  assert.match(sql, /'reviewer'::text, 'lender'::text, 'viewer'::text, 'realtor'::text\]\)\) and \(public\.commercial_member_role\(deal_id\) = any \(audience\)\)/);
+  assert.match(read('src/components/Files.jsx'), /\['realtor', 'Realtor'\]/);
+  const owner = read('src/views/Owner.jsx');
+  assert.match(owner, /\.eq\('kind', 'view'\)/);
+  assert.match(owner, /Not opened yet/);
+});

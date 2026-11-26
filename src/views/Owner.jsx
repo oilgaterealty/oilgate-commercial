@@ -9,7 +9,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, roleLinkUrl, siteRules } from '../lib/site.js';
-import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, useSectionScroll } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
@@ -52,8 +52,30 @@ function People({ deal }) {
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
+  const [seen, setSeen] = useState({});
   const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
+  // Who has actually opened their page: one view is logged per person per hour when they open the deal.
+  useEffect(() => {
+    supabase.from('commercial_activity').select('actor_email,created_at').eq('deal_id', deal.id).eq('kind', 'view').order('created_at', { ascending: false }).limit(2000)
+      .then(({ data }) => {
+        const m = {};
+        for (const a of data || []) {
+          const k = (a.actor_email || '').toLowerCase();
+          if (!k) continue;
+          if (!m[k]) m[k] = { last: a.created_at, count: 0 };
+          m[k].count += 1;
+        }
+        setSeen(m);
+      });
+  }, [deal.id]);
+  const seenChip = (r) => {
+    const s = seen[(r.email || '').toLowerCase()];
+    if (r.status !== 'active') return null;
+    return s
+      ? <OverlayTrigger lines={[`Opened the page ${s.count} ${s.count === 1 ? 'time' : 'times'}.`, `Last opened ${new Date(s.last).toLocaleString()}.`]}><span className="rounded-full bg-good/10 px-2 py-0.5 text-xs font-medium text-good">Active, last {new Date(s.last).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span></OverlayTrigger>
+      : <span className="rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium text-ink-soft">Not opened yet</span>;
+  };
 
   const add = async (e) => {
     e.preventDefault();
@@ -84,6 +106,7 @@ function People({ deal }) {
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div className="flex items-center gap-2">
                   <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                  {seenChip(r)}
                   <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
                     r.invited_by_email && <>Invited by {r.invited_by_email}</>,
                     `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
