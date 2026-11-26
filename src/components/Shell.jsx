@@ -24,7 +24,7 @@ export function Account({ session, role }) {
     <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-sm text-ink-soft">
       {role && <span className="shrink-0 rounded-full bg-warm-soft px-2.5 py-0.5 text-xs font-medium text-ink">{role}</span>}
       <span className="hidden sm:inline">{session.user.email}</span>
-      <button className="inline-flex min-h-[36px] shrink-0 items-center underline-offset-4 hover:underline" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      <button className="inline-flex min-h-[40px] shrink-0 items-center underline-offset-4 hover:underline" onClick={() => supabase.auth.signOut()}>Sign out</button>
     </div>
   );
 }
@@ -37,6 +37,108 @@ export function PropertyHead({ deal }) {
       <a href={`#/d/${deal.slug}`} className="font-display text-2xl font-semibold tracking-tight break-words sm:text-4xl">{deal.title}</a>
       {city && <span className="text-xs uppercase tracking-[0.16em] text-warm sm:text-sm sm:tracking-[0.18em]">{city}</span>}
       <span className="self-center"><InfoTip label="Buyer and seller" lines={viewingRole() === 'seller' ? [sellerTag(deal)] : [buyerTag(deal), sellerTag(deal)]} /></span>
+    </div>
+  );
+}
+
+export function useSectionScroll(tab, sections, aliases = {}) {
+  const sectionKey = sections.map(([k]) => k).join(',');
+  const [activeSection, setActiveSection] = useState(() => {
+    const t = aliases[tab] || tab;
+    return sections.some(([k]) => k === t) ? t : sections[0]?.[0] || 'overview';
+  });
+
+  useEffect(() => {
+    const t = aliases[tab] || tab;
+    if (!t || !sections.some(([k]) => k === t)) return;
+    setActiveSection(t);
+    const scroll = () => {
+      if (t === 'overview') {
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+        return;
+      }
+      const el = document.getElementById(`sec-${t}`);
+      if (el && typeof el.scrollIntoView === 'function') {
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+      }
+    };
+    scroll();
+    const timer = setTimeout(scroll, 80);
+    return () => clearTimeout(timer);
+  }, [tab, sectionKey]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined' || typeof document === 'undefined') return;
+    const els = [...document.querySelectorAll('[data-section]')];
+    if (!els.length) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const next = visible[0]?.target?.dataset?.section;
+        if (next) setActiveSection(next);
+      },
+      { rootMargin: '-20% 0px -70% 0px' },
+    );
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [sectionKey]);
+
+  const jumpTo = (id, base) => {
+    setActiveSection(id);
+    if (id === 'overview') {
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+    } else if (typeof document !== 'undefined') {
+      const el = document.getElementById(`sec-${id}`);
+      if (el && typeof el.scrollIntoView === 'function') {
+        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+      }
+    }
+    if (base && typeof window !== 'undefined' && window.history?.replaceState) {
+      try { window.history.replaceState(null, '', id === 'overview' ? base : `${base}/${id}`); } catch {}
+    }
+  };
+
+  return { activeSection, jumpTo };
+}
+
+export function JumpNav({ sections, active, onJump, base, preview }) {
+  const navRef = useRef(null);
+
+  useEffect(() => {
+    const el = navRef.current?.querySelector('[aria-current="location"]');
+    if (el && typeof el.scrollIntoView === 'function') {
+      try {
+        el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      } catch {}
+    }
+  }, [active]);
+
+  return (
+    <div className={`sticky ${preview ? 'top-8' : 'top-0'} z-20 -mx-4 mb-4 border-b border-line/80 bg-paper/95 px-4 py-2 backdrop-blur`}>
+      <nav
+        ref={navRef}
+        aria-label="Deal sections"
+        className="nav-tabs flex w-full max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto"
+      >
+        {sections.map(([k, label]) => (
+          <a
+            key={k}
+            href={k === 'overview' ? base : `${base}/${k}`}
+            onClick={(e) => {
+              e.preventDefault();
+              onJump(k, base);
+            }}
+            aria-current={active === k ? 'location' : undefined}
+            className={`inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-medium transition ${
+              active === k ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink-soft hover:border-ink hover:text-ink'
+            }`}
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
     </div>
   );
 }
@@ -87,13 +189,13 @@ export const CardTitle = ({ children, aside }) => (
 export const Button = ({ kind = 'primary', className = '', ...p }) => (
   <button
     {...p}
-    className={`rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
+    className={`inline-flex min-h-[40px] items-center justify-center rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
       kind === 'primary' ? 'bg-ink text-white hover:bg-ink-soft' : 'border border-line bg-white hover:bg-warm-soft'
     } ${className}`}
   />
 );
 export const Field = (p) => (
-  <DictatedField {...p} className={`w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink ${p.className || ''}`} />
+  <DictatedField {...p} className={`w-full min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink ${p.className || ''}`} />
 );
 export const Empty = ({ children }) => <p className="text-sm text-ink">{children}</p>;
 

@@ -1,11 +1,11 @@
 import { buyerName } from '../lib/people.js';
 import Comps from './Comps.jsx';
+import Offers from './Offers.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { evaluate, operating, money, valueSummary } from '../lib/dealmath.js';
-import { plain } from '../lib/plain.js';
+import { evaluate, operating, money, pct, valueSummary } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
-import { Button, Card, CardTitle, Empty, InfoTip, OverlayTrigger, Tabs } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
 import Messages, { sendToOwner } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
@@ -63,12 +63,12 @@ function QuickOpinion({ deal, me, role, preview }) {
   );
 }
 
-// Reviewer and viewer. Each sees only what the owner shared with that role.
+// Reviewer and viewer: one scrollable page per role. Each sees only what the owner shared with that role.
 export default function Reviewer({ deal, me, role, preview, tab }) {
   const [rows, load] = useUploads(deal);
   const [leadGuide, setLeadGuide] = useState(null);
   const viewer = role !== 'reviewer';
-  const { offers, base } = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
+  const { base } = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
 
   useEffect(() => {
     if (viewer) return;
@@ -87,39 +87,90 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const docs = shared.filter((r) => r.kind === 'document' && r.uploaded_by_email !== me.email);
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
 
-  const tabs = viewer
+  const sections = viewer
     ? [['overview', 'Overview'], ['photos', 'Photos']]
     : [
         ['overview', 'Overview'],
-        ['photos', 'Photos'],
-        ['comps', 'Comps'],
+        ['offers', 'The offer'],
         ...(isRentValue(leadGuide?.rentValue) ? [['rent-value', 'Rent & value']] : []),
+        ['comps', 'Comps'],
+        ['photos', 'Photos'],
         ['documents', 'Documents'],
         ['messages', 'Messages'],
       ];
-  const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
+  const basePath = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
+  const { activeSection, jumpTo } = useSectionScroll(tab, sections);
 
   const b = { ...base, units: 10 };
   const o = operating(b);
   const val = valueSummary({ base: b, noi: o.noi, units: 10 });
-  const leadOffer = offers?.[0] || null;
-  const leadEval = leadOffer ? evaluate(leadOffer.structure, leadOffer.inputs, b) : null;
-  const leadPlain = leadOffer && leadEval ? plain(leadOffer.structure, leadEval) : null;
   const refiGuide = leadGuide?.refi || null;
   const shownValue = refiGuide?.estimatedValue ?? val.income ?? o.b.value;
   const shownRepair = leadGuide?.costSummary?.total ?? o.b.rehab;
   const propertySummary = String(deal.seller_content?.summary || '').trim() || '10-unit residential property.';
 
   return (
-    <div className="space-y-4">
-      {tabs.length > 1 && <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`} />}
-      {!viewer && active === 'comps' && <Comps deal={deal} me={me} role={role} preview={preview} />}
-      {!viewer && role === 'reviewer' && active === 'rent-value' && isRentValue(leadGuide?.rentValue) && <RentValue data={leadGuide.rentValue} />}
-      {active === 'photos' && (
-        <UnitGallery deal={deal} me={me} role={viewer ? 'viewer' : role} preview={preview} unitSummaries={viewer ? null : leadGuide?.rentValue?.units} />
+    <div className={viewer ? 'space-y-6' : 'space-y-8 pb-20'}>
+      {sections.length > 1 && <JumpNav sections={sections} active={activeSection} onJump={jumpTo} base={basePath} preview={preview} />}
+
+      <section id="sec-overview" data-section="overview" className="scroll-mt-20 space-y-4">
+        <Cover rows={photos} compact />
+        {viewer ? (
+          <Card>
+            <CardTitle>The property</CardTitle>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
+              <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">10</dd></div>
+              <div className="sm:col-span-2"><dt className="text-ink-soft">Summary</dt><dd className="font-medium leading-relaxed">{propertySummary}</dd></div>
+            </dl>
+          </Card>
+        ) : (
+          <>
+            <Card>
+              <CardTitle>The property</CardTitle>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+                <div className="col-span-2 sm:col-span-2"><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
+                <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">10</dd></div>
+                {base.askPrice ? <div><dt className="text-ink-soft">Current offer (seller’s number)</dt><dd className="font-semibold">{money(+base.askPrice)}</dd></div> : null}
+                <div><dt className="text-ink-soft">Rent</dt><dd className="font-semibold">{money(o.b.rent)}/unit/mo</dd></div>
+                <div><dt className="text-ink-soft">Yearly profit before payments</dt><dd className="font-semibold">{money(o.noi)}/yr</dd></div>
+                <div><dt className="text-ink-soft">Value after repairs</dt><dd className="font-semibold"><OverlayTrigger lines={refiGuide?.estimatedValueOverlay || val.incomeOverlay}>{money(shownValue)}</OverlayTrigger></dd></div>
+                <div><dt className="text-ink-soft">Yearly return on value</dt><dd className="font-semibold">{pct(o.capRate, 1)}</dd></div>
+                <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-semibold"><OverlayTrigger lines={leadGuide?.costHeadingOverlay || []}>{money(shownRepair)}</OverlayTrigger></dd></div>
+                <div><dt className="text-ink-soft">Refinance</dt><dd className="font-semibold">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
+              </dl>
+            </Card>
+
+            <QuickOpinion deal={deal} me={me} role={role} preview={preview} />
+          </>
+        )}
+      </section>
+
+      {!viewer && (
+        <section id="sec-offers" data-section="offers" className="scroll-mt-20">
+          <h2 className="mb-3 font-display text-2xl font-semibold">The lead offer</h2>
+          <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} leadGuide={leadGuide} />
+        </section>
       )}
-      {!viewer && active === 'documents' && (
-        <div className="grid gap-5 lg:grid-cols-2">
+
+      {!viewer && role === 'reviewer' && isRentValue(leadGuide?.rentValue) && (
+        <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
+          <RentValue data={leadGuide.rentValue} />
+        </section>
+      )}
+
+      {!viewer && (
+        <section id="sec-comps" data-section="comps" className="scroll-mt-20">
+          <Comps deal={deal} me={me} role={role} preview={preview} />
+        </section>
+      )}
+
+      <section id="sec-photos" data-section="photos" className="scroll-mt-20">
+        <UnitGallery deal={deal} me={me} role={viewer ? 'viewer' : role} preview={preview} unitSummaries={viewer ? null : leadGuide?.rentValue?.units} />
+      </section>
+
+      {!viewer && (
+        <section id="sec-documents" data-section="documents" className="scroll-mt-20 grid gap-5 lg:grid-cols-2">
           <Card>
             <CardTitle>Documents</CardTitle>
             {docs.length ? <FileList rows={docs} canShare={false} owner={false} /> : <Empty>Nothing shared with you yet.</Empty>}
@@ -129,74 +180,14 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
             <Uploader deal={deal} role={role} me={me} onDone={load} label="Upload files" preview={preview} />
             <div className="mt-4">{mine.length ? <FileList rows={mine} /> : <Empty>Nothing sent yet.</Empty>}</div>
           </Card>
-        </div>
+        </section>
       )}
-      {active === 'overview' && (
-        <>
-          <Cover rows={photos} compact />
-          {viewer ? (
-            <Card>
-              <CardTitle>The property</CardTitle>
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                <div><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
-                <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">10</dd></div>
-                <div className="sm:col-span-2"><dt className="text-ink-soft">Summary</dt><dd className="font-medium leading-relaxed">{propertySummary}</dd></div>
-              </dl>
-            </Card>
-          ) : (
-            <>
-              <Card>
-                <CardTitle>The property</CardTitle>
-                <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                  <div className="col-span-2 sm:col-span-2"><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
-                  <div><dt className="text-ink-soft">Value</dt><dd className="font-display text-xl font-semibold"><OverlayTrigger lines={refiGuide?.estimatedValueOverlay || val.incomeOverlay}>{money(shownValue)}</OverlayTrigger></dd></div>
-                  <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-display text-xl font-semibold"><OverlayTrigger lines={leadGuide?.costHeadingOverlay || []}>{money(shownRepair)}</OverlayTrigger></dd></div>
-                </dl>
-              </Card>
 
-              <Card className="border-2 border-ink">
-                <CardTitle aside={leadPlain ? <InfoTip label="How the lead offer works" lines={[...leadPlain.lines, `Worth knowing: ${leadPlain.risk}.`]} /> : null}>
-                  {leadOffer ? leadOffer.name.replace(/^[A-Z]\s*:\s*/, '') : 'The lead offer'}
-                </CardTitle>
-                {offers === null ? <Empty>Loading…</Empty> : !leadOffer ? <Empty>No lead offer shared yet.</Empty> : (
-                  <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl bg-paper p-3">
-                      <dt className="text-xs text-ink-soft">Seller payoff</dt>
-                      <dd className="mt-1 font-display text-xl font-semibold">
-                        {refiGuide ? refiGuide.sellerPayoffText : leadOffer.structure === 'wrap' ? money(leadEval?.inputs?.note) : leadPlain?.payoff || '—'}
-                      </dd>
-                    </div>
-                    <div className="rounded-2xl bg-paper p-3">
-                      <dt className="text-xs text-ink-soft">Monthly payment</dt>
-                      <dd className="mt-1 font-display text-xl font-semibold">
-                        {leadEval?.sellerMonthly === null ? 'At closing' : `${money(leadEval?.sellerMonthly)}/mo`}
-                      </dd>
-                    </div>
-                    {refiGuide ? (
-                      <div className="rounded-2xl bg-paper p-3">
-                        <dt className="text-xs text-ink-soft">Left for you</dt>
-                        <dd className={`mt-1 font-display text-xl font-semibold ${refiGuide.leftForYou >= 0 ? 'text-good' : 'text-red-700'}`}>
-                          {money(refiGuide.leftForYou)}
-                        </dd>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl bg-paper p-3">
-                        <dt className="text-xs text-ink-soft">Rent covers payment</dt>
-                        <dd className="mt-1 font-display text-xl font-semibold">
-                          {Number.isFinite(leadEval?.dscr) ? `${leadEval.dscr.toFixed(2)}x` : 'No payment'}
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                )}
-              </Card>
-
-              <QuickOpinion deal={deal} me={me} role={role} preview={preview} />
-            </>
-          )}
-        </>
+      {!viewer && (
+        <section id="sec-messages" data-section="messages" className="scroll-mt-20">
+          <Messages deal={deal} me={me} role={role} preview={preview} />
+        </section>
       )}
-      {!viewer && active === 'messages' && <Messages deal={deal} me={me} role={role} preview={preview} />}
     </div>
   );
 }

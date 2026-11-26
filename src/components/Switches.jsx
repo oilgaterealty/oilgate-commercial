@@ -1,24 +1,25 @@
 import { buyerName } from '../lib/people.js';
 import { useState } from 'react';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, pct } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, valueSummary } from '../lib/dealmath.js';
+import { useDealModel } from '../lib/useDealModel.js';
 import { sendToOwner } from './Messages.jsx';
-import { Button } from './Shell.jsx';
+import { Button, Card, CardTitle } from './Shell.jsx';
 
-const val = (base, k) => (base[k] ?? BASE_DEFAULTS[k]);
 const num = (v) => (v === '' ? '' : +v);
+const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
 
 function Money({ label, value, onChange, step = 25, suffix }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs text-ink-soft">{label}</span>
       <span className="flex items-center gap-1">
-        <button type="button" aria-label={`Lower ${label}`} onClick={() => onChange(Math.max(0, (+value || 0) - step))} className="h-8 w-8 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">−</button>
+        <button type="button" aria-label={`Lower ${label}`} onClick={() => onChange(Math.max(0, (+value || 0) - step))} className="h-10 w-10 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>
           <input type="number" inputMode="decimal" min={0} step={step} value={value} aria-label={label} onChange={(e) => onChange(num(e.target.value))}
-            className="h-8 w-24 rounded-lg border border-line bg-white pl-5 pr-2 text-right text-sm outline-none focus:border-ink" />
+            className="h-10 w-24 rounded-lg border border-line bg-white pl-5 pr-2 text-right text-sm outline-none focus:border-ink" />
         </span>
-        <button type="button" aria-label={`Raise ${label}`} onClick={() => onChange((+value || 0) + step)} className="h-8 w-8 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">+</button>
+        <button type="button" aria-label={`Raise ${label}`} onClick={() => onChange((+value || 0) + step)} className="h-10 w-10 rounded-lg border border-line bg-white text-ink-soft hover:bg-warm-soft">+</button>
         {suffix && <span className="text-xs text-ink-soft">{suffix}</span>}
       </span>
     </label>
@@ -33,27 +34,112 @@ export default function Switches() {
 const LABEL = { ...Object.fromEntries(BASE_FIELDS.map(([k, l]) => [k, l])), rent: 'Rent per unit / month' };
 
 // A plain message to the buyer describing what someone changed and what it does to each offer.
-export function whatIfMessage(original, base, offers) {
+export function whatIfMessage(original, base, offers = []) {
+  const list = offers || [];
   const lines = ['What-if from the deal page (nothing was saved):'];
   for (const k of Object.keys({ ...original.base, ...base })) {
     if (['units', 'planOffer', 'askPrice', 'ourOffer'].includes(k) || !(k in BASE_DEFAULTS) || original.base[k] === base[k]) continue;
     lines.push(`- ${LABEL[k] || k}: ${original.base[k] ?? 'blank'} → ${base[k]}`);
   }
-  for (const o of offers) {
-    const before = original.list.find((x) => x.id === o.id);
+  for (const o of list) {
+    const before = (original.list || []).find((x) => x.id === o.id);
     if (!before) { lines.push(`- Added a new option: ${o.name}`); continue; }
     for (const [k, l] of STRUCTURES[o.structure].fields) {
       if ((before.inputs?.[k]) !== (o.inputs?.[k])) lines.push(`- ${o.name}, ${l}: ${before.inputs?.[k] ?? 'blank'} → ${o.inputs?.[k]}`);
     }
   }
-  lines.push('', 'What you would keep each month, whole building:');
-  for (const o of offers) {
-    const now = evaluate(o.structure, o.inputs, base);
-    const was = original.list.find((x) => x.id === o.id);
-    const then = was ? evaluate(was.structure, was.inputs, original.base) : null;
-    lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of value`);
+  if (list.length > 0) {
+    lines.push('', 'What you would keep each month, whole building:');
+    for (const o of list) {
+      const now = evaluate(o.structure, o.inputs, base);
+      const was = (original.list || []).find((x) => x.id === o.id);
+      const then = was ? evaluate(was.structure, was.inputs, original.base) : null;
+      lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of value`);
+    }
+  } else {
+    const o = operating({ ...base, units: 10 });
+    const was = operating({ ...original.base, units: 10 });
+    const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: 10 });
+    lines.push(
+      '',
+      'Building summary:',
+      `- Rent per unit / month: ${money(o.b.rent)} (was ${money(was.b.rent)})`,
+      `- Yearly profit before payments: ${money(o.noi)} (was ${money(was.noi)})`,
+      `- Value after repairs: ${money(val.income ?? o.b.value)}`,
+      `- Repair budget: ${money(o.b.rehab)}`,
+    );
   }
   return lines.join('\n');
+}
+
+function WhatIfRow({ label, unit, value, onChange, changed }) {
+  const step = stepFor(unit, label);
+  const v = value ?? '';
+  const bump = (d) => onChange(Math.round((+v + d * step) * 100) / 100);
+  return (
+    <label className="flex min-h-[40px] items-center justify-between gap-2 py-1.5">
+      <span className={`text-sm ${changed ? 'font-medium text-ink' : 'text-ink-soft'}`}>{label}</span>
+      <span className="flex shrink-0 items-center gap-1">
+        <button type="button" aria-label={`Lower ${label}`} onClick={() => bump(-1)} className="h-10 w-10 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
+        <span className="relative">
+          {unit === '$' && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>}
+          <input type="number" inputMode={unit === 'n' ? 'numeric' : 'decimal'} value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
+            className={`h-10 w-24 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink sm:w-28 ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
+        </span>
+        <span className="w-4 text-xs text-ink-soft">{unit === '%' ? '%' : unit === 'x' ? 'x' : ''}</span>
+        <button type="button" aria-label={`Raise ${label}`} onClick={() => bump(1)} className="h-10 w-10 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">+</button>
+      </span>
+    </label>
+  );
+}
+
+// Local-only building numbers what-if card for non-owner roles (such as the realtor) with Send to buyer.
+export function WhatIfNumbers({ deal, me, role, preview }) {
+  const model = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
+  const { base, setBase } = model;
+  const [open, setOpen] = useState(false);
+  const o = operating({ ...base, units: 10 });
+  const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: 10 });
+  return (
+    <>
+      <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />
+      <Card>
+        <CardTitle>What-if numbers</CardTitle>
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs text-ink-soft">Rent per unit</dt>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(o.b.rent)}/mo</dd>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs text-ink-soft">Yearly profit before payments</dt>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(o.noi)}/yr</dd>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs text-ink-soft">Value after repairs</dt>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(val.income ?? o.b.value)}</dd>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs text-ink-soft">Repair budget</dt>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(o.b.rehab)}</dd>
+          </div>
+        </dl>
+        <div className="mt-3 border-t border-line pt-2.5">
+          <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
+            <span>Assumptions</span>
+            <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
+          </button>
+          {open && (
+            <div className="mt-3 grid gap-x-8 md:grid-cols-2">
+              {BASE_FIELDS.map(([k, l, u]) => (
+                <WhatIfRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
+                  onChange={(v) => setBase({ ...base, [k]: v })} />
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+    </>
+  );
 }
 
 export function SendWhatIf({ deal, me, role, preview, model }) {

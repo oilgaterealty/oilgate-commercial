@@ -117,7 +117,7 @@ test('mobile CSS, Shell tabs, and Walkthrough enforce non-shrinking nav pills an
   const shell = readFileSync(new URL('../src/components/Shell.jsx', import.meta.url), 'utf8');
   assert.match(shell, /aria-label="Deal sections"/);
   assert.match(shell, /shrink-0/);
-  assert.match(shell, /aria-current=\{active === k \? 'page' : undefined\}/);
+  assert.match(shell, /aria-current=\{active === k \? 'location' : undefined\}/);
 
   const walkthrough = readFileSync(new URL('../src/views/Walkthrough.jsx', import.meta.url), 'utf8');
   assert.match(walkthrough, /All units progress/);

@@ -9,7 +9,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, roleLinkUrl, siteRules } from '../lib/site.js';
-import { Card, CardTitle, Button, Field, Empty, InfoTip, Tabs } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
@@ -24,7 +24,7 @@ import Activity from '../components/Activity.jsx';
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./DealPlan.jsx'));
 
-const BASE_TABS = [
+const BASE_SECTIONS = [
   ['overview', 'Overview'],
   ['offers', 'Offers'],
   ['rent-value', 'Rent & value'],
@@ -38,9 +38,9 @@ const BASE_TABS = [
   ['activity', 'Recent activity'],
   ['settings', 'Settings'],
 ];
-const TABS = siteRules(SITE_KIND).ownerAllowed
-  ? [...BASE_TABS.slice(0, 2), ['plans', 'Plans'], ...BASE_TABS.slice(2, 10), ['city-records', 'City records'], ...BASE_TABS.slice(10)]
-  : BASE_TABS;
+const SECTIONS = siteRules(SITE_KIND).ownerAllowed
+  ? [...BASE_SECTIONS.slice(0, 2), ['plans', 'Plans'], ...BASE_SECTIONS.slice(2, 10), ['city-records', 'City records'], ...BASE_SECTIONS.slice(10)]
+  : BASE_SECTIONS;
 const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
 const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller'];
@@ -109,7 +109,7 @@ function People({ deal }) {
         <form onSubmit={add} className="space-y-3">
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
-          <select className="w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+          <select className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
             <option value="realtor">Realtor: deal, offers, walkthrough, tenants, messages, files</option>
             <option value="seller">Seller: the seller page only</option>
             <option value="reviewer">Reviewer: unit photos, comps, and offers and files you share</option>
@@ -120,7 +120,7 @@ function People({ deal }) {
           <Button type="submit" className="w-full">Invite</Button>
           {done && <p className="text-sm text-green-800">{done}</p>}
           <button type="button" onClick={() => { navigator.clipboard?.writeText(memberPageUrl(f.role, deal.slug)); setDone('Link copied.'); }}
-            className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
+            className="min-h-[40px] w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
         </form>
       </Card>
       <RoleLinks deal={deal} onJoined={load} />
@@ -169,7 +169,7 @@ function RoleLinks({ deal, onJoined }) {
     <Card className="lg:col-span-2">
       <CardTitle>Private links</CardTitle>
       <form onSubmit={make} className="grid gap-2 sm:grid-cols-[160px_1fr_1fr_96px_auto]">
-        <select aria-label="Link role" className="rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+        <select aria-label="Link role" className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
           {LINK_ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <Field type="email" required aria-label="Recipient email" placeholder="Recipient email" value={f.recipient_email} onChange={(e) => setF({ ...f, recipient_email: e.target.value })} />
@@ -181,7 +181,7 @@ function RoleLinks({ deal, onJoined }) {
         <div className="mt-3 rounded-xl border border-good/40 bg-good/5 p-3 text-sm">
           <p className="font-medium">Link for {fresh.label} ({fresh.recipient}). Shown once.</p>
           <p className="mt-1 break-all font-mono text-xs select-all">{fresh.url}</p>
-          <button type="button" className="mt-2 rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
+          <button type="button" className="mt-2 min-h-[40px] rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
         </div>
       )}
       {msg && <p role="status" className="mt-2 text-sm text-ink">{msg}</p>}
@@ -223,7 +223,7 @@ function Settings({ deal, onSaved }) {
         <label className="text-xs text-ink-soft">Buyer name<Field value={d.buyer_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, buyer_name: e.target.value })} /></label>
         <label className="text-xs text-ink-soft">Seller name<Field value={d.seller_name} maxLength={120} placeholder="Not named yet" onChange={(e) => setD({ ...d, seller_name: e.target.value })} /></label>
         <Field value={folder} placeholder="Google Drive folder link" onChange={(e) => setFolder(e.target.value)} />
-        <select className="rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
+        <select className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2" value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })}>
           <option value="active">Active</option><option value="closed">Closed</option><option value="archived">Archived</option>
         </select>
       </div>
@@ -256,44 +256,88 @@ function OwnerAlerts() {
 export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
   setDealNames(deal);
-  const active = TABS.find(([k]) => k === tab)?.[0] || 'overview';
+  const root = `#/d/${deal.slug}`;
+  const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { people: 'settings' });
   return (
-    <div>
-      <div className="mb-4 space-y-2.5">
-        <Tabs tabs={TABS} active={active} base={`#/d/${deal.slug}`} />
+    <div className="space-y-8">
+      <div>
+        <JumpNav sections={SECTIONS} active={activeSection} onJump={jumpTo} base={root} />
         <div className="flex flex-wrap items-center gap-1.5 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>
-          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[36px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
+          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
         </div>
       </div>
 
-      {active === 'overview' && <Dashboard deal={deal} me={me} role="owner" />}
-      {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
-      {active === 'rent-value' && <OwnerRentValue deal={deal} />}
-      {active === 'lenders' && (
-        <div className="space-y-5">
-          <LoanPosition deal={deal} role="owner" />
-          <LenderBoard deal={deal} me={me} role="owner" />
+      <section id="sec-overview" data-section="overview" className="scroll-mt-20">
+        <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} />
+      </section>
+
+      <section id="sec-offers" data-section="offers" className="scroll-mt-20">
+        <Offers deal={deal} canSave me={me} role="owner" />
+      </section>
+
+      {DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
+        <section id="sec-plans" data-section="plans" className="scroll-mt-20">
+          <Suspense fallback={<Empty>Loading…</Empty>}>
+            <DealPlan key={deal.id} deal={deal} role="owner" />
+          </Suspense>
+        </section>
+      )}
+
+      <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
+        <OwnerRentValue deal={deal} />
+      </section>
+
+      <section id="sec-lenders" data-section="lenders" className="scroll-mt-20 space-y-5">
+        <LoanPosition deal={deal} role="owner" />
+        <LenderBoard deal={deal} me={me} role="owner" />
+      </section>
+
+      <section id="sec-walkthrough" data-section="walkthrough" className="scroll-mt-20">
+        <Walkthrough deal={deal} me={me} role="owner" />
+      </section>
+
+      <section id="sec-tenants" data-section="tenants" className="scroll-mt-20">
+        <Tenants deal={deal} me={me} role="owner" />
+      </section>
+
+      <section id="sec-comps" data-section="comps" className="scroll-mt-20">
+        <Comps deal={deal} me={me} role="owner" />
+      </section>
+
+      <section id="sec-photos" data-section="photos" className="scroll-mt-20 space-y-5">
+        <UnitGallery deal={deal} me={me} role="owner" />
+        <Photos deal={deal} role="owner" me={me} />
+      </section>
+
+      <section id="sec-messages" data-section="messages" className="scroll-mt-20">
+        <Messages deal={deal} me={me} role="owner" />
+      </section>
+
+      <section id="sec-files" data-section="files" className="scroll-mt-20">
+        <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />
+      </section>
+
+      {CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
+        <section id="sec-city-records" data-section="city-records" className="scroll-mt-20">
+          <Suspense fallback={<Empty>Loading…</Empty>}>
+            <CityRecords deal={deal} role="owner" />
+          </Suspense>
+        </section>
+      )}
+
+      <section id="sec-activity" data-section="activity" className="scroll-mt-20">
+        <Activity deal={deal} title="Recent activity" />
+      </section>
+
+      <section id="sec-settings" data-section="settings" className="scroll-mt-20 space-y-6">
+        <People deal={deal} />
+        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          <Settings deal={deal} onSaved={setDeal} />
+          <OwnerAlerts />
         </div>
-      )}
-      {active === 'plans' && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
-        <Suspense fallback={<Empty>Loading…</Empty>}>
-          <DealPlan key={deal.id} deal={deal} role="owner" />
-        </Suspense>
-      )}
-      {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="owner" />}
-      {active === 'tenants' && <Tenants deal={deal} me={me} role="owner" />}
-      {active === 'comps' && <Comps deal={deal} me={me} role="owner" />}
-      {active === 'photos' && <div className="space-y-5"><UnitGallery deal={deal} me={me} role="owner" /><Photos deal={deal} role="owner" me={me} /></div>}
-      {active === 'messages' && <Messages deal={deal} me={me} role="owner" />}
-      {active === 'files' && <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />}
-      {active === 'city-records' && CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
-        <Suspense fallback={<Empty>Loading…</Empty>}>
-          <CityRecords deal={deal} role="owner" />
-        </Suspense>
-      )}
-      {active === 'activity' && <Activity deal={deal} title="Recent activity" />}
-      {active === 'settings' && <div className="space-y-6"><People deal={deal} /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Settings deal={deal} onSaved={setDeal} /><OwnerAlerts /></div><Notes deal={deal} me={me} /></div>}
+        <Notes deal={deal} me={me} />
+      </section>
     </div>
   );
 }

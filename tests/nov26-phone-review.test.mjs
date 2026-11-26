@@ -218,7 +218,7 @@ test('UnitSummary renders unit name, repair budget, occupancy, and note; InfoTip
 });
 
 test('Phone-first cleanup structural guards across all 15 items', () => {
-  // 1 & 2: Dashboard has no Activity and no Switches; Owner & Realtor have Recent activity tab
+  // 1 & 2: Dashboard has no Activity and no Switches; Owner & Realtor have Recent activity section
   assert.doesNotMatch(read('src/views/Dashboard.jsx'), /<Activity|Switches/);
   assert.match(read('src/views/Owner.jsx'), /\['activity', 'Recent activity'\]/);
   assert.match(read('src/views/Realtor.jsx'), /\['activity', 'Recent activity'\]/);
@@ -250,10 +250,10 @@ test('Phone-first cleanup structural guards across all 15 items', () => {
   assert.match(compsSrc, /Select all/);
   assert.match(compsSrc, /id="comp-sort-2"/);
 
-  // 13: Realtor hides Tenants tab (code kept) and Messages hides "(Buyer sees it)" for realtor
+  // 13: Realtor hides Tenants section (code kept for direct route) and Messages hides "(Buyer sees it)" for realtor
   const realtorSrc = read('src/views/Realtor.jsx');
-  assert.match(realtorSrc, /active === 'tenants' && <Tenants/);
-  assert.doesNotMatch(realtorSrc.slice(realtorSrc.indexOf('const TABS ='), realtorSrc.indexOf('];', realtorSrc.indexOf('const TABS ='))), /tenants/);
+  assert.match(realtorSrc, /tab === 'tenants' && <Tenants/);
+  assert.doesNotMatch(realtorSrc.slice(realtorSrc.indexOf('const SECTIONS ='), realtorSrc.indexOf('];', realtorSrc.indexOf('const SECTIONS ='))), /tenants/);
   const msgSrc = read('src/components/Messages.jsx');
   assert.doesNotMatch(msgSrc.slice(msgSrc.indexOf('function slotLabel'), msgSrc.indexOf("if (k === 'realtor' && role === 'lender')")), /sees it/);
 

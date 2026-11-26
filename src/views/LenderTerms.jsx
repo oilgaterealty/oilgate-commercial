@@ -192,7 +192,7 @@ export default function LenderTerms({ deal, me, preview }) {
                         disabled={preview}
                         aria-pressed={isNa}
                         onClick={() => setAnswer(q.label, isNa ? '' : 'Not applicable')}
-                        className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${isNa ? 'bg-ink text-white' : 'border border-line bg-paper text-ink-soft hover:border-ink'}`}
+                        className={`min-h-[40px] shrink-0 rounded-full px-3 py-1 text-xs font-medium ${isNa ? 'bg-ink text-white' : 'border border-line bg-paper text-ink-soft hover:border-ink'}`}
                       >
                         Not applicable
                       </button>

@@ -36,7 +36,7 @@ function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Selle
 }
 
 // Short phone-first overview for the owner.
-export default function Dashboard({ deal, me, role = 'owner', preview }) {
+export default function Dashboard({ deal, me, role = 'owner', preview, onJump }) {
   const owner = role === 'owner' && !preview;
   const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
@@ -55,11 +55,11 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
       {photos.length > 0 && (
         <div className="space-y-1.5">
           <Cover rows={photos} compact />
-          <a href={`${root}/photos`} className="inline-block text-sm underline">See all {photos.length} photos</a>
+          <a href={`${root}/photos`} onClick={onJump ? (e) => { e.preventDefault(); onJump('photos', root); } : undefined} className="inline-flex min-h-[40px] items-center text-sm underline">See all {photos.length} photos</a>
         </div>
       )}
       <Card>
-        <CardTitle aside={<a className="text-sm underline" href={`${root}/offers`}>Compare the offers</a>}>Deal at a glance</CardTitle>
+        <CardTitle aside={<a className="inline-flex min-h-[40px] items-center text-sm underline" href={`${root}/offers`} onClick={onJump ? (e) => { e.preventDefault(); onJump('offers', root); } : undefined}>Compare the offers</a>}>Deal at a glance</CardTitle>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
           <Tile label="Best cash flow" strong>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>

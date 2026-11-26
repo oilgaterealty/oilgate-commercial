@@ -32,7 +32,7 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
       );
     }
     return (
-      <label className="flex items-center justify-between gap-3 py-2">
+      <label className="flex min-h-[40px] cursor-pointer items-center justify-between gap-3 py-2">
         <span className={`text-sm ${changed ? 'font-medium text-ink' : 'text-ink-soft'}`}>{label}</span>
         <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-5 w-5 rounded border-line accent-ink" />
       </label>
@@ -51,17 +51,17 @@ function NumberRow({ label, unit, value, onChange, changed, locked }) {
   }
   const bump = (d) => onChange(Math.round((+v + d * step) * 100) / 100);
   return (
-    <label className="flex items-center justify-between gap-3 py-1.5">
+    <label className="flex min-h-[40px] items-center justify-between gap-2 py-1.5">
       <span className={`text-sm ${changed ? 'font-medium text-ink' : 'text-ink-soft'}`}>{label}</span>
-      <span className="flex items-center gap-1">
-        <button type="button" onClick={() => bump(-1)} className="h-8 w-8 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
+      <span className="flex shrink-0 items-center gap-1">
+        <button type="button" onClick={() => bump(-1)} className="h-10 w-10 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">−</button>
         <span className="relative">
           {unit === '$' && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-ink-soft">$</span>}
           <input type="number" inputMode={unit === 'n' ? 'numeric' : 'decimal'} value={v} step={step} onChange={(e) => onChange(e.target.value === '' ? '' : +e.target.value)}
-            className={`h-8 w-28 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
+            className={`h-10 w-24 rounded-lg border border-line bg-white text-right text-sm outline-none focus:border-ink sm:w-28 ${unit === '$' ? 'pl-5 pr-2' : 'px-2'}`} />
         </span>
         <span className="w-4 text-xs text-ink-soft">{unit === '%' ? '%' : unit === 'x' ? 'x' : ''}</span>
-        <button type="button" onClick={() => bump(1)} className="h-8 w-8 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">+</button>
+        <button type="button" onClick={() => bump(1)} className="h-10 w-10 rounded-lg border border-line text-ink-soft hover:bg-warm-soft">+</button>
       </span>
     </label>
   );
@@ -128,7 +128,7 @@ function BuildingNumbers({ base, setBase, o, comps }) {
         </div>
       </div>
       <div className="mt-3 border-t border-line pt-2.5">
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
           <span>Assumptions</span>
           <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
         </button>
@@ -195,7 +195,7 @@ export function OptionCard({ o, i, story, planHref, hideUnitsTable = false }) {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink font-display text-lg text-white">{letterOf(o, i)}</span>
           {o.is_lead && <span className="rounded-full bg-good/10 px-2.5 py-0.5 text-xs font-semibold text-good">Lead offer</span>}
         </div>
-        {planHref && <a href={planHref} className="inline-flex min-h-9 items-center text-sm font-medium underline">Plans</a>}
+        {planHref && <a href={planHref} className="inline-flex min-h-[40px] items-center text-sm font-medium underline">Plans</a>}
       </div>
       <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
 
@@ -506,24 +506,27 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
 
   const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
   const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [sortedOffers, base]);
+  const useStaticGuide = owner || !model.touched;
   const stories = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => {
     if (loadPlanLib && canPlan && planState.lib && planState.plan) {
       return [o.id, planState.lib.offerPlanStory(o, base, planState.plan, comps)];
     }
     const baseStory = buildLeadStory(o.structure, evals[o.id], { base, comps });
-    const g = (leadGuideProp && isUnitsGuide(leadGuideProp) ? leadGuideProp : null)
-      || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
-      || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
-    if (g) {
-      baseStory.unitsGuide = g;
-      if (g.costSummary) baseStory.costSummary = g.costSummary;
-      else if (g.cost?.length) baseStory.costSummary = { heading: g.costHeading, headingOverlay: g.costHeadingOverlay || [], lines: g.cost };
-    } else if (o.seller_summary?.guide?.cost?.length) {
-      const guide = o.seller_summary.guide;
-      baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
+    if (useStaticGuide) {
+      const g = (leadGuideProp && isUnitsGuide(leadGuideProp) ? leadGuideProp : null)
+        || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
+        || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
+      if (g) {
+        baseStory.unitsGuide = g;
+        if (g.costSummary) baseStory.costSummary = g.costSummary;
+        else if (g.cost?.length) baseStory.costSummary = { heading: g.costHeading, headingOverlay: g.costHeadingOverlay || [], lines: g.cost };
+      } else if (o.seller_summary?.guide?.cost?.length) {
+        const guide = o.seller_summary.guide;
+        baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
+      }
     }
     return [o.id, baseStory];
-  })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide]);
+  })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide, useStaticGuide]);
 
   if (offers === null) return <Empty>Loading…</Empty>;
   const cur = sortedOffers.find((o) => o.id === active) || sortedOffers[0];
@@ -541,11 +544,11 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
         <Button kind={view === 'cards' ? 'primary' : 'secondary'} onClick={() => setView('cards')} aria-pressed={view === 'cards'}>{owner ? 'Card view' : 'Lead offer'}</Button>
         <Button kind={showEdit ? 'primary' : 'secondary'} onClick={() => setView('edit')} aria-pressed={showEdit}>{owner ? 'Edit terms' : 'Try different terms'}</Button>
         {owner && sortedOffers.length > 0 && (
-          <label className="flex items-center gap-2 rounded-full border border-ink bg-white py-1 pl-4 pr-1 text-sm font-semibold">
+          <label className="flex min-h-[40px] items-center gap-2 rounded-full border border-ink bg-white py-1 pl-4 pr-1 text-sm font-semibold">
             Lead offer
             <select aria-label="Lead offer" value={sortedOffers.find((x) => x.is_lead)?.id || ''}
               onChange={(e) => { const x = sortedOffers.find((y) => y.id === e.target.value); if (x) void setLead(x); }}
-              className="rounded-full border border-line bg-white px-3 py-1 text-sm font-normal">
+              className="min-h-[36px] rounded-full border border-line bg-white px-3 py-1 text-sm font-normal">
               <option value="" disabled>Pick one</option>
               {sortedOffers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
@@ -570,11 +573,11 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
             <div className="flex flex-wrap items-center gap-2">
               {sortedOffers.map((x) => (
                 <button key={x.id} onClick={() => setActive(x.id)} aria-pressed={cur?.id === x.id}
-                  className={`rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
+                  className={`min-h-[40px] rounded-full border px-4 py-1.5 text-sm ${cur?.id === x.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
                   {x.is_lead ? '★ ' : ''}{x.name} <span className={cur?.id === x.id ? 'text-white/70' : 'text-ink-soft'}>· {stories[x.id]?.headline?.cashOut?.value || money(evals[x.id].keepMonthly)}</span>
                 </button>
               ))}
-              <select aria-label="Add an option" value="" onChange={(e) => e.target.value && add(e.target.value)} className="rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
+              <select aria-label="Add an option" value="" onChange={(e) => e.target.value && add(e.target.value)} className="min-h-[40px] rounded-full border border-dashed border-line bg-white px-3 py-1.5 text-sm">
                 <option value="">+ Add an offer</option>
                 {Object.entries(STRUCTURES).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
               </select>
@@ -617,9 +620,9 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
                     </div>
                     <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
                       <p className="font-medium">Who can see the lead offer</p>
-                      {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
-                      <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
-                      <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
+                      {'share_realtor' in cur && <label className="flex min-h-[40px] cursor-pointer items-center gap-2"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
+                      <label className="flex min-h-[40px] cursor-pointer items-center gap-2"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
+                      <label className="flex min-h-[40px] cursor-pointer items-center gap-2"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
                     </div>
                   </>
                 )}

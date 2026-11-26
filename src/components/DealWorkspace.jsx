@@ -48,7 +48,11 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
   return <Card><CardTitle>{title}</CardTitle>
     {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
     {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The buyer posts findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{rows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
-      {kind === 'task' && <input type="checkbox" aria-label={`Complete ${r.body}`} checked={r.done} disabled={Boolean(pending) || preview || (role !== 'owner' && r.author_role !== 'owner' && r.author_email !== me.email)} onChange={() => toggle(r)} />}
+      {kind === 'task' && (
+        <label className="inline-flex min-h-[40px] min-w-[40px] shrink-0 cursor-pointer items-center justify-center">
+          <input type="checkbox" aria-label={`Complete ${r.body}`} checked={r.done} disabled={Boolean(pending) || preview || (role !== 'owner' && r.author_role !== 'owner' && r.author_email !== me.email)} onChange={() => toggle(r)} className="h-5 w-5 rounded border-line accent-ink" />
+        </label>
+      )}
       <div className="flex min-w-0 items-start gap-2"><p className={`min-w-0 whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><InfoTip label="Who this is for" lines={[`${r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}${role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}`]} /></div>
     </li>)}</ul>}
     {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">

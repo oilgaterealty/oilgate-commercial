@@ -356,8 +356,8 @@ export default function Tenants({ deal, me, role, preview }) {
                                         <option key={k} value={k}>{lbl}</option>
                                       ))}
                                     </select>
-                                    <button type="button" className="text-xs underline" onClick={() => setEditingId(lead.id)}>Edit</button>
-                                    <button type="button" className="text-xs text-ink-soft underline hover:text-red-700" onClick={() => removeLead(lead)}>Delete</button>
+                                    <button type="button" className="inline-flex min-h-[40px] items-center px-2 text-xs underline" onClick={() => setEditingId(lead.id)}>Edit</button>
+                                    <button type="button" className="inline-flex min-h-[40px] items-center px-2 text-xs text-ink-soft underline hover:text-red-700" onClick={() => removeLead(lead)}>Delete</button>
                                   </div>
                                   {movingId === lead.id && (
                                     <div className="space-y-2 rounded-lg bg-paper p-2">

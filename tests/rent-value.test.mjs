@@ -102,7 +102,7 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
 
 test('Gating: lender, reviewer (not viewer) and owner only', () => {
   assert.match(read('src/views/Lender.jsx'), /<RentValue /);
-  assert.match(read('src/views/Reviewer.jsx'), /!viewer && role === 'reviewer' && active === 'rent-value' && isRentValue/);
+  assert.match(read('src/views/Reviewer.jsx'), /!viewer && role === 'reviewer' && isRentValue\(leadGuide\?\.rentValue\)/);
   assert.match(read('src/views/Owner.jsx'), /<OwnerRentValue /);
   for (const f of ['src/views/Realtor.jsx', 'src/views/Seller.jsx']) {
     if (!existsSync(join(root, f))) continue;

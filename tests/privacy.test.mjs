@@ -70,9 +70,10 @@ test('offers are readable only by the owner, or a reviewer/lender it was shared 
   assert.doesNotMatch(pols, /'seller'|'realtor'|'viewer'/);
 });
 
-test('lender page shows the plan read-only: no saving, no editing terms or repair costs', () => {
+test('lender page shows the plan and local what-if only: no saving, no editing owner records or repair costs', () => {
   const src = readFileSync(new URL('../src/views/Lender.jsx', import.meta.url), 'utf8');
-  for (const t of ['owner_notes', 'deal_private', 'canSave', 'setBase', 'tenthUnitRepair', 'Try different terms', '.update(', '.insert(']) assert.ok(!src.includes(t), t);
+  for (const t of ['owner_notes', 'deal_private', 'canSave={true}', 'setBase', 'tenthUnitRepair', 'Try different terms', '.update(', '.insert(']) assert.ok(!src.includes(t), t);
+  assert.match(src, /<Offers\b[^>]*canSave=\{false\}/);
 });
 
 test('messages are fixed by role: nobody picks people by hand, and research boards are gone', () => {
@@ -132,10 +133,10 @@ test('v5 comps tab and tables are hidden from lender, seller and viewer', () => 
     assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
   }
   const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
-  // Reviewer gets Overview, Photos, Comps, Rent & value (when available), Documents, Messages; viewer gets Overview + Photos; Ideas tab removed.
+  // Reviewer gets Overview, The offer, Rent & value (when available), Comps, Photos, Documents, Messages; viewer gets Overview + Photos; Ideas removed.
   assert.match(rev, /\['overview', 'Overview'\], \['photos', 'Photos'\]/);
-  assert.match(rev, /!viewer && active === 'comps'/);
-  assert.doesNotMatch(rev, /StrategyIdeas|active === 'ideas'/);
+  assert.match(rev, /!viewer &&[\s\S]*?<Comps /);
+  assert.doesNotMatch(rev, /StrategyIdeas|sec-ideas|data-section="ideas"/);
 });
 
 test('v5 migration only creates commercial_ objects and storage.objects policies', () => {

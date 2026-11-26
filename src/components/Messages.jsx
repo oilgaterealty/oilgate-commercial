@@ -118,7 +118,7 @@ export function InboxSummary({ deal, me, role, preview }) {
   if (!CAN_MESSAGE.includes(role)) return null;
   return (
     <Card>
-      <CardTitle aside={<a className="text-sm underline" href={`${root}/messages`}>All messages</a>}>{owner ? 'Messages by role' : 'Messages'}</CardTitle>
+      <CardTitle aside={<a className="inline-flex min-h-[40px] items-center text-sm underline" href={`${root}/messages`}>All messages</a>}>{owner ? 'Messages by role' : 'Messages'}</CardTitle>
       {error && <p role="alert" className="mb-2 text-sm text-red-700">{error}</p>}
       {slots === null ? <Empty>Loading…</Empty> : (
         <ul className="divide-y divide-line">
@@ -129,7 +129,7 @@ export function InboxSummary({ deal, me, role, preview }) {
                   <strong className="text-sm">{s.label}</strong>
                   {owner && <InfoTip label={`Who is in ${s.label}`} lines={[who(s, owner)]} />}
                 </span>
-                <a className="text-sm underline" href={`${root}/messages?with=${s.key}`}>{s.last ? 'Reply' : 'Write'}</a>
+                <a className="inline-flex min-h-[40px] items-center text-sm underline" href={`${root}/messages?with=${s.key}`}>{s.last ? 'Reply' : 'Write'}</a>
               </div>
               {s.last ? <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm" title={`${authorLabel(s.last)} · ${when(s.last.created_at)}`}>{s.last.body}</p> : <p className="mt-1 text-sm text-ink">No messages yet.</p>}
             </li>
@@ -225,6 +225,14 @@ export default function Messages({ deal, me, role, preview, sellerTo = 'realtor'
   const { slots, error, reload } = useInbox(deal, me, role, preview, sellerTo);
   const asked = new URLSearchParams(window.location.hash.split('?')[1] || '').get('with');
   const [open, setOpen] = useState(asked);
+  useEffect(() => {
+    const sync = () => {
+      const next = new URLSearchParams(window.location.hash.split('?')[1] || '').get('with');
+      if (next) setOpen(next);
+    };
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
   if (!CAN_MESSAGE.includes(role)) return <Card><Empty>Messages aren’t part of this view.</Empty></Card>;
   const current = slots?.find((s) => s.key === open) || slots?.[0];
   return (
@@ -237,7 +245,7 @@ export default function Messages({ deal, me, role, preview, sellerTo = 'realtor'
             <ul className="space-y-1">
               {slots.map((s) => (
                 <li key={s.key}>
-                  <button onClick={() => setOpen(s.key)} title={s.last ? s.last.body : owner ? who(s, owner) : 'No messages yet'} className={`w-full rounded-xl px-3 py-2 text-left text-sm ${current?.key === s.key ? 'bg-ink text-white' : 'hover:bg-warm-soft'}`}>
+                  <button onClick={() => setOpen(s.key)} title={s.last ? s.last.body : owner ? who(s, owner) : 'No messages yet'} className={`min-h-[40px] w-full rounded-xl px-3 py-2 text-left text-sm ${current?.key === s.key ? 'bg-ink text-white' : 'hover:bg-warm-soft'}`}>
                     <span className="block font-medium">{s.label}</span>
                   </button>
                 </li>

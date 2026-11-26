@@ -71,12 +71,12 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
       <DictatedField value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Add a note (optional)"
         className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink" />
       <div className="flex flex-wrap items-center gap-3">
-        <label className="cursor-pointer rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink-soft">
+        <label className="inline-flex min-h-[40px] cursor-pointer items-center rounded-xl bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink-soft">
           {uploading ? 'Uploading…' : label}<input aria-label={label} type="file" multiple accept={accept} className="sr-only" disabled={preview || uploading} onChange={pick} />
         </label>
         {allowShare && (
-          <label className="flex items-center gap-2 text-sm text-ink-soft">
-            <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} /> Seller can see
+          <label className="flex min-h-[40px] cursor-pointer items-center gap-2 text-sm text-ink-soft">
+            <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} className="h-5 w-5 rounded border-line accent-ink" /> Seller can see
           </label>
         )}
       </div>
@@ -103,7 +103,7 @@ export function uploadShareButtons(r, owner, onChange) {
 export function ShareChips({ r, onChange, owner }) {
   const set = (patch) => setUpload(r, patch, onChange);
   const chip = (on, label, fn) => (
-    <button key={label} onClick={fn} className={`rounded-full px-2.5 py-1 text-xs font-medium ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
+    <button key={label} onClick={fn} className={`min-h-[40px] rounded-full px-3 py-1 text-xs font-medium ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
   );
   return (
     <div className="flex flex-wrap gap-1">
@@ -148,7 +148,7 @@ export function FileList({ rows, canShare, owner, onChange }) {
             ]} />
           </div>
           {canShare && <ShareChips r={r} owner={owner} onChange={onChange} />}
-          {owner && <button onClick={() => remove(r)} className="text-xs text-ink-soft hover:text-red-700">Delete</button>}
+          {owner && <button onClick={() => remove(r)} className="inline-flex min-h-[40px] items-center px-1.5 text-xs text-ink-soft hover:text-red-700">Delete</button>}
         </li>
       ))}
       <PhotoViewer items={pics.map((r) => ({ url: r.url, alt: r.note || r.file_name }))} index={view} onIndex={setView} />

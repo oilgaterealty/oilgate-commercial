@@ -243,7 +243,7 @@ export default function UnitGallery({ deal, me, role, preview, unitSummaries = n
   const shareBoxes = (row, kind) => (
     <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 py-1.5 text-xs">
       {WALK_SHARES.map(([field, , , label]) => (
-        <label key={field} className="inline-flex items-center gap-1"><input type="checkbox" disabled={shareBusy} checked={Boolean(row[field])} onChange={() => void toggleShare(row, field, kind)} />{label}</label>
+        <label key={field} className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" disabled={shareBusy} checked={Boolean(row[field])} onChange={() => void toggleShare(row, field, kind)} />{label}</label>
       ))}
     </div>
   );

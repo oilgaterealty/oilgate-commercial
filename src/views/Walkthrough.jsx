@@ -1457,7 +1457,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         setSelectedRoom(r);
                         setStatus('');
                       }}
-                      className={`min-h-[36px] w-full rounded-lg border px-2 py-1.5 text-center transition ${
+                      className={`min-h-[40px] w-full rounded-lg border px-2 py-1.5 text-center transition ${
                         active
                           ? 'border-ink bg-ink font-medium text-white'
                           : empty
@@ -1660,7 +1660,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 type="button"
                 disabled={!online || syncingAll}
                 onClick={() => void syncAllPending()}
-                className="min-h-[36px] rounded-lg bg-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
+                className="min-h-[40px] rounded-lg bg-ink px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
               >
                 {syncingAll ? 'Uploading…' : online ? 'Upload now' : 'Waiting for connection'}
               </button>
@@ -1993,7 +1993,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                               setEditingNoteId(n.id);
                               setEditingNoteText(n.raw_transcript || '');
                             }}
-                            className="underline hover:text-ink"
+                            className="inline-flex min-h-[40px] items-center px-1.5 underline hover:text-ink"
                           >
                             Edit
                           </button>
@@ -2003,7 +2003,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                             type="button"
                             disabled={Boolean(retranscribingId)}
                             onClick={() => void retranscribeRemoteNote(n)}
-                            className="underline hover:text-ink"
+                            className="inline-flex min-h-[40px] items-center px-1.5 underline hover:text-ink"
                           >
                             {retranscribingId === n.id ? 'Retranscribing…' : 'Retranscribe'}
                           </button>
@@ -2013,7 +2013,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                             type="button"
                             disabled={busy}
                             onClick={() => void removeRemoteNote(n)}
-                            className="underline hover:text-red-700"
+                            className="inline-flex min-h-[40px] items-center px-1.5 underline hover:text-red-700"
                           >
                             Remove
                           </button>
@@ -2179,7 +2179,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           <button
                             type="button"
                             onClick={() => void deleteMediaItem(m.id).then(() => setLocalMedia((prev) => prev.filter((x) => x.id !== m.id)))}
-                            className="text-ink-soft underline hover:text-red-700"
+                            className="inline-flex min-h-[40px] items-center px-1.5 text-ink-soft underline hover:text-red-700"
                           >
                             Remove
                           </button>
@@ -2239,7 +2239,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                             type="button"
                             disabled={busy}
                             onClick={() => void removeRemotePhoto(p)}
-                            className="shrink-0 underline hover:text-red-700"
+                            className="inline-flex min-h-[40px] shrink-0 items-center px-1.5 underline hover:text-red-700"
                           >
                             Remove
                           </button>
@@ -2247,8 +2247,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
                       </div>
                       {role === 'owner' && !preview && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line px-2 py-1.5 text-xs">
-                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(p.share_seller)} onChange={() => void toggleShare(p, 'share_seller')} />Share with seller</label>
-                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(p.share_lender)} onChange={() => void toggleShare(p, 'share_lender')} />Share with lender</label>
+                          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={Boolean(p.share_seller)} onChange={() => void toggleShare(p, 'share_seller')} />Share with seller</label>
+                          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={Boolean(p.share_lender)} onChange={() => void toggleShare(p, 'share_lender')} />Share with lender</label>
                         </div>
                       )}
                     </li>
@@ -2343,7 +2343,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                           <button
                             type="button"
                             onClick={() => void deleteMediaItem(v.id).then(() => setLocalMedia((prev) => prev.filter((x) => x.id !== v.id)))}
-                            className="underline hover:text-red-700"
+                            className="inline-flex min-h-[40px] items-center px-1.5 underline hover:text-red-700"
                           >
                             Remove
                           </button>
@@ -2389,7 +2389,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                             type="button"
                             disabled={busy}
                             onClick={() => void removeRemoteVideo(v)}
-                            className="underline hover:text-red-700"
+                            className="inline-flex min-h-[40px] items-center px-1.5 underline hover:text-red-700"
                           >
                             Remove
                           </button>
@@ -2397,8 +2397,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
                       </div>
                       {role === 'owner' && !preview && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-1.5 text-xs">
-                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(v.share_seller)} onChange={() => void toggleShare(v, 'share_seller', 'video')} />Share with seller</label>
-                          <label className="inline-flex items-center gap-1"><input type="checkbox" checked={Boolean(v.share_lender)} onChange={() => void toggleShare(v, 'share_lender', 'video')} />Share with lender</label>
+                          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={Boolean(v.share_seller)} onChange={() => void toggleShare(v, 'share_seller', 'video')} />Share with seller</label>
+                          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5"><input type="checkbox" className="h-5 w-5 rounded border-line accent-ink" checked={Boolean(v.share_lender)} onChange={() => void toggleShare(v, 'share_lender', 'video')} />Share with lender</label>
                         </div>
                       )}
                       <VideoExtras video={v} />

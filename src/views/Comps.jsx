@@ -251,7 +251,7 @@ export default function Comps({ deal, me, role, preview }) {
   };
 
   const PickBox = ({ c }) => (canSelectRows && !c.local ? (
-    <label className="inline-flex min-h-[36px] cursor-pointer items-center gap-2 text-sm font-medium">
+    <label className="inline-flex min-h-[40px] min-w-[40px] cursor-pointer items-center justify-center gap-2 text-sm font-medium">
       <input
         type="checkbox"
         aria-label={`Select ${c.address}`}
@@ -343,11 +343,11 @@ export default function Comps({ deal, me, role, preview }) {
                 <span className="font-medium text-ink">{selectedCount} of {selectable.length} selected</span>
                 <div className="flex items-center gap-2">
                   <button type="button" disabled={pending || selectedCount === selectable.length} onClick={() => void selectAllPicks()}
-                    className="min-h-[36px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
+                    className="min-h-[40px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
                     Select all
                   </button>
                   <button type="button" disabled={pending || selectedCount === 0} onClick={() => void clearAllPicks()}
-                    className="min-h-[36px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
+                    className="min-h-[40px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
                     Clear
                   </button>
                 </div>
@@ -394,7 +394,7 @@ export default function Comps({ deal, me, role, preview }) {
                   {role === 'owner' && pickedBy[c.id] && <p className="text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
                   <div className="flex flex-wrap items-center gap-3">
                     {compSource(c) && <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} />}
-                    {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
+                    {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="inline-flex min-h-[40px] items-center px-2 text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
                   </div>
                 </li>
               ))}
@@ -407,7 +407,7 @@ export default function Comps({ deal, me, role, preview }) {
                   <InfoTip label="Multi-column sort" lines={['Click a column to sort. Hold Shift and click another column to add a second sort.']} />
                 </div>
                 {sort.key && (
-                  <button type="button" onClick={() => setSort({ key: null, dir: 'asc', key2: null, dir2: 'asc' })} className="underline hover:text-ink">
+                  <button type="button" onClick={() => setSort({ key: null, dir: 'asc', key2: null, dir2: 'asc' })} className="inline-flex min-h-[40px] items-center underline hover:text-ink">
                     Clear sort
                   </button>
                 )}
@@ -422,7 +422,7 @@ export default function Comps({ deal, me, role, preview }) {
                         const ariaSort = sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
                         return (
                           <th key={k} className="border-b border-line px-1 py-2 font-medium" aria-sort={ariaSort}>
-                            <button type="button" onClick={(e) => sortBy(k, e.shiftKey)} className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2 hover:bg-warm-soft ${isSorted ? 'font-semibold text-ink' : ''}`}>
+                            <button type="button" onClick={(e) => sortBy(k, e.shiftKey)} className={`inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2 hover:bg-warm-soft ${isSorted ? 'font-semibold text-ink' : ''}`}>
                               {h}<span aria-hidden="true" className="text-xs">{sortArrow(k)}</span>
                             </button>
                           </th>
@@ -451,7 +451,7 @@ export default function Comps({ deal, me, role, preview }) {
                           {compSource(c) ? <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} /> : '—'}
                         </td>
                         <td className="border-b border-line px-3 py-4">
-                          {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
+                          {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="inline-flex min-h-[40px] items-center px-2 text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
                         </td>
                       </tr>
                     ))}
