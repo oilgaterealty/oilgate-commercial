@@ -31,3 +31,10 @@ test('owner Offers opens on the table; phone comps show the first few with Show 
   assert.match(comps, /phoneAll \? shownComps : shownComps\.slice\(0, PHONE_COMPS\)/);
   assert.match(comps, /Show all \$\{shownComps\.length\} comps/);
 });
+
+test('every role with the jump bar shows one section at a time', () => {
+  const shell = read('src/components/Shell.jsx');
+  assert.match(shell, /\[data-section\]:not\(\[data-section="\$\{active\}"\]\)\{display:none!important\}/);
+  assert.doesNotMatch(shell, /IntersectionObserver/);
+  for (const f of ['src/views/Realtor.jsx', 'src/views/Lender.jsx', 'src/views/Reviewer.jsx']) assert.match(read(f), /<JumpNav /, f);
+});

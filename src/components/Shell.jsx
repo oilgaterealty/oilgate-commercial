@@ -41,62 +41,24 @@ export function PropertyHead({ deal }) {
   );
 }
 
+// One section at a time for every role: the sticky jump bar opens a section, the page starts at its top,
+// and the address follows so the back button works. Same hook for owner, realtor, lender and reviewer.
 export function useSectionScroll(tab, sections, aliases = {}) {
   const sectionKey = sections.map(([k]) => k).join(',');
-  const [activeSection, setActiveSection] = useState(() => {
-    const t = aliases[tab] || tab;
-    return sections.some(([k]) => k === t) ? t : sections[0]?.[0] || 'overview';
-  });
+  const pick = (t) => { const k = aliases[t] || t; return sections.some(([s]) => s === k) ? k : sections[0]?.[0] || 'overview'; };
+  const [activeSection, setActiveSection] = useState(() => pick(tab));
 
   useEffect(() => {
-    const t = aliases[tab] || tab;
-    if (!t || !sections.some(([k]) => k === t)) return;
-    setActiveSection(t);
-    const scroll = () => {
-      if (t === 'overview') {
-        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
-        return;
-      }
-      const el = document.getElementById(`sec-${t}`);
-      if (el && typeof el.scrollIntoView === 'function') {
-        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
-      }
-    };
-    scroll();
-    const timer = setTimeout(scroll, 80);
-    return () => clearTimeout(timer);
+    setActiveSection(pick(tab));
+    try { window.scrollTo({ top: 0 }); } catch {}
   }, [tab, sectionKey]);
-
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined' || typeof document === 'undefined') return;
-    const els = [...document.querySelectorAll('[data-section]')];
-    if (!els.length) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const next = visible[0]?.target?.dataset?.section;
-        if (next) setActiveSection(next);
-      },
-      { rootMargin: '-20% 0px -70% 0px' },
-    );
-    els.forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
-  }, [sectionKey]);
 
   const jumpTo = (id, base) => {
     setActiveSection(id);
-    if (id === 'overview') {
-      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
-    } else if (typeof document !== 'undefined') {
-      const el = document.getElementById(`sec-${id}`);
-      if (el && typeof el.scrollIntoView === 'function') {
-        try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
-      }
-    }
-    if (base && typeof window !== 'undefined' && window.history?.replaceState) {
-      try { window.history.replaceState(null, '', id === 'overview' ? base : `${base}/${id}`); } catch {}
+    try { window.scrollTo({ top: 0 }); } catch {}
+    if (base && typeof window !== 'undefined') {
+      const next = id === 'overview' ? base : `${base}/${id}`;
+      if (window.location.hash !== next) window.location.hash = next;
     }
   };
 
@@ -117,6 +79,8 @@ export function JumpNav({ sections, active, onJump, base, preview }) {
 
   return (
     <div className={`sticky ${preview ? 'top-8' : 'top-0'} z-20 -mx-4 mb-4 border-b border-line/80 bg-paper/95 px-4 py-2 backdrop-blur`}>
+      {/* Only the chosen section shows; the rest stay one tap away on this bar. */}
+      <style>{`[data-section]:not([data-section="${active}"]){display:none!important}`}</style>
       <nav
         ref={navRef}
         aria-label="Deal sections"
