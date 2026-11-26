@@ -130,3 +130,10 @@ test('no "carry" wording left in shipped source text', () => {
   }
   assert.deepEqual(hits, []);
 });
+
+
+test('seller page function passes the on/off switches the offer card needs', () => {
+  const sql = readFileSync(join(root, 'supabase/migrations/0025_seller_offer_flags.sql'), 'utf8');
+  assert.match(sql, /'billsFromRent'/);
+  assert.match(sql, /'renoFromSeller'/);
+});
