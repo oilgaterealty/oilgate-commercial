@@ -3,7 +3,7 @@
 // plan inputs (unit schedule, one-time costs, lender terms) all flow through here, so every page that
 // shows a plan updates the moment any input changes. Real deal numbers live only in the owner's private
 // database row, never in this public code. Defaults below are blank templates.
-import { BASE_DEFAULTS, operating, pmt, pv, STRUCTURES, money, moneyK, sellerLoanText, valueSummary } from './dealmath.js';
+import { BASE_DEFAULTS, operating, pmt, pv, STRUCTURES, money, sellerLoanText, valueSummary } from './dealmath.js';
 
 export const WEEKS_PER_MONTH = 52 / 12;
 export const OPTION_E_OVERLAY = 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.';
@@ -159,7 +159,7 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
   const pricedUnits = units.filter((u) => num(u.rehab) > 0);
   const unitsTotal = pricedUnits.reduce((s, u) => s + num(u.rehab), 0);
   const topUnits = [...pricedUnits].sort((a, b) => b.rehab - a.rehab).slice(0, 2);
-  const unitsInline = topUnits.map((u) => `Unit ${u.id} ${moneyK(u.rehab)}`).join(', ');
+  const unitsInline = topUnits.map((u) => `Unit ${u.id} ${money(u.rehab)}`).join(', ');
   const unitsOverlay = [
     ...pricedUnits.map((u) => `Unit ${u.id}${u.optional ? ' (added unit)' : ''}: ${money(u.rehab)}`),
     ...(added ? [`Unit ${added.id} needs its zoning certificate.`] : []),
@@ -168,7 +168,7 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
 
   const systemsPriced = plan.costs.filter((c) => c.group === 'systems' && c.cost > 0);
   const buildingTotal = systemsPriced.reduce((s, c) => s + c.cost, 0);
-  const buildingInline = systemsPriced.map((c) => `${c.label.toLowerCase()} ${moneyK(c.cost)}`).join(', ');
+  const buildingInline = systemsPriced.map((c) => `${c.label.toLowerCase()} ${money(c.cost)}`).join(', ');
   const buildingOverlay = [
     ...systemsPriced.map((c) => `${c.label}: ${money(c.cost)}`),
     `Total building: ${money(buildingTotal)}.`,
@@ -185,7 +185,7 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
   const contingency = Math.max(0, num(plan.contingency, 0));
   const rehabTotal = unitsTotal + buildingTotal + setupTotal;
   const wholeTotal = rehabTotal + contingency;
-  const heading = `Whole job ${moneyK(wholeTotal)}`;
+  const heading = `Whole job ${money(wholeTotal)}`;
   const headingOverlay = [
     unitsTotal > 0 ? `Units: ${money(unitsTotal)}` : null,
     buildingTotal > 0 ? `Building: ${money(buildingTotal)}` : null,
@@ -196,10 +196,10 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
   ].filter(Boolean);
 
   const lines = [
-    ...(unitsTotal > 0 ? [{ key: 'units', label: `Units ${moneyK(unitsTotal)}`, detail: unitsInline, overlay: unitsOverlay }] : []),
-    ...(buildingTotal > 0 ? [{ key: 'building', label: `Building ${moneyK(buildingTotal)}`, detail: buildingInline, overlay: buildingOverlay }] : []),
-    ...(setupTotal > 0 ? [{ key: 'setup', label: `Setup ${moneyK(setupTotal)}`, detail: setupInline, overlay: setupOverlay }] : []),
-    ...(contingency > 0 ? [{ key: 'contingency', label: `Contingency ${moneyK(contingency)}`, detail: '', overlay: [`Repair contingency: ${money(contingency)}.`] }] : []),
+    ...(unitsTotal > 0 ? [{ key: 'units', label: `Units ${money(unitsTotal)}`, detail: unitsInline, overlay: unitsOverlay }] : []),
+    ...(buildingTotal > 0 ? [{ key: 'building', label: `Building ${money(buildingTotal)}`, detail: buildingInline, overlay: buildingOverlay }] : []),
+    ...(setupTotal > 0 ? [{ key: 'setup', label: `Setup ${money(setupTotal)}`, detail: setupInline, overlay: setupOverlay }] : []),
+    ...(contingency > 0 ? [{ key: 'contingency', label: `Contingency ${money(contingency)}`, detail: '', overlay: [`Repair contingency: ${money(contingency)}.`] }] : []),
   ];
   const partSummaries = lines.map((l) => l.label);
   const oneLine = partSummaries.length ? `${heading} — ${partSummaries.join(', ')}` : heading;
@@ -235,6 +235,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     const label = u.optional ? `Unit ${u.id} (added unit) rehab` : `Unit ${u.id} rent-ready work`;
     add(label, 'units', u.rehab, Math.min(plan.rehabStartWeek, u.ready), u.ready);
   }
+  if (structure === 'wrap' && num(x.closing) > 0) add('Closing costs (in the repair loan)', 'closing', x.closing, 0, 0);
   if (structure === 'cash') items.unshift({ label: 'Down payment and closing', group: 'closing', cost: x.price * (x.downPct / 100 + x.closingPct / 100), start: 0, end: 0 });
 
   // Stabilized: every unit renting long-term. Sizes the bank refinance and the "full" stage.
@@ -255,7 +256,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
       : structure === 'seller_rehab'
         ? Math.max(1, Math.round(num(inputsIn?.refiMonth) > 0 ? num(inputsIn.refiMonth) : plan.refiMonth))
         : Math.max(1, Math.round(plan.refiMonth));
-  const exitClosing = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab' || structure === 'wrap') ? x.closing : 0;
+  const exitClosing = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab') ? x.closing : 0;
   const sellerLoanPayment = plan.sellerLoanBalance > 0
     ? (plan.sellerLoanRate > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : (plan.sellerLoanYears > 0 ? plan.sellerLoanBalance / (plan.sellerLoanYears * 12) : 0))
     : 0;
@@ -475,7 +476,10 @@ export function derivations(p) {
   const L = [];
   const full = p.full;
   const addedId = addedUnitId(p.plan);
-  L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy. Less management, taxes, insurance, utilities, admin and turns leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
+  const ob = p.operating?.b || {};
+  const costWords = [num(ob.mgmtPct) > 0 ? 'management' : null, 'taxes', 'insurance', num(ob.utilities) > 0 ? 'water and trash' : null, num(ob.admin) > 0 ? 'admin' : null, num(ob.turns) > 0 ? 'turns' : null].filter(Boolean);
+  const costList = costWords.length > 1 ? `${costWords.slice(0, -1).join(', ')} and ${costWords[costWords.length - 1]}` : costWords[0];
+  L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy. Less ${costList} leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
   if (p.structure === 'master_lease') {
     L.push(['Seller payment', `${$(x.payment)}/mo is the payment once all ${p.units.length} units rent. Each month the seller gets that times the share of units renting, so it grows as units fill. ${x.creditPct}% of every payment comes off the price.`]);
     if (p.exit) L.push(['Buy price', `${$(x.optionPrice)} locked price + ${$(x.sellerAdvances)} the seller fronted − ${$(p.exit.credits)} already credited = ${$(p.exit.sellerPayoff)} due in month ${p.exit.month}.`]);
@@ -676,8 +680,8 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
     result.sellerLoanPayment > 0 && result.structure !== 'seller_rehab' ? `Seller’s own loan: ${money(result.sellerLoanPayment)}/mo on ${sellerLoanText(plan.sellerLoanBalance, false)}` : null,
     `Taxes: ${money(taxesMo)}/mo`,
     `Insurance: ${money(insMo)}/mo`,
-    `Utilities: ${money(utilMo)}/mo`,
-    `Admin: ${money(adminMo)}/mo`,
+    utilMo > 0 ? `Water and trash: ${money(utilMo)}/mo` : null,
+    adminMo > 0 ? `Admin: ${money(adminMo)}/mo` : null,
     turnsMo > 0 ? `Turns: ${money(turnsMo)}/mo` : null,
     `Total holding cost per month: ${money(holdingTotal)}/mo.`,
   ].filter(Boolean);
@@ -746,7 +750,7 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
 
   const fullLines = [
     { label: 'Rent in', value: `${money(full.collected)}/mo`, overlay: [`${result.units.length} units after ${b.vacancyPct}% vacancy = ${money(full.collected)}/mo.`] },
-    { label: 'Running costs', value: `${money(fullRunning)}/mo`, overlay: [`Management ${money(full.collected * (b.mgmtPct / 100))}/mo + fixed bills ${money((b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12)}/mo + reserves ${money(full.reserves)}/mo = ${money(fullRunning)}/mo.`] },
+    { label: 'Running costs', value: `${money(fullRunning)}/mo`, overlay: [`${b.mgmtPct > 0 ? `Management ${money(full.collected * (b.mgmtPct / 100))}/mo + ` : ''}taxes, insurance and water and trash ${money((b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12)}/mo + reserves ${money(full.reserves)}/mo = ${money(fullRunning)}/mo.`] },
     ...(result.structure === 'seller_rehab' && result.sellerLoanPayment > 0
       ? [{ label: 'Seller loan payment', value: `${money(result.sellerLoanPayment)}/mo`, overlay: [`Paid from rent toward ${sellerLoanText(plan.sellerLoanBalance, false)}.`] }]
       : []),
@@ -1345,7 +1349,7 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
     { label: 'I buy when', value: `All ${unitsCount} units are rented`, overlay: ['I refinance and pay you off then.'] },
   ];
 
-  const repairsTotal = Math.round(num(costSummary.total, 0) / 1000) * 1000;
+  const repairsTotal = Math.round(num(costSummary.total, 0));
   const repairsOverlay = (costSummary.lines || []).map((l) => l.label.replace(/^Setup /, 'Setup ')).filter(Boolean);
   const steps = [
     { title: 'Master lease', detail: 'We sign a master lease. I take over the leasing and the repairs.', overlay: [] },
@@ -1395,7 +1399,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
     rl.contingency > 0 ? `Contingency: ${money(rl.contingency)}` : null,
     'A second note, paid off at the refinance with your first note.',
   ].filter(Boolean);
-  const repairsTotal = Math.round(num(costSummary.total, 0) / 1000) * 1000;
+  const repairsTotal = Math.round(num(costSummary.total, 0));
   const repairsOverlay = (costSummary.lines || []).map((l) => l.label.replace(/^Setup /, 'Setup ')).filter(Boolean);
   const terms = [
     { label: 'Your note', value: payoffText, overlay: ['You deed me the building at closing and carry a note for this amount. It is paid off at the refinance.'] },

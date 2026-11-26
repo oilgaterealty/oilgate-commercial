@@ -9,7 +9,6 @@ export const BASE_FIELDS = [
   ['taxes', 'Taxes / yr', '$'],
   ['insurance', 'Insurance / yr', '$'],
   ['waterMo', 'Water and trash / mo', '$'],
-  ['emptyUnitUtilMo', 'Utilities per empty unit / mo', '$'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
   ['value', 'Value after repairs', '$'],
   ['rehab', 'Rent-ready budget', '$'],

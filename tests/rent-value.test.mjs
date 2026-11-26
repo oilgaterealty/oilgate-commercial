@@ -84,7 +84,8 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
   assert.match(ro, /Value by rent and cap rate/);
   assert.doesNotMatch(ro, /<input/);
   assert.doesNotMatch(ro, /<p[ >]/);
-  const ed = renderToStaticMarkup(React.createElement(mod.default, { data: rv, editable: true, onSave: async () => null }));
+  assert.doesNotMatch(ro, /Market rent|>Gap</);
+  const ed = renderToStaticMarkup(React.createElement(mod.default, { data: rv, editable: true, showMarket: true, onSave: async () => null }));
   assert.equal((ed.match(/<input/g) || []).length, 8);
   assert.equal(mod.isRentValue(null), false);
   const ranged = { ...rv, valueRange: { low: 500000, high: 800000, lowOverlay: [], highOverlay: [] }, marketRange: { low: 900, high: 1100, units: 10, vacancyPct: 7, costsMo: 3000, capRate: 9, allIn: 1 } };

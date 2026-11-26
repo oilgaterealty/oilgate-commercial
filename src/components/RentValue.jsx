@@ -113,8 +113,8 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
                 <th scope="col" className="px-3 py-2.5">Repairs</th>
                 <th scope="col" className="px-3 py-2.5">Rent today</th>
                 <th scope="col" className="px-3 py-2.5">Our rent</th>
-                <th scope="col" className="px-3 py-2.5">Market rent</th>
-                <th scope="col" className="px-3 py-2.5">Gap</th>
+                {showMarket ? <th scope="col" className="px-3 py-2.5">Market rent</th> : null}
+                {showMarket ? <th scope="col" className="px-3 py-2.5">Gap</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -124,8 +124,8 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
                   <td className="px-3 py-2">{money(u.repairs)}</td>
                   <td className="px-3 py-2">{editable ? input(u, 'rentToday', 'rent today') : u.rentToday === null && !u.occupied ? 'Empty' : cash(u.rentToday)}</td>
                   <td className="px-3 py-2 font-semibold">{money(u.ourRent)}</td>
-                  <td className="px-3 py-2">{editable ? input(u, 'marketRent', 'market rent') : cash(u.marketRent)}</td>
-                  <td className={`px-3 py-2 font-semibold ${u.gap > 0 ? 'text-good' : u.gap < 0 ? 'text-red-700' : 'text-ink'}`}>{signed(u.gap)}</td>
+                  {showMarket ? <td className="px-3 py-2">{editable ? input(u, 'marketRent', 'market rent') : cash(u.marketRent)}</td> : null}
+                  {showMarket ? <td className={`px-3 py-2 font-semibold ${u.gap > 0 ? 'text-good' : u.gap < 0 ? 'text-red-700' : 'text-ink'}`}>{signed(u.gap)}</td> : null}
                 </tr>
               ))}
             </tbody>

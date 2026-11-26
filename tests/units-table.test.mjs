@@ -195,8 +195,8 @@ test('buildCostSummary shows Contingency line and total with it, and never emits
   assert.equal(cs.rehabTotal, 68000);
   assert.equal(cs.contingency, 10000);
   assert.equal(cs.total, 78000);
-  assert.equal(cs.heading, 'Whole job $78K');
-  assert.ok(cs.lines.some((l) => l.key === 'contingency' && l.label === 'Contingency $10K'));
+  assert.equal(cs.heading, 'Whole job $78,000');
+  assert.ok(cs.lines.some((l) => l.key === 'contingency' && l.label === 'Contingency $10,000'));
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
   assert.ok(cs.headingOverlay.some((l) => l.includes('Total with contingency: $78,000')));
 });

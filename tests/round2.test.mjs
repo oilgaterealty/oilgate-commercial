@@ -117,14 +117,14 @@ test('Task 0: always 10 units, no Airbnb anywhere, added unit follows optional:t
 test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Setup, Contingency, and skips $0 items', () => {
   const cs = buildCostSummary(SAMPLE_BASE, { ...SAMPLE_PLAN, contingency: 5000 });
   assert.equal(moneyK(74000), '$74K');
-  assert.equal(cs.heading, 'Whole job $74K');
-  assert.equal(cs.lines[0].label, 'Units $55K');
-  assert.equal(cs.lines[0].detail, 'Unit 4 $28K, Unit 3 $12K');
-  assert.equal(cs.lines[1].label, 'Building $8K');
-  assert.equal(cs.lines[1].detail, 'exterior $5K, common areas $3K');
-  assert.equal(cs.lines[2].label, 'Setup $6K');
+  assert.equal(cs.heading, 'Whole job $74,000');
+  assert.equal(cs.lines[0].label, 'Units $55,000');
+  assert.equal(cs.lines[0].detail, 'Unit 4 $28,000, Unit 3 $12,000');
+  assert.equal(cs.lines[1].label, 'Building $8,000');
+  assert.equal(cs.lines[1].detail, 'exterior $5,000, common areas $3,000');
+  assert.equal(cs.lines[2].label, 'Setup $6,000');
   assert.equal(cs.lines[2].detail, 'security, eviction, title, permits');
-  assert.equal(cs.lines[3].label, 'Contingency $5K');
+  assert.equal(cs.lines[3].label, 'Contingency $5,000');
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
   assert.ok(cs.lines[0].overlay.some((l) => l.includes('Unit 4 needs its zoning certificate')));
 
@@ -133,9 +133,8 @@ test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Set
     './Shell.jsx': { OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children) },
   });
   const html = renderToStaticMarkup(React.createElement(CostSummary, { summary: cs }));
-  assert.match(html, /Whole job \$74K/);
-  assert.match(html, /Unit 4 \$28K, Unit 3 \$12K/);
-  assert.match(html, /Contingency \$5K/);
+  assert.match(html, /Whole job \$74,000/);
+  assert.match(html, /Contingency \$5,000/);
   assert.doesNotMatch(html, /to inspect|\$0,|<p\b|<small\b|<caption\b/);
 });
 
