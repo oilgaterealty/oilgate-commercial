@@ -69,7 +69,7 @@ const SAMPLE_PLAN = normalizePlan({
     { id: '1', rehab: 2000, ready: 4 },
     { id: '2', rehab: 3000, ready: 6 },
     { id: '3', rehab: 12000, ready: 10 },
-    { id: '4', rehab: 0, ready: 20, optional: true },
+    { id: '4', rehab: 28000, ready: 20 },
     { id: '5', rehab: 0, ready: 0, occupied: true },
     { id: '6', rehab: 2000, ready: 8 },
     { id: '7', rehab: 2000, ready: 10 },
@@ -89,23 +89,21 @@ const SAMPLE_PLAN = normalizePlan({
   ],
 });
 
-test('Task 0: always 10 units, no Airbnb anywhere, added unit follows optional:true (unit 4 or fallback 10)', () => {
+test('Task 0: always 10 units, no Airbnb anywhere, unit 4 uses its own plan rehab', () => {
   assert.equal(unitCount(9), 10);
   assert.equal(unitCount(undefined), 10);
-  assert.equal(addedUnitId(SAMPLE_PLAN), '4');
   assert.equal(addedUnitId({ units: [{ id: '1' }, { id: '2' }] }), '10');
 
-  // Legacy strUnits is ignored and added unit repair is always included once
-  const o = operating({ ...SAMPLE_BASE, units: 9, strUnits: 3, strNightly: 250 });
+  // Legacy strUnits is ignored and tenthUnitRepair is no longer added onto rehab
+  const o = operating({ ...SAMPLE_BASE, units: 9, strUnits: 3, strNightly: 250, rehab: 28000 });
   assert.equal(o.strUnits, 0);
-  assert.equal(o.extraRepair, 28000);
   assert.equal(o.b.rehab, 28000);
 
   const planRes = monthlyPlan('master_lease', { payment: 2500, optionPrice: 320000 }, SAMPLE_BASE, SAMPLE_PLAN);
   const unit4Items = planRes.items.filter((i) => i.label.includes('Unit 4'));
   assert.equal(unit4Items.length, 1);
   assert.equal(unit4Items[0].cost, 28000);
-  assert.equal(unit4Items[0].label, 'Unit 4 (added unit) rehab');
+  assert.equal(unit4Items[0].label, 'Unit 4 rehab');
 
   // No Airbnb controls in Switches, DealPlan, Lender, or BASE_FIELDS
   assert.ok(!BASE_FIELDS.some(([k]) => /str|units/i.test(k)));
@@ -114,10 +112,10 @@ test('Task 0: always 10 units, no Airbnb anywhere, added unit follows optional:t
   }
 });
 
-test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Setup, Contingency, and skips $0 items', () => {
+test('Task 1 & 6: buildCostSummary formats Repair budget, Units top-2, Building, Setup, Contingency, and skips $0 items', () => {
   const cs = buildCostSummary(SAMPLE_BASE, { ...SAMPLE_PLAN, contingency: 5000 });
   assert.equal(moneyK(74000), '$74K');
-  assert.equal(cs.heading, 'Whole job $74,000');
+  assert.equal(cs.heading, 'Repair budget $74,000');
   assert.equal(cs.lines[0].label, 'Units $55,000');
   assert.equal(cs.lines[0].detail, 'Unit 4 $28,000, Unit 3 $12,000');
   assert.equal(cs.lines[1].label, 'Building $8,000');
@@ -126,14 +124,13 @@ test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Set
   assert.equal(cs.lines[2].detail, 'security, eviction, title, permits');
   assert.equal(cs.lines[3].label, 'Contingency $5,000');
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
-  assert.ok(cs.lines[0].overlay.some((l) => l.includes('Unit 4 needs its zoning certificate')));
 
   // CostSummary renders cleanly without <p>, <small>, or <caption>
   const { default: CostSummary } = loadJsx('src/components/CostSummary.jsx', {
     './Shell.jsx': { OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children) },
   });
   const html = renderToStaticMarkup(React.createElement(CostSummary, { summary: cs }));
-  assert.match(html, /Whole job \$74,000/);
+  assert.match(html, /Repair budget \$74,000/);
   assert.match(html, /Contingency \$5,000/);
   assert.doesNotMatch(html, /to inspect|\$0,|<p\b|<small\b|<caption\b/);
 });
@@ -197,7 +194,8 @@ test('Task 4: wording rules for seller loans and Value labels', () => {
   assert.equal(sellerLoanText(150000, false), '$150,000');
   assert.equal(sellerLoanText(150000, true), '$150,000');
   const val = valueSummary({ base: SAMPLE_BASE, noi: 80000, units: 10, comps: [{ units: 5, sale_price: 350000 }] });
-  assert.match(val.incomeLine, /^Value by income:/);
+  assert.match(val.incomeLine, /^Value \$/);
+  assert.ok(val.incomeOverlay.some((l) => /^Value by income:/.test(l)));
   assert.match(val.compsLine, /^Value by comps:/);
   assert.doesNotMatch(read('src/components/LoanPosition.jsx'), /\(or what you owe\)/);
   for (const f of ['src/views/Dashboard.jsx', 'src/views/Reviewer.jsx', 'src/lib/dealmath.js']) {
@@ -224,7 +222,7 @@ test('Task 7: readiness badge colors and owner-only gating', () => {
   assert.match(html, /bg-lime-100/);
 
   // Non-owner views never query readiness
-  for (const v of ['Seller.jsx', 'Lender.jsx', 'Reviewer.jsx', 'LeadGuest.jsx', 'Realtor.jsx']) {
+  for (const v of ['Seller.jsx', 'Lender.jsx', 'Reviewer.jsx', 'Realtor.jsx']) {
     assert.doesNotMatch(read(`src/views/${v}`), /readiness/i, v);
   }
   assert.match(read('src/views/Walkthrough.jsx'), /import\.meta\.env\.VITE_SITE_KIND === 'public'/);

@@ -38,7 +38,7 @@ test('Seller page shows one plain-English offer, both parcels, lender clearance,
   );
   assert.match(html, /6801234 and 6807893/);
   assert.match(html, /Fahey loan or rent assignment/);
-  assert.match(html, /How I’ll get this done/);
+  assert.match(html, /The plan/);
   assert.match(html, /Getting the property ready/);
   assert.match(html, /Leasing and collecting rent/);
   assert.match(html, /Keeping you updated/);

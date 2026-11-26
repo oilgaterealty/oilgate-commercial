@@ -149,14 +149,14 @@ test('expected refinance date is distinguished from lender eligibility without i
   assert.equal(eligible.eligibility.status, 'eligible');
 });
 
-test('Added unit rehab starts at $30,000 and is counted once in every plan', () => {
+test('all 10 units use their own plan rehab (never base.tenthUnitRepair)', () => {
   const nineUnits = Array.from({ length: 9 }, (_, i) => ({ id: String(i + 1), rehab: 5000, ready: 4 }));
-  const plan10 = { ...P, months: 14, refiMonth: 12, units: [...nineUnits, { id: '4b', rehab: 0, ready: 8, optional: true }] };
+  const plan10 = { ...P, months: 14, refiMonth: 12, units: [...nineUnits, { id: '4b', rehab: 30000, ready: 8 }] };
   const rDefault = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10 }, plan10);
-  const rEdited = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10, tenthUnitRepair: 45000 }, plan10);
+  const rIgnored = monthlyPlan('wrap', { note: 120000, rate: 6 }, { ...B, units: 10, tenthUnitRepair: 45000 }, plan10);
 
   assert.equal(rDefault.units.length, 10);
   assert.equal(rDefault.eligibility.arvCase, 'stabilized_10_subject_to_approvals');
   near(rDefault.totals.oneTimeTotal, 9 * 5000 + 3000 + 30000, 1e-6);
-  near(rEdited.totals.oneTimeTotal, 9 * 5000 + 3000 + 45000, 1e-6);
+  near(rIgnored.totals.oneTimeTotal, 9 * 5000 + 3000 + 30000, 1e-6);
 });

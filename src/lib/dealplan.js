@@ -92,6 +92,13 @@ export function addedUnitId(planIn) {
   return addedUnitOf(planIn)?.id || '10';
 }
 
+export function overallRepairBudget(planIn = {}) {
+  const plan = normalizePlan(planIn);
+  const unitsTotal = plan.units.reduce((s, u) => s + Math.max(0, num(u.rehab, 0)), 0);
+  const costsTotal = plan.costs.reduce((s, c) => s + Math.max(0, num(c.cost, 0)), 0);
+  return unitsTotal + costsTotal + Math.max(0, num(plan.contingency, 0));
+}
+
 // Owner-only helper so Offers never embeds the deal_plan settings key in public/seller builds.
 export async function loadDealPlan(supabase, slug) {
   const { data: row, error } = await supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${slug}`).maybeSingle();
@@ -99,27 +106,22 @@ export async function loadDealPlan(supabase, slug) {
   return row ? normalizePlan(row.value) : null;
 }
 
-// Which units are in the plan, in lease-up order, and when each starts paying. Always includes the added unit.
+// Which units are in the plan, in lease-up order, and when each starts paying. Always 10 units.
 export function unitSchedule(baseIn, planIn) {
   const o = operating(baseIn);
   const plan = normalizePlan(planIn);
-  const hasEditableAdded = baseIn && baseIn.tenthUnitRepair !== undefined && baseIn.tenthUnitRepair !== null && baseIn.tenthUnitRepair !== '';
   const hasOptional = plan.units.some((u) => u.optional);
-  const chosen = plan.units.map((u) => {
-    if (!u.optional) return { ...u };
-    const rehab = hasEditableAdded ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : (u.rehab > 0 ? u.rehab : BASE_DEFAULTS.tenthUnitRepair);
-    return { ...u, rehab };
-  });
+  const chosen = plan.units.map((u) => ({ ...u }));
   if (!hasOptional && chosen.length === 9) {
     const maxReady = chosen.reduce((m, u) => Math.max(m, u.ready), 0);
     chosen.push({
       id: '10',
-      rehab: hasEditableAdded ? num(baseIn.tenthUnitRepair, BASE_DEFAULTS.tenthUnitRepair) : BASE_DEFAULTS.tenthUnitRepair,
+      rehab: 0,
       ready: maxReady || 16,
       occupied: false,
       rent: null,
-      optional: true,
-      note: 'Unit 10 needs its zoning certificate',
+      optional: false,
+      note: '',
     });
   }
   return chosen.map((u) => {
@@ -155,14 +157,12 @@ function joinLabels(labels) {
 export function buildCostSummary(baseIn = {}, planIn = {}) {
   const plan = normalizePlan(planIn);
   const units = unitSchedule(baseIn, plan);
-  const added = units.find((u) => u.optional) || null;
   const pricedUnits = units.filter((u) => num(u.rehab) > 0);
   const unitsTotal = pricedUnits.reduce((s, u) => s + num(u.rehab), 0);
   const topUnits = [...pricedUnits].sort((a, b) => b.rehab - a.rehab).slice(0, 2);
   const unitsInline = topUnits.map((u) => `Unit ${u.id} ${money(u.rehab)}`).join(', ');
   const unitsOverlay = [
-    ...pricedUnits.map((u) => `Unit ${u.id}${u.optional ? ' (added unit)' : ''}: ${money(u.rehab)}`),
-    ...(added ? [`Unit ${added.id} needs its zoning certificate.`] : []),
+    ...pricedUnits.map((u) => `Unit ${u.id}: ${money(u.rehab)}`),
     `Total units: ${money(unitsTotal)}.`,
   ];
 
@@ -185,7 +185,7 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
   const contingency = Math.max(0, num(plan.contingency, 0));
   const rehabTotal = unitsTotal + buildingTotal + setupTotal;
   const wholeTotal = rehabTotal + contingency;
-  const heading = `Whole job ${money(wholeTotal)}`;
+  const heading = `Repair budget ${money(wholeTotal)}`;
   const headingOverlay = [
     unitsTotal > 0 ? `Units: ${money(unitsTotal)}` : null,
     buildingTotal > 0 ? `Building: ${money(buildingTotal)}` : null,
@@ -221,7 +221,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   const total = units.length;
   const fixedMo = (b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12;
 
-  // One-time costs by month: every listed cost and each unit's rent-ready work (added unit counted once).
+  // One-time costs by month: every listed cost and each unit's rehab.
   const oneTime = {};
   const items = [];
   const add = (label, group, cost, start, end) => {
@@ -232,8 +232,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   };
   for (const c of plan.costs) add(c.label, c.group, c.cost, c.start, c.end);
   for (const u of units) {
-    const label = u.optional ? `Unit ${u.id} (added unit) rehab` : `Unit ${u.id} rent-ready work`;
-    add(label, 'units', u.rehab, Math.min(plan.rehabStartWeek, u.ready), u.ready);
+    add(`Unit ${u.id} rehab`, 'units', u.rehab, Math.min(plan.rehabStartWeek, u.ready), u.ready);
   }
   if (structure === 'wrap' && num(x.closing) > 0) add('Closing costs (in the repair loan)', 'closing', x.closing, 0, 0);
   if (structure === 'cash') items.unshift({ label: 'Down payment and closing', group: 'closing', cost: x.price * (x.downPct / 100 + x.closingPct / 100), start: 0, end: 0 });
@@ -268,7 +267,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   let sellerFundPool = sellerFundStart;
   let sellerLoanBal = Math.max(0, plan.sellerLoanBalance);
   let buyerPool = structure === 'cash' ? 0 : num(x.buyerCash);
-  let lender = 0, credits = 0, refied = false;
+  let lender = 0, credits = 0, carriedBillsAcc = 0, refied = false;
   let peakLender = 0, interestTotal = 0, pointsTotal = 0, sellerTotal = structure === 'cash' ? x.price : 0, buyerKeepsTotal = 0, buyerCashTotal = startingBuyerCash, oneTimeTotal = 0;
   const rows = [];
   let exit = null;
@@ -334,14 +333,28 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
         }
       }
     } else {
-      if (refied) bank = refiPayment;
-      else if (structure === 'master_lease') seller = x.payment * share;
-      else if (structure === 'partnership') seller = x.stepUp * share;
-      else if (structure === 'wrap') seller = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
-      if (structure === 'cash') bank = bankPayment;
-      if (structure === 'master_lease' && !refied) credits += (seller * x.creditPct) / 100;
+      let net;
+      if (structure === 'wrap' && x.billsFromRent && !refied) {
+        const fullNoteMo = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
+        const holdingBillsMo = (b.taxes + b.insurance) / 12 + (num(b.waterMo, 0) > 0 ? num(b.waterMo, 0) : b.utilities / 12) + Math.max(0, total - renting.length) * num(b.emptyUnitUtilMo, 0);
+        const billsPaid = Math.min(collected, holdingBillsMo);
+        const billsCarried = Math.max(0, holdingBillsMo - billsPaid);
+        carriedBillsAcc += billsCarried;
+        const rentAfterBills = Math.max(0, collected - billsPaid);
+        seller = Math.min(rentAfterBills, fullNoteMo);
+        const otherFixedMo = (b.admin + b.turns) / 12 + mgmt;
+        const leftAfterBillsAndNote = Math.max(0, collected - holdingBillsMo - fullNoteMo) - otherFixedMo;
+        net = leftAfterBillsAndNote - reserves - bank - interest - costTotal;
+      } else {
+        if (refied) bank = refiPayment;
+        else if (structure === 'master_lease') seller = x.payment * share;
+        else if (structure === 'partnership') seller = x.stepUp * share;
+        else if (structure === 'wrap') seller = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
+        if (structure === 'cash') bank = bankPayment;
+        if (structure === 'master_lease' && !refied) credits += (seller * x.creditPct) / 100;
 
-      let net = noi - reserves - seller - bank - interest - costTotal;
+        net = noi - reserves - seller - bank - interest - costTotal;
+      }
       if (net < 0) {
         const fromSellerPool = Math.min(sellerPool, -net); sellerPool -= fromSellerPool; net += fromSellerPool;
         const fromBuyerPool = Math.min(buyerPool, -net); buyerPool -= fromBuyerPool; net += fromBuyerPool;
@@ -361,12 +374,15 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     peakLender = Math.max(peakLender, lenderBeforePayoff);
 
     if (exitMonth === m && !refied) {
-      const payoff = sellerPayoff(structure, x, credits, sellerLoanBal);
+      const basePayoff = sellerPayoff(structure, x, credits, sellerLoanBal);
+      const sellerCarriedBills = structure === 'wrap' && x.billsFromRent ? carriedBillsAcc : 0;
+      const payoff = basePayoff + sellerCarriedBills;
       const due = payoff + lenderBeforePayoff + exitClosing;
       refi = {
         loan: refiLoan,
         net: refiNet,
         sellerPayoff: payoff,
+        sellerCarriedBills,
         sellerLoanRemaining: structure === 'seller_rehab' ? sellerLoanBal : null,
         sellerFundInBuyout: structure === 'seller_rehab' && x.addFundToBuyout ? num(x.sellerFund) : 0,
         lenderPayoff: lenderBeforePayoff,
@@ -452,6 +468,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
       oneTimeTotal,
       advancesUsed: advancesStart - sellerPool,
       sellerFundUsed: sellerFundStart - sellerFundPool,
+      sellerCarriedBills: structure === 'wrap' && x.billsFromRent ? carriedBillsAcc : 0,
       cashPrice: structure === 'cash' ? x.price : null,
     },
     sellerLoanPayment, bankLoan, bankPayment,
@@ -475,7 +492,6 @@ export function derivations(p) {
   const x = p.inputs, $ = (v) => (Number.isFinite(v) ? (v < 0 ? '−$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US') : '—');
   const L = [];
   const full = p.full;
-  const addedId = addedUnitId(p.plan);
   const ob = p.operating?.b || {};
   const costWords = [num(ob.mgmtPct) > 0 ? 'management' : null, 'taxes', 'insurance', num(ob.utilities) > 0 ? 'water and trash' : null, num(ob.admin) > 0 ? 'admin' : null, num(ob.turns) > 0 ? 'turns' : null].filter(Boolean);
   const costList = costWords.length > 1 ? `${costWords.slice(0, -1).join(', ')} and ${costWords[costWords.length - 1]}` : costWords[0];
@@ -508,11 +524,11 @@ export function derivations(p) {
         ? `Expected refinance is month ${el.expectedRefiMonth} (${el.monthsStabilizedAtRefi} months stabilized), below the ${el.seasoningRequired}-month lender seasoning requirement.`
         : el.status === 'eligible'
           ? `Stabilizes month ${el.stabilizedMonth}; lender terms confirmed for month ${el.expectedRefiMonth}.`
-          : `No lender has confirmed yet. Expected refinance is month ${el.expectedRefiMonth} (all ${p.units.length} units renting by month ${el.stabilizedMonth}). A lender still has to confirm terms and Unit ${addedId} needs its zoning certificate; the math still runs on today’s numbers.`;
+          : `No lender has confirmed yet. Expected refinance is month ${el.expectedRefiMonth} (all ${p.units.length} units renting by month ${el.stabilizedMonth}). A lender still has to confirm terms; the math still runs on today’s numbers.`;
     L.push(['Lender eligibility', msg]);
   }
   if (p.units.length >= 10) {
-    L.push(['10-unit value', `10-unit plan uses the editable Unit ${addedId} (added unit) rehab budget once. Unit ${addedId} needs its zoning certificate.`]);
+    L.push(['10-unit value', `10-unit plan covers all ${p.units.length} units.`]);
   }
   if (p.totals.peakLender > 0) L.push(['Short-term lender', `Covers what rent and upfront funds don’t, peaking at ${$(p.totals.peakLender)} before refinance payoff. Interest ${$(p.totals.interestTotal)} + points ${$(p.totals.pointsTotal)} through the refinance.`]);
   if (p.sellerLoanPayment) L.push(['Seller’s own loan', `${$(p.sellerLoanPayment)}/mo on ${sellerLoanText(p.plan.sellerLoanBalance, false)} at ${p.plan.sellerLoanRate}%.${p.structure === 'seller_rehab' ? ' Paid from rent each month while his balance pays down.' : ' Months where the seller gets less than that, they cover the difference.'}`]);
@@ -538,7 +554,6 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
   const exit = result.exit;
   const totals = result.totals;
   const rows = result.rows;
-  const addedId = addedUnitId(plan);
   const effectiveBase = base && Object.keys(base).length ? { ...b, ...base } : b;
   const costSummary = buildCostSummary(effectiveBase, plan);
   const val = valueSummary({ base: effectiveBase, noi: full.noi * 12, units: result.units.length || b.units, comps });
@@ -639,11 +654,11 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
   const rehabTotal = rehabItems.reduce((s, item) => s + item.cost, 0);
   const rehabLines = [
     {
-      label: 'Total rehab',
+      label: 'Repair budget',
       value: money(rehabTotal),
       overlay: [
         ...rehabItems.map((item) => `${item.label}: ${money(item.cost)}`),
-        `Total rehab: ${money(rehabTotal)}.`,
+        `Repair budget: ${money(rehabTotal)}.`,
       ],
     },
   ];
@@ -708,7 +723,7 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
   // Step 4: Lease-up
   const leaseUpPills = result.units.map((u, idx) => ({
     label: `${ordinal(idx + 1)} Unit ${u.id} · month ${u.startMonth}`,
-    overlay: [`${money(u.rent)}/mo rent, ready week ${u.ready}, rent-ready work ${money(u.rehab)}`, u.optional ? `Unit ${u.id} needs its zoning certificate.` : null, u.note || null].filter(Boolean),
+    overlay: [`${money(u.rent)}/mo rent, ready week ${u.ready}, rent-ready work ${money(u.rehab)}`, u.note || null].filter(Boolean),
   }));
   const fillAvgSeller = partialStage ? partialStage.sellerAvg : avgSeller;
   const leaseUpLines = [
@@ -780,7 +795,7 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
           value: '',
           overlay: [
             ...val.incomeOverlay,
-            !result.eligibility?.lenderConfirmed ? `No lender has confirmed yet. A lender still has to confirm terms and Unit ${addedId} needs its zoning certificate; the math still runs on today’s numbers.` : null,
+            !result.eligibility?.lenderConfirmed ? 'No lender has confirmed yet. A lender still has to confirm terms; the math still runs on today’s numbers.' : null,
           ].filter(Boolean),
         },
         ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
@@ -854,17 +869,17 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
 }
 
 // Seller financing (structure 'wrap'): title moves at closing and the seller carries a note.
-// Rent pays the note first; taxes, insurance and water are the owner's.
+// When billsFromRent is true, rent pays holding bills first, then the note; unpaid bills are carried by the seller and added to payoff at refinance.
 export function sellerNote(offerIn = {}, planIn = {}) {
   const structure = offerIn?.structure;
-  if (structure !== 'wrap') return { isNote: false, note: 0, notePay: 0 };
+  if (structure !== 'wrap') return { isNote: false, note: 0, notePay: 0, billsFromRent: false };
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
   const plan = normalizePlan(planIn);
   const note = Math.max(0, num(x.note, plan.sellerLoanBalance));
   const rate = Math.max(0, num(x.rate, 0));
   const years = Math.max(0, num(x.amortYears, 0));
   const notePay = years > 0 ? pmt(rate, years, note) : (note * rate) / 100 / 12;
-  return { isNote: true, note, notePay, rate, years };
+  return { isNote: true, note, notePay, rate, years, billsFromRent: Boolean(x.billsFromRent) };
 }
 
 function repairLoanNumbers(baseIn = {}, planIn = {}, offerIn = {}) {
@@ -874,7 +889,7 @@ function repairLoanNumbers(baseIn = {}, planIn = {}, offerIn = {}) {
   const costsTotal = plan.costs.filter((c) => c.cost > 0).reduce((s, c) => s + c.cost, 0);
   const rehabBudget = (units.length > 0 || plan.costs.length > 0)
     ? (unitsTotal + costsTotal)
-    : (Math.max(0, num(baseIn?.rehab, 0)) + Math.max(0, num(baseIn?.tenthUnitRepair, 0)));
+    : Math.max(0, num(baseIn?.rehab, 0));
   const contingency = Math.max(0, num(plan.contingency, 0));
   const pointsPct = Math.max(0, num(plan.lenderPoints, 0));
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : (offerIn || {});
@@ -908,6 +923,34 @@ function repairLoanNumbers(baseIn = {}, planIn = {}, offerIn = {}) {
     shortCarry,
     closing,
   };
+}
+
+export function carriedBillsTotal(baseIn = {}, planIn = {}, offerIn = {}) {
+  const plan = normalizePlan(planIn);
+  const noteInfo = sellerNote(offerIn, plan);
+  if (!noteInfo.isNote || !noteInfo.billsFromRent) return 0;
+  const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
+  if (Number.isFinite(+x.carriedBills) && +x.carriedBills > 0) return +x.carriedBills;
+
+  const rent = Math.max(0, num(baseIn?.rent, 0));
+  const taxesMo = Math.max(0, num(baseIn?.taxes, 0)) / 12;
+  const insuranceMo = Math.max(0, num(baseIn?.insurance, 0)) / 12;
+  const waterMo = Math.max(0, num(baseIn?.waterMo, 0));
+  const emptyUnitUtilMo = Math.max(0, num(baseIn?.emptyUnitUtilMo, 0));
+  const units = unitSchedule(baseIn, plan);
+  const totalUnits = units.length || 10;
+  const stabilizedMonth = units.length ? Math.max(...units.map((u) => u.startMonth)) : 0;
+  const endMonth = Math.max(Math.round(num(plan.refiMonth, 12)), stabilizedMonth, 1);
+
+  let running = 0;
+  for (let m = 1; m <= endMonth; m++) {
+    const rented = units.filter((u) => u.startMonth <= m).length;
+    const empty = Math.max(0, totalUnits - rented);
+    const rentIn = rent * rented;
+    const billsMo = taxesMo + insuranceMo + waterMo + empty * emptyUnitUtilMo;
+    running += Math.max(0, billsMo - rentIn);
+  }
+  return running;
 }
 
 // Refinance math at full occupancy (all 10 units rented). Pure function.
@@ -948,7 +991,9 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
   const inHand = loan - feesPctAmt - refiFeesFlat - refiReserve;
 
   const noteInfo = sellerNote(offerIn, plan);
-  const sellerPayoff = noteInfo.isNote ? noteInfo.note : Math.max(0, num(plan.sellerLoanBalance, 0));
+  const sellerNotePrincipal = noteInfo.isNote ? noteInfo.note : Math.max(0, num(plan.sellerLoanBalance, 0));
+  const sellerCarriedBills = carriedBillsTotal(baseIn, plan, offerIn);
+  const sellerPayoff = sellerNotePrincipal + sellerCarriedBills;
   const sellerPayoffText = sellerLoanText(sellerPayoff, false);
   const repairLoanPayoff = drawnUnused + shortCarry;
   const repairLoanPayoffContUsed = drawnUsed + shortCarry;
@@ -975,11 +1020,16 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
   ].filter(Boolean);
 
   const sellerPayoffOverlay = noteInfo.isNote
-    ? [`Seller’s note ${sellerPayoffText} paid off at refinance.`]
+    ? [`Seller’s note ${sellerLoanText(sellerNotePrincipal, false)} paid off at refinance.${sellerCarriedBills > 0 ? ` Plus ${money(sellerCarriedBills)} in carried bills.` : ''}`]
     : [`Seller’s current loan balance ${sellerPayoffText} paid off at refinance.`];
 
+  const sellerCarriedBillsLabel = 'Seller’s carried bills, paid at refinance';
+  const sellerCarriedBillsOverlay = noteInfo.billsFromRent
+    ? [`Holding bills (property tax, insurance, water and trash) not covered by rent during lease-up: ${money(sellerCarriedBills)}, added to the seller’s payoff at refinance.`]
+    : [];
+
   const repairLoanOverlay = [
-    rehabBudget > 0 ? `Rehab budget: ${money(rehabBudget)}` : null,
+    rehabBudget > 0 ? `Repair budget: ${money(rehabBudget)}` : null,
     closingInLoan > 0 ? `Closing costs: ${money(closingInLoan)} in the repair loan` : null,
     points > 0 ? `Points (${pointsPct}% on ${money(fullLoan)}): ${money(points)}` : null,
     contingency > 0 ? `Contingency (if all used): ${money(contingency)}` : null,
@@ -989,15 +1039,17 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
 
   const closingOverlay = closing > 0 ? [`${noteInfo.isNote ? 'Closing costs' : 'Closing costs at refinance'}: ${money(closing)}.`] : [];
 
+  const carriedPart = sellerCarriedBills > 0 ? ` − ${money(sellerCarriedBills)} carried bills` : '';
   const leftForYouOverlay = [
-    `${money(inHand)} in hand − ${money(sellerPayoff)} seller − ${money(repairLoanPayoff)} repair loan (contingency unused)${closing > 0 ? ` − ${money(closing)} closing` : ''} = ${money(leftForYou)}.`,
+    `${money(inHand)} in hand − ${money(sellerNotePrincipal)} seller${carriedPart} − ${money(repairLoanPayoff)} repair loan (contingency unused)${closing > 0 ? ` − ${money(closing)} closing` : ''} = ${money(leftForYou)}.`,
   ];
 
   const leftForYouContUsedOverlay = [
-    `${money(inHand)} in hand − ${money(sellerPayoff)} seller − ${money(repairLoanPayoffContUsed)} repair loan (contingency used)${closing > 0 ? ` − ${money(closing)} closing` : ''} = ${money(leftForYouContUsed)}.`,
+    `${money(inHand)} in hand − ${money(sellerNotePrincipal)} seller${carriedPart} − ${money(repairLoanPayoffContUsed)} repair loan (contingency used)${closing > 0 ? ` − ${money(closing)} closing` : ''} = ${money(leftForYouContUsed)}.`,
   ];
 
   return {
+    billsFromRent: Boolean(noteInfo.isNote && noteInfo.billsFromRent),
     estimatedValue,
     estimatedValueLabel: 'Value',
     estimatedValueOverlay,
@@ -1015,6 +1067,10 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
     reserve: refiReserve,
     inHand,
     inHandOverlay,
+    sellerNotePrincipal,
+    sellerCarriedBills,
+    sellerCarriedBillsLabel,
+    sellerCarriedBillsOverlay,
     sellerPayoff,
     sellerPayoffText,
     sellerPayoffLabel: noteInfo.isNote ? 'Seller’s note paid off' : 'Seller paid off',
@@ -1047,40 +1103,76 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
   const reservesPerUnit = Math.max(0, num(baseIn?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit));
   const noteInfo = sellerNote(offerIn, plan);
   const isNote = noteInfo.isNote;
+  const billsFromRent = Boolean(isNote && noteInfo.billsFromRent);
   const sellerLoanMo = isNote
     ? noteInfo.notePay
     : (plan.sellerLoanBalance > 0 ? pmt(plan.sellerLoanRate, plan.sellerLoanYears, plan.sellerLoanBalance) : 0);
-  const costsWord = isNote ? 'Note and bills' : 'Seller’s costs';
+  const costsWord = billsFromRent ? 'Seller carries' : (isNote ? 'Note and bills' : 'Seller’s costs');
 
   const rows = [];
   for (let units = 0; units <= totalUnits; units++) {
     const emptyUnits = totalUnits - units;
     const rentIn = rent * units;
     const emptyUtilTotal = emptyUnits * emptyUnitUtilMo;
+    const billsTotal = taxesMo + insuranceMo + waterMo + emptyUtilTotal;
 
-    // Seller financing: rent pays the note first. Any part of a payment rent doesn't cover waits and is paid at the refinance.
-    const notePaid = isNote ? Math.min(rentIn, sellerLoanMo) : sellerLoanMo;
-    const noteWaits = isNote ? Math.max(0, sellerLoanMo - notePaid) : 0;
-    const noteText = noteWaits > 0
-      ? `Note to the seller: ${money(notePaid)}/mo paid from rent, ${money(noteWaits)}/mo waits until the refinance`
-      : `${isNote ? 'Note to the seller' : 'Seller’s loan'}: ${money(sellerLoanMo)}/mo`;
-    const sellerCostsBreakdown = [
-      sellerLoanMo > 0 ? { key: 'sellerLoan', label: isNote ? 'Note to the seller' : 'Seller’s loan', amount: notePaid, estimate: true, text: noteText } : null,
-      taxesMo > 0 ? { key: 'taxes', label: 'Property tax', amount: taxesMo, estimate: false, text: `Property tax: ${money(taxesMo)}/mo` } : null,
-      insuranceMo > 0 ? { key: 'insurance', label: 'Insurance', amount: insuranceMo, estimate: true, text: `Insurance: ${money(insuranceMo)}/mo` } : null,
-      waterMo > 0 ? { key: 'water', label: 'Water and trash', amount: waterMo, estimate: true, text: `Water and trash: ${money(waterMo)}/mo` } : null,
-      emptyUtilTotal > 0 ? { key: 'emptyUtils', label: `Empty-unit utilities (${emptyUnits})`, amount: emptyUtilTotal, estimate: true, text: `Empty-unit utilities (${emptyUnits} × ${money(emptyUnitUtilMo)}): ${money(emptyUtilTotal)}/mo` } : null,
-    ].filter(Boolean);
+    let notePaid, noteWaits, billsPaidFromRent, billsSellerCarries, sellerCostsBreakdown, sellerCosts, sellerCostsOverlay, covered, noteCovered, aboveSellerCosts;
 
-    const sellerCosts = notePaid + taxesMo + insuranceMo + waterMo + emptyUtilTotal;
-    const sellerCostsOverlay = sellerCostsBreakdown.length
-      ? [...sellerCostsBreakdown.map((i) => i.text), `${isNote ? 'Note and bills' : 'Total seller’s costs'}: ${money(sellerCosts)}/mo.`]
-      : ['$0/mo'];
+    if (billsFromRent) {
+      // Rent pays holding bills first, then the note. Seller carries uncovered bills (paid at refi); unpaid note waits.
+      billsPaidFromRent = Math.min(rentIn, billsTotal);
+      billsSellerCarries = Math.max(0, billsTotal - billsPaidFromRent);
+      const rentAfterBills = Math.max(0, rentIn - billsPaidFromRent);
+      notePaid = Math.min(rentAfterBills, sellerLoanMo);
+      noteWaits = Math.max(0, sellerLoanMo - notePaid);
+      const noteText = noteWaits > 0
+        ? `Note to the seller: ${money(notePaid)}/mo paid from rent, ${money(noteWaits)}/mo waits until the refinance`
+        : `Note to the seller: ${money(sellerLoanMo)}/mo paid from rent`;
+      sellerCostsBreakdown = [
+        taxesMo > 0 ? { key: 'taxes', label: 'Property tax', amount: taxesMo, estimate: false, text: `Property tax: ${money(taxesMo)}/mo` } : null,
+        insuranceMo > 0 ? { key: 'insurance', label: 'Insurance', amount: insuranceMo, estimate: true, text: `Insurance: ${money(insuranceMo)}/mo` } : null,
+        waterMo > 0 ? { key: 'water', label: 'Water and trash', amount: waterMo, estimate: true, text: `Water and trash: ${money(waterMo)}/mo` } : null,
+        emptyUtilTotal > 0 ? { key: 'emptyUtils', label: `Empty-unit utilities (${emptyUnits})`, amount: emptyUtilTotal, estimate: true, text: `Empty-unit utilities (${emptyUnits} × ${money(emptyUnitUtilMo)}): ${money(emptyUtilTotal)}/mo` } : null,
+        sellerLoanMo > 0 ? { key: 'sellerLoan', label: 'Note to the seller', amount: notePaid, estimate: true, text: noteText } : null,
+      ].filter(Boolean);
+      sellerCosts = billsSellerCarries;
+      sellerCostsOverlay = [
+        ...sellerCostsBreakdown.filter((i) => i.key !== 'sellerLoan').map((i) => i.text),
+        `Holding bills total: ${money(billsTotal)}/mo.`,
+        `Paid from rent: ${money(billsPaidFromRent)}/mo.`,
+        billsSellerCarries > 0 ? `Seller carries (paid at refinance): ${money(billsSellerCarries)}/mo.` : 'Bills covered by rent.',
+        sellerLoanMo > 0 ? noteText : null,
+      ].filter(Boolean);
+      covered = units === 0 ? 'no' : (rentIn + 1e-6 < billsTotal + sellerLoanMo ? 'partly' : 'yes');
+      noteCovered = units === 0 ? 'no' : (rentAfterBills + 1e-6 < sellerLoanMo ? 'partly' : 'yes');
+      aboveSellerCosts = Math.max(0, rentIn - billsTotal - sellerLoanMo);
+    } else {
+      billsPaidFromRent = 0;
+      billsSellerCarries = 0;
+      // Seller financing: rent pays the note first. Any part of a payment rent doesn't cover waits and is paid at the refinance.
+      notePaid = isNote ? Math.min(rentIn, sellerLoanMo) : sellerLoanMo;
+      noteWaits = isNote ? Math.max(0, sellerLoanMo - notePaid) : 0;
+      const noteText = noteWaits > 0
+        ? `Note to the seller: ${money(notePaid)}/mo paid from rent, ${money(noteWaits)}/mo waits until the refinance`
+        : `${isNote ? 'Note to the seller' : 'Seller’s loan'}: ${money(sellerLoanMo)}/mo`;
+      sellerCostsBreakdown = [
+        sellerLoanMo > 0 ? { key: 'sellerLoan', label: isNote ? 'Note to the seller' : 'Seller’s loan', amount: notePaid, estimate: true, text: noteText } : null,
+        taxesMo > 0 ? { key: 'taxes', label: 'Property tax', amount: taxesMo, estimate: false, text: `Property tax: ${money(taxesMo)}/mo` } : null,
+        insuranceMo > 0 ? { key: 'insurance', label: 'Insurance', amount: insuranceMo, estimate: true, text: `Insurance: ${money(insuranceMo)}/mo` } : null,
+        waterMo > 0 ? { key: 'water', label: 'Water and trash', amount: waterMo, estimate: true, text: `Water and trash: ${money(waterMo)}/mo` } : null,
+        emptyUtilTotal > 0 ? { key: 'emptyUtils', label: `Empty-unit utilities (${emptyUnits})`, amount: emptyUtilTotal, estimate: true, text: `Empty-unit utilities (${emptyUnits} × ${money(emptyUnitUtilMo)}): ${money(emptyUtilTotal)}/mo` } : null,
+      ].filter(Boolean);
 
-    const covered = units === 0 ? 'no' : (rentIn + 1e-6 < sellerCosts ? 'partly' : 'yes');
-    const noteCovered = units === 0 ? 'no' : (rentIn + 1e-6 < sellerLoanMo ? 'partly' : 'yes');
-    // Master lease: a shortfall below the seller's costs stays the seller's. Seller financing: the note and bills are the owner's, so a shortfall is ours.
-    const aboveSellerCosts = isNote ? rentIn - sellerCosts : Math.max(0, rentIn - sellerCosts);
+      sellerCosts = notePaid + taxesMo + insuranceMo + waterMo + emptyUtilTotal;
+      sellerCostsOverlay = sellerCostsBreakdown.length
+        ? [...sellerCostsBreakdown.map((i) => i.text), `${isNote ? 'Note and bills' : 'Total seller’s costs'}: ${money(sellerCosts)}/mo.`]
+        : ['$0/mo'];
+
+      covered = units === 0 ? 'no' : (rentIn + 1e-6 < sellerCosts ? 'partly' : 'yes');
+      noteCovered = units === 0 ? 'no' : (rentIn + 1e-6 < sellerLoanMo ? 'partly' : 'yes');
+      // Master lease: a shortfall below the seller's costs stays the seller's. Seller financing: the note and bills are the owner's, so a shortfall is ours.
+      aboveSellerCosts = isNote ? rentIn - sellerCosts : Math.max(0, rentIn - sellerCosts);
+    }
 
     const reservesMo = (units * reservesPerUnit) / 12;
     const buyerCosts = interestUnused + reservesMo;
@@ -1099,17 +1191,26 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
     const buyerNet = aboveSellerCosts - buyerCosts;
     const buyerNetContUsed = aboveSellerCosts - buyerCostsContUsed;
 
+    const aboveLabel = billsFromRent
+      ? `Rent after bills and note: ${money(aboveSellerCosts)}/mo`
+      : `${isNote ? 'Rent after the note and bills' : 'Above seller’s costs'}: ${money(aboveSellerCosts)}/mo`;
+    const carryNoteLine = billsFromRent && (billsSellerCarries > 0 || noteWaits > 0)
+      ? 'Buyer pays $0 out of pocket for note or bills during lease-up.'
+      : null;
+
     const buyerNetOverlay = [
-      `${isNote ? 'Rent after the note and bills' : 'Above seller’s costs'}: ${money(aboveSellerCosts)}/mo`,
+      aboveLabel,
+      carryNoteLine,
       ...buyerCostsBreakdown.map((i) => i.text),
       `You net: ${money(buyerNet)}/mo.`,
-    ];
+    ].filter(Boolean);
 
     const buyerNetContUsedOverlay = [
-      `${isNote ? 'Rent after the note and bills' : 'Above seller’s costs'}: ${money(aboveSellerCosts)}/mo`,
+      aboveLabel,
+      carryNoteLine,
       ...buyerCostsContUsedBreakdown.map((i) => i.text),
       `You net (contingency used): ${money(buyerNetContUsed)}/mo.`,
-    ];
+    ].filter(Boolean);
 
     rows.push({
       units,
@@ -1121,6 +1222,9 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
       noteCovered,
       notePaid,
       noteWaits,
+      billsTotal,
+      billsPaidFromRent,
+      billsSellerCarries,
       aboveSellerCosts,
       buyerCosts,
       buyerCostsBreakdown,
@@ -1142,6 +1246,7 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
   return {
     rows,
     isNote,
+    billsFromRent,
     notePay: isNote ? sellerLoanMo : 0,
     costsLabel: costsWord,
     sellerCoveredAt,
@@ -1200,6 +1305,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
         ourRent,
         marketRent,
         gap: marketRent === null ? null : marketRent - ourRent,
+        note: u.note || '',
       };
     });
   const total = units.length || 10;
@@ -1300,6 +1406,7 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
     costHeadingOverlay: cs.headingOverlay,
     cost: cs.lines,
     rows: table.rows,
+    billsFromRent: table.billsFromRent,
     costsLabel: table.costsLabel,
     sellerCoveredAt: table.sellerCoveredAt,
     breakEvenUnits: table.breakEvenUnits,
@@ -1374,21 +1481,32 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
 
 // Seller-facing summary for seller financing. Steps and the seller's own terms only; none of the buyer's numbers.
 function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
+  const billsFromRent = Boolean(table.billsFromRent);
   const payoffText = sellerLoanText(table.refi.sellerPayoff, true);
-  const coveredAt = table.noteCoveredAt;
+  const notePrincipalText = sellerLoanText(table.refi.sellerNotePrincipal ?? table.refi.sellerPayoff, true);
+  const carriedBillsAmt = Math.round(num(table.refi.sellerCarriedBills, 0));
+  const coveredAt = billsFromRent ? table.sellerCoveredAt : table.noteCoveredAt;
   const notePay = table.notePay;
-  // The seller's table: rent in, the note payment we assume he pays from it, the bills I pay, and whether the note is covered.
   const BILL_KEYS = ['taxes', 'insurance', 'water', 'emptyUtils'];
   const sellerTable = table.rows.map((r) => {
-    const bills = (r.sellerCostsBreakdown || []).filter((i) => BILL_KEYS.includes(i.key));
+    const billsList = (r.sellerCostsBreakdown || []).filter((i) => BILL_KEYS.includes(i.key));
+    const billsTotal = billsList.reduce((a, i) => a + i.amount, 0);
     return {
       units: r.units,
       rentIn: r.rentIn,
       note: r.notePaid ?? notePay,
       ...(r.noteWaits > 0 ? { noteWaits: r.noteWaits } : {}),
-      bills: bills.reduce((a, i) => a + i.amount, 0),
-      billsLines: bills.map((i) => i.text),
-      covered: r.noteCovered,
+      bills: billsFromRent ? (r.billsSellerCarries ?? 0) : billsTotal,
+      billsLines: billsFromRent
+        ? [
+            ...billsList.map((i) => i.text),
+            `Paid from rent: ${money(r.billsPaidFromRent ?? 0)}/mo`,
+            (r.billsSellerCarries ?? 0) > 0
+              ? `You carry until refinance: ${money(r.billsSellerCarries)}/mo`
+              : 'All bills paid from rent',
+          ]
+        : billsList.map((i) => i.text),
+      covered: billsFromRent ? r.covered : r.noteCovered,
     };
   });
   const rl = table.repairLoan || {};
@@ -1401,6 +1519,40 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
   ].filter(Boolean);
   const repairsTotal = Math.round(num(costSummary.total, 0));
   const repairsOverlay = (costSummary.lines || []).map((l) => l.label.replace(/^Setup /, 'Setup ')).filter(Boolean);
+
+  if (billsFromRent) {
+    const terms = [
+      { label: 'Your note', value: notePrincipalText, overlay: ['You deed me the building at closing and carry a note for this amount. It is paid off at the refinance.'] },
+      { label: 'Note payment', value: `${money(notePay)}/mo`, overlay: ['Paid from rent after property tax, insurance, water and trash. Any part rent does not cover waits until the refinance.'] },
+      { label: 'Holding bills', value: 'Paid from rent first', overlay: ['Rent pays property tax, insurance, water and trash first. Whatever rent does not cover yet, you carry and it is added to your payoff at the refinance.'] },
+      { label: 'All bills + note covered', value: coveredAt !== null ? `Covered at ${coveredAt} units rented` : 'Rent pays bills first, then note', overlay: [] },
+      { label: 'Paid off when', value: `All ${unitsCount} units are rented`, overlay: [`I refinance and pay off your note (${notePrincipalText})${carriedBillsAmt > 0 ? ` plus ${money(carriedBillsAmt)} in carried bills` : ''}.`] },
+      ...(repairLend > 0 ? [{ label: 'You can also fund the repairs', value: `${money(repairLend)} second note`, overlay: repairLendOverlay }] : []),
+    ];
+    const steps = [
+      { title: 'Seller financing', detail: `At closing you deed me the building and carry a note for ${notePrincipalText}. I take over the leasing and the repairs.`, overlay: [] },
+      { title: 'Repairs', detail: repairsTotal > 0 ? `I pay for the repairs, ${money(repairsTotal)}. You put in nothing.` : 'I pay for the repairs. You put in nothing.', overlay: repairsOverlay },
+      { title: 'Rent', detail: `Rent pays the property tax, insurance, water and trash first, then your note.${coveredAt !== null ? ` Everything is covered at ${coveredAt} units rented.` : ''} Whatever rent does not cover yet, you carry: unpaid note payments wait, and carried bills are added to your payoff at the refinance.`, overlay: [] },
+      ...(repairLend > 0 ? [{ title: 'Your choice: fund the repairs', detail: `You can also be my repair lender: ${money(repairLend)} as a second note, paid off at the refinance with your first note.`, overlay: repairLendOverlay }] : []),
+      { title: 'Refinance', detail: `Once all ${unitsCount} are rented, I refinance and pay off your note and any carried bills.`, overlay: [] },
+    ];
+    return {
+      version: 1,
+      locked: false,
+      billsFromRent: true,
+      title,
+      intro: 'You deed me the building at closing and carry a note. Rent pays the holding bills (property tax, insurance, water and trash) first, then your note. Whatever rent does not cover yet, you carry: the note payment waits and carried bills are added to your payoff at the refinance.',
+      sellerTable,
+      sellerCoveredAt: coveredAt,
+      refiLine: carriedBillsAmt > 0
+        ? `Once all ${unitsCount} are rented, I refinance and pay off your note (${notePrincipalText}) plus ${money(carriedBillsAmt)} in carried bills: ${payoffText}.`
+        : `Once all ${unitsCount} are rented, I refinance and pay off your note: ${payoffText}.`,
+      terms,
+      steps,
+      guide,
+    };
+  }
+
   const terms = [
     { label: 'Your note', value: payoffText, overlay: ['You deed me the building at closing and carry a note for this amount. It is paid off at the refinance.'] },
     { label: 'Note payment', value: `${money(notePay)}/mo`, overlay: ['You keep paying your own loan from it.'] },

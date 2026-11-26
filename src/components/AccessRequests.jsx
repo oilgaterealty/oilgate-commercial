@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { roleLabel, when } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty } from './Shell.jsx';
 
-const roles = ['reviewer', 'lender', 'viewer', 'realtor', 'seller', 'lead_guest'];
+const roles = ['reviewer', 'lender', 'viewer', 'realtor', 'seller'];
 
 export default function AccessRequests({ dealId, onApproved }) {
   const [rows, setRows] = useState(null);

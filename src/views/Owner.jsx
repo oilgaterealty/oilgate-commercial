@@ -19,6 +19,7 @@ import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 import OwnerRentValue from '../components/OwnerRentValue.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
+import Activity from '../components/Activity.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./DealPlan.jsx'));
@@ -26,20 +27,23 @@ const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.
 const BASE_TABS = [
   ['overview', 'Overview'],
   ['offers', 'Offers'],
+  ['rent-value', 'Rent & value'],
+  ['lenders', 'Loan & lenders'],
   ['walkthrough', 'Walkthrough'],
   ['tenants', 'Tenants'],
   ['comps', 'Comps'],
   ['photos', 'Photos'],
   ['messages', 'Messages'],
   ['files', 'Files'],
+  ['activity', 'Recent activity'],
   ['settings', 'Settings'],
 ];
 const TABS = siteRules(SITE_KIND).ownerAllowed
-  ? [...BASE_TABS.slice(0, 2), ['plans', 'Plans'], ...BASE_TABS.slice(2, 8), ['city-records', 'City records'], ...BASE_TABS.slice(8)]
+  ? [...BASE_TABS.slice(0, 2), ['plans', 'Plans'], ...BASE_TABS.slice(2, 10), ['city-records', 'City records'], ...BASE_TABS.slice(10)]
   : BASE_TABS;
-const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['lead_guest', 'Lead guest'], ['viewer', 'Viewer']];
+const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
-const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller', 'lead_guest'];
+const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller'];
 
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
 
@@ -110,7 +114,6 @@ function People({ deal }) {
             <option value="seller">Seller: the seller page only</option>
             <option value="reviewer">Reviewer: unit photos, comps, and offers and files you share</option>
             <option value="lender">Lender: the plan, city records, unit photos, and terms</option>
-            <option value="lead_guest">Lead guest: deal overview and the one lead offer</option>
             <option value="viewer">Viewer: cover photo, unit photos and an overview, read only</option>
           </select>
           {err && <p className="text-sm text-red-700">{err}</p>}
@@ -125,12 +128,12 @@ function People({ deal }) {
   );
 }
 
-const LINK_ROLES = [['lead_guest', 'Lead guest'], ['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['viewer', 'Viewer'], ['seller', 'Seller']];
+const LINK_ROLES = [['viewer', 'Viewer'], ['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['seller', 'Seller']];
 
 // One private link per verified recipient email. Turning a link off or letting it expire removes access.
 function RoleLinks({ deal, onJoined }) {
   const [links, setLinks] = useState(null);
-  const [f, setF] = useState({ role: 'lead_guest', label: '', recipient_email: '', expires_days: 14 });
+  const [f, setF] = useState({ role: 'viewer', label: '', recipient_email: '', expires_days: 14 });
   const [fresh, setFresh] = useState(null);
   const [msg, setMsg] = useState('');
   const load = () => supabase.from('commercial_role_links').select('id,role,label,recipient_email,created_at,expires_at,revoked_at,uses').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setLinks(data || []));
@@ -264,15 +267,15 @@ export default function Owner({ deal: initial, me, tab }) {
         </div>
       </div>
 
-      {active === 'overview' && (
+      {active === 'overview' && <Dashboard deal={deal} me={me} role="owner" />}
+      {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
+      {active === 'rent-value' && <OwnerRentValue deal={deal} />}
+      {active === 'lenders' && (
         <div className="space-y-5">
-          <Dashboard deal={deal} me={me} role="owner" />
           <LoanPosition deal={deal} role="owner" />
-          <OwnerRentValue deal={deal} />
           <LenderBoard deal={deal} me={me} role="owner" />
         </div>
       )}
-      {active === 'offers' && <Offers deal={deal} canSave me={me} role="owner" />}
       {active === 'plans' && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
         <Suspense fallback={<Empty>Loading…</Empty>}>
           <DealPlan key={deal.id} deal={deal} role="owner" />
@@ -289,6 +292,7 @@ export default function Owner({ deal: initial, me, tab }) {
           <CityRecords deal={deal} role="owner" />
         </Suspense>
       )}
+      {active === 'activity' && <Activity deal={deal} title="Recent activity" />}
       {active === 'settings' && <div className="space-y-6"><People deal={deal} /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Settings deal={deal} onSaved={setDeal} /><OwnerAlerts /></div><Notes deal={deal} me={me} /></div>}
     </div>
   );

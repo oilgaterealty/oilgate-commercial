@@ -3,7 +3,7 @@ import { DictatedField } from '../components/Dictation.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
-import Switches, { SendWhatIf } from '../components/Switches.jsx';
+import { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
@@ -110,8 +110,8 @@ export function Results({ r }) {
   );
 }
 
-function BuildingNumbers({ base, setBase, o, owner, comps }) {
-  const [open, setOpen] = useState(!owner);
+function BuildingNumbers({ base, setBase, o, comps }) {
+  const [open, setOpen] = useState(false);
   const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: o.b.units, comps });
   const buildingOverlay = [
     ...val.incomeOverlay,
@@ -120,25 +120,27 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
   ];
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" onClick={() => setOpen(!open)} className="flex flex-1 items-center justify-between text-left">
-          <span className="font-display text-xl font-semibold">Building numbers</span>
-          <span className="text-sm text-ink-soft">{open ? '▴' : '▾'}</span>
-        </button>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-xl font-semibold">Building numbers</h2>
+        <div className="flex items-center gap-1.5 text-sm">
           <OverlayTrigger lines={buildingOverlay} className="font-semibold text-ink">{val.incomeLine}</OverlayTrigger>
+          <InfoTip label="How value is figured" lines={buildingOverlay} />
         </div>
       </div>
-      {open && (
-        <div className="mt-3">
-          <div className="grid gap-x-8 md:grid-cols-2">
-            {BASE_FIELDS.filter(([k]) => !['tenthUnitRepair', 'rent'].includes(k)).map(([k, l, u]) => (
+      <div className="mt-3 border-t border-line pt-2.5">
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
+          <span>Assumptions</span>
+          <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
+        </button>
+        {open && (
+          <div className="mt-3 grid gap-x-8 md:grid-cols-2">
+            {BASE_FIELDS.map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
                 onChange={(v) => setBase({ ...base, [k]: v })} />
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Card>
   );
 }
@@ -181,8 +183,8 @@ function StoryLines({ lines }) {
 }
 
 // Each offer reads as its units-rented table and refinance plan. All math and estimates live in tap/hover overlays.
-export function OptionCard({ o, i, story, planHref }) {
-  const hasUnitsGuide = isUnitsGuide(story?.unitsGuide);
+export function OptionCard({ o, i, story, planHref, hideUnitsTable = false }) {
+  const hasUnitsGuide = !hideUnitsTable && isUnitsGuide(story?.unitsGuide);
   const h = story?.headline;
   const primaryHeadlines = h ? [h.moneyIn, h.cashOut] : [];
   const secondaryHeadlines = h ? [h.sellerTotal, h.maxSellerAtRefi] : [];
@@ -533,7 +535,6 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   return (
     <div className="space-y-5">
       {model.error && <p role="alert" className="text-sm text-red-700">{model.error}</p>}
-      <Switches base={base} setBase={setBase} owner={owner} />
       {!owner && <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />}
       <div className="flex flex-wrap items-center gap-2" aria-label="Offer layout">
         {owner && <Button kind={view === 'table' ? 'primary' : 'secondary'} onClick={() => setView('table')} aria-pressed={view === 'table'}>Table view</Button>}
@@ -558,7 +559,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
       {offers.length > 0 && (view === 'cards' || (!owner && view === 'table')) && (
         <div className={owner ? 'grid items-start gap-4 lg:grid-cols-2' : 'max-w-xl'}>
           {(owner ? sortedOffers : sortedOffers.slice(0, 1)).map((x, i) => (
-            <OptionCard key={x.id} o={x} i={i} story={stories[x.id]} planHref={planHrefOf(x)} />
+            <OptionCard key={x.id} o={x} i={i} story={stories[x.id]} planHref={planHrefOf(x)} hideUnitsTable={role === 'reviewer'} />
           ))}
         </div>
       )}
@@ -619,7 +620,6 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
                       {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_reviewer} onChange={(e) => patch(cur.id, { share_reviewer: e.target.checked })} /> Reviewer</label>
                       <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_lender} onChange={(e) => patch(cur.id, { share_lender: e.target.checked })} /> Lender</label>
-                      {'share_lead_guest' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(cur.share_lead_guest)} onChange={(e) => patch(cur.id, { share_lead_guest: e.target.checked })} /> Lead guest</label>}
                     </div>
                   </>
                 )}

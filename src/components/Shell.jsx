@@ -201,9 +201,9 @@ export function InfoTip({ label = 'Details', lines = [] }) {
         aria-expanded={isOpen}
         aria-describedby={isOpen ? id : undefined}
         {...triggerProps}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-paper text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
+        className="group -m-1.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-soft/60 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
       >
-        i
+        <span aria-hidden="true" className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[10px] font-normal leading-none">i</span>
       </button>
       {portal}
     </>

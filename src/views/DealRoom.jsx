@@ -9,17 +9,15 @@ const Owner = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VIT
 const Realtor = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Realtor.jsx'));
 const Seller = import.meta.env.VITE_SITE_KIND === 'public' ? null : lazy(() => import('./Seller.jsx'));
 const Lender = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Lender.jsx'));
-const LeadGuest = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./LeadGuest.jsx'));
 const Reviewer = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Reviewer.jsx'));
 
-const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'lead_guest', 'viewer'];
+const PREVIEWABLE = ['seller', 'realtor', 'reviewer', 'lender', 'viewer'];
 
 function Page({ role, ...p }) {
   if (role === 'owner' && Owner) return <Owner {...p} />;
   if (role === 'realtor' && Realtor) return <Realtor {...p} />;
   if (role === 'seller' && Seller) return <Seller {...p} />;
   if (role === 'lender' && Lender) return <Lender {...p} />;
-  if (role === 'lead_guest' && LeadGuest) return <LeadGuest {...p} />;
   if (Reviewer) return <Reviewer {...p} role={role} />; // reviewer, viewer, guest
   return null;
 }

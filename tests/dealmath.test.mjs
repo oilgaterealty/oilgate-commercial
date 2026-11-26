@@ -65,11 +65,11 @@ test('bills are locked for everyone but the owner; rent is a what-if', async () 
   for (const k of ['rent', 'refiRate', 'value', 'vacancyPct']) assert.ok(!KNOWN_BASE.includes(k), k);
 });
 
-test('added unit repair cost is always included once in the budget and in every offer', () => {
-  const baseWithRepair = operating({ ...B, tenthUnitRepair: 12000 });
+test('repair budget is stored on base.rehab without a separate tenthUnitRepair add-on', () => {
+  const baseWithRepair = operating({ ...B, rehab: 32000, tenthUnitRepair: 12000 });
   assert.equal(baseWithRepair.b.rehab, 32000);
-  near(evaluate('wrap', { note: 400000 }, { ...B, tenthUnitRepair: 12000 }).allIn, 412000, 0.01);
-  near(evaluate('cash', { price: 100000, closingPct: 0 }, { ...B, tenthUnitRepair: 12000 }).allIn, 132000, 0.01);
+  near(evaluate('wrap', { note: 400000 }, { ...B, rehab: 32000 }).allIn, 400000, 0.01);
+  near(evaluate('cash', { price: 100000, closingPct: 0 }, { ...B, rehab: 32000 }).allIn, 132000, 0.01);
 });
 
 test('all units run long-term even if legacy short-term fields exist on saved data', () => {

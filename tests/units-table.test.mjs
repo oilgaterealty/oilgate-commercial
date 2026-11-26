@@ -77,7 +77,7 @@ const SAMPLE_PLAN = normalizePlan({
     { id: '1', rehab: 5000, ready: 4 },
     { id: '2', rehab: 5000, ready: 6 },
     { id: '3', rehab: 0, ready: 0, occupied: true },
-    { id: '4', rehab: 0, ready: 16, optional: true },
+    { id: '4', rehab: 20000, ready: 16 },
     { id: '5', rehab: 5000, ready: 8 },
     { id: '6', rehab: 5000, ready: 10 },
     { id: '7', rehab: 5000, ready: 12 },
@@ -195,7 +195,7 @@ test('buildCostSummary shows Contingency line and total with it, and never emits
   assert.equal(cs.rehabTotal, 68000);
   assert.equal(cs.contingency, 10000);
   assert.equal(cs.total, 78000);
-  assert.equal(cs.heading, 'Whole job $78,000');
+  assert.equal(cs.heading, 'Repair budget $78,000');
   assert.ok(cs.lines.some((l) => l.key === 'contingency' && l.label === 'Contingency $10,000'));
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
   assert.ok(cs.headingOverlay.some((l) => l.includes('Total with contingency: $78,000')));

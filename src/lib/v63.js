@@ -105,17 +105,39 @@ function sortValue(c, key) {
   if (key === 'source') return compSource(c).toLowerCase() || null;
   return String(c[key] || '').toLowerCase() || null;
 }
-export function sortComps(comps, key, dir = 'asc') {
-  if (!key) return comps || [];
-  const sign = dir === 'desc' ? -1 : 1;
+export function sortComps(comps, key, dir = 'asc', key2 = null, dir2 = 'asc') {
+  const specs = Array.isArray(key)
+    ? key.filter((s) => s?.key)
+    : [{ key, dir }, ...(key2 && key2 !== key ? [{ key: key2, dir: dir2 }] : [])].filter((s) => s.key);
+  if (!specs.length) return comps || [];
   return [...(comps || [])].sort((a, b) => {
-    const x = sortValue(a, key);
-    const y = sortValue(b, key);
-    if (x === null && y === null) return 0;
-    if (x === null) return 1;
-    if (y === null) return -1;
-    return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sign;
+    for (const s of specs) {
+      const sign = s.dir === 'desc' ? -1 : 1;
+      const x = sortValue(a, s.key);
+      const y = sortValue(b, s.key);
+      if (x === null && y === null) continue;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      const cmp = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+      if (cmp !== 0) return cmp * sign;
+    }
+    return 0;
   });
+}
+
+const COMP_DESC_DEFAULT = new Set(['sale_price', 'per_unit', 'sale_date', 'units']);
+export function nextCompSort(current = { key: null, dir: 'asc', key2: null, dir2: 'asc' }, key, shiftKey = false) {
+  const defDir = (k) => (COMP_DESC_DEFAULT.has(k) ? 'desc' : 'asc');
+  const flip = (d) => (d === 'asc' ? 'desc' : 'asc');
+  if (!key) return { key: null, dir: 'asc', key2: null, dir2: 'asc' };
+  if (shiftKey && current?.key) {
+    if (current.key === key) return { ...current, dir: flip(current.dir) };
+    if (current.key2 === key) return { ...current, dir2: flip(current.dir2) };
+    return { ...current, key2: key, dir2: defDir(key) };
+  }
+  if (current?.key === key) return { ...current, dir: flip(current.dir) };
+  const nextKey2 = current?.key2 === key ? null : (current?.key2 || null);
+  return { key, dir: defDir(key), key2: nextKey2, dir2: nextKey2 ? (current?.dir2 || defDir(nextKey2)) : 'asc' };
 }
 // "Apr 2026" for a full date; the year alone if that's all there is.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

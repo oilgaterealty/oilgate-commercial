@@ -82,7 +82,7 @@ export function validProofItems(content = {}) {
 export const coveredWord = (c) => (c === 'yes' ? 'covered' : c);
 const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
 
-// Single plain-English offer card shown to the seller (and lead_guest). Never renders multiple options.
+// Single plain-English offer card shown to the seller. Never renders multiple options.
 export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false, coveredLabel = 'Your costs covered' }) {
   const lead = normalizeLeadOffer(content);
   const [asking, setAsking] = useState(false);
@@ -93,8 +93,9 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
   const hasSellerTable = Boolean(summary && Array.isArray(summary.sellerTable) && summary.sellerTable.length > 0);
   const hasSummary = Boolean(summary && Array.isArray(summary.terms) && summary.terms.length > 0);
   const firstCoveredUnits = hasSellerTable ? (summary.sellerTable.find((r) => r.covered === 'yes')?.units ?? null) : null;
-  // Seller financing rows also carry the note payment and the bills I pay.
+  // Seller financing rows also carry the note payment and the holding bills.
   const hasCosts = hasSellerTable && summary.sellerTable.some((r) => Number.isFinite(+r.note) && r.note !== null && r.note !== undefined);
+  const billsFromRent = Boolean(summary?.billsFromRent || /you carry|seller carries/i.test(summary?.intro || ''));
   const rows = hasSummary
     ? summary.terms.map((t) => ({
         label: String(t?.label || '').trim(),
@@ -158,7 +159,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                   <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
                   <th scope="col" className="px-3 py-2.5">Rent in</th>
                   {hasCosts && <th scope="col" className="px-3 py-2.5">Your note payment</th>}
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">Taxes, insurance, utilities (I pay)</th>}
+                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills (you carry)' : 'Taxes, insurance, utilities (I pay)'}</th>}
                   <th scope="col" className="px-3 py-2.5 text-center">{coveredLabel}</th>
                 </tr>
               </thead>
@@ -236,7 +237,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
   );
 }
 
-// "How I'll get this done" right below the offer; verified proof renders ONLY when owner-approved entries exist.
+// "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
 export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
   if (sellerOnly && !hasSummarySteps) return null;
@@ -253,7 +254,7 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
   const proof = validProofItems(content);
   return (
     <Card>
-      <CardTitle>How I’ll get this done</CardTitle>
+      <CardTitle>The plan</CardTitle>
       <ol className="space-y-3">
         {steps.map((s, i) => (
           <li key={s.key} className="flex gap-3">

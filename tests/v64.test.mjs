@@ -42,8 +42,8 @@ test('Switches has no Airbnb controls', () => {
   assert.doesNotMatch(s, /Airbnb|strNightly|strUnits/i);
 });
 
-test('10th unit starts at $30,000', () => {
-  assert.equal(BASE_DEFAULTS.tenthUnitRepair, 30000);
+test('tenthUnitRepair is removed from BASE_DEFAULTS', () => {
+  assert.equal('tenthUnitRepair' in BASE_DEFAULTS, false);
 });
 
 test('buyer name comes only from the deal settings', () => {
@@ -75,7 +75,7 @@ test('comps sort by every column, blanks last', () => {
   assert.equal(soldLabel('2024-11-08'), 'Nov 2024');
   assert.equal(soldLabel(null), '');
   const c = src('src/views/Comps.jsx');
-  assert.match(c, /shownComps = sortComps\(allComps, sort\.key, sort\.dir\)/);
+  assert.match(c, /shownComps = sortComps\(allComps, sort\.key, sort\.dir, sort\.key2, sort\.dir2\)/);
   assert.match(c, /aria-sort=/);
   assert.match(c, /id="comp-sort"/);
   assert.match(c, /'Not found'/);

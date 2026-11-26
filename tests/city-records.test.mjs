@@ -538,7 +538,7 @@ test('City Records page is restricted to non-preview owner (owner site) and non-
   }
   assert.equal(canAccessCityRecords('owner', 'owner', false), true);
 
-  for (const view of ['Seller.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'LeadGuest.jsx', 'Home.jsx', 'Join.jsx']) {
+  for (const view of ['Seller.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'Home.jsx', 'Join.jsx']) {
     const s = read(`src/views/${view}`);
     assert.doesNotMatch(s, /CityRecords|city-records|city_records:/, `${view} must not reference City Records`);
   }

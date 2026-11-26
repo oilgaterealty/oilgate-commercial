@@ -25,21 +25,12 @@ function Money({ label, value, onChange, step = 25, suffix }) {
   );
 }
 
-// Always 10 long-term units: rent per unit and added unit rehab.
-// Owner, realtor, reviewer and lender see them. Never the seller or viewers.
-export default function Switches({ base, setBase }) {
-  const set = (p) => setBase({ ...base, ...p });
-  return (
-    <div className="rounded-2xl bg-paper p-4">
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <Money label="Rent per unit / month" value={val(base, 'rent')} onChange={(v) => set({ rent: v })} />
-        <Money label="Added unit rehab" value={val(base, 'tenthUnitRepair')} step={500} onChange={(v) => set({ tenthUnitRepair: v })} />
-      </div>
-    </div>
-  );
+// Owner "Deal at a glance" inputs removed; rent and repair budget live in the plan and building numbers.
+export default function Switches() {
+  return null;
 }
 
-const LABEL = { ...Object.fromEntries(BASE_FIELDS.map(([k, l]) => [k, l])), tenthUnitRepair: 'Added unit rehab', rent: 'Rent per unit / month' };
+const LABEL = { ...Object.fromEntries(BASE_FIELDS.map(([k, l]) => [k, l])), rent: 'Rent per unit / month' };
 
 // A plain message to the buyer describing what someone changed and what it does to each offer.
 export function whatIfMessage(original, base, offers) {

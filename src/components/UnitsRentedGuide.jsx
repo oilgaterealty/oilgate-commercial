@@ -19,11 +19,19 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
     ? { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost }
     : null);
   const r = guide.refi;
+  const showCarriedBills = Boolean(r.billsFromRent || r.sellerCarriedBills > 0);
   const refiLines = [
     { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'In hand after fees and reserve', value: money(r.inHand), overlay: r.inHandOverlay },
-    { label: r.sellerPayoffLabel || 'Seller paid off', value: r.sellerPayoffText, overlay: r.sellerPayoffOverlay },
+    {
+      label: r.sellerPayoffLabel || 'Seller paid off',
+      value: showCarriedBills ? money(r.sellerNotePrincipal ?? r.sellerPayoff) : r.sellerPayoffText,
+      overlay: r.sellerPayoffOverlay,
+    },
+    ...(showCarriedBills
+      ? [{ label: r.sellerCarriedBillsLabel || 'Seller’s carried bills, paid at refinance', value: money(r.sellerCarriedBills || 0), overlay: r.sellerCarriedBillsOverlay }]
+      : []),
     {
       label: 'Repair loan paid off',
       value: `${money(r.repairLoanPayoff)} unused · ${money(r.repairLoanPayoffContUsed)} all used`,

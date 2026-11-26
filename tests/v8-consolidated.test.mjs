@@ -62,7 +62,7 @@ test('0018 locks down offers to owner-only table access and exposes at most one 
 
   const offersSrc = read('src/views/Offers.jsx');
   assert.match(offersSrc, /commercial_set_lead_offer/);
-  assert.match(offersSrc, /share_lead_guest/);
+  assert.doesNotMatch(offersSrc, /share_lead_guest/);
   assert.match(offersSrc, /\{owner && offers\.length > 0 && view === 'table' && <OptionTable/);
   assert.match(offersSrc, /\{owner && \(\s*<div className="flex flex-wrap items-center gap-2">/);
 
@@ -96,7 +96,7 @@ test('0018 enforces recipient-bound, expiring, single-use, revocable links and r
 
   const accSrc = read('src/components/AccessRequests.jsx');
   assert.match(accSrc, /row\.requested_role/);
-  assert.match(accSrc, /'lead_guest'/);
+  assert.doesNotMatch(accSrc, /'lead_guest'/);
 
   const joinSrc = read('src/views/Join.jsx');
   assert.match(joinSrc, /wrong recipient/);
@@ -104,54 +104,14 @@ test('0018 enforces recipient-bound, expiring, single-use, revocable links and r
   assert.match(joinSrc, /already used/);
 });
 
-test('lead_guest role is isolated in uploads/messages and renders a read-only LeadGuest view', async () => {
-  assert.match(sql0018, /public\.commercial_member_role\(deal_id\) = 'lead_guest' and kind = 'photo' and featured = true/);
-  assert.match(sql0018, /if r is null or r in \('guest','viewer','lead_guest'\)/);
-
+test('lead_guest role is removed from UI; viewer gets photos + property info only', async () => {
   const dealRoomSrc = read('src/views/DealRoom.jsx');
-  assert.match(dealRoomSrc, /role === 'lead_guest'/);
-  assert.match(dealRoomSrc, /LeadGuest/);
+  assert.doesNotMatch(dealRoomSrc, /lead_guest|LeadGuest/);
 
-  const dealmath = await import('../src/lib/dealmath.js');
-  const plainMod = await import('../src/lib/plain.js');
-  const Card = ({ children }) => React.createElement('section', null, children);
-  const CardTitle = ({ children }) => React.createElement('h2', null, children);
-  const Empty = ({ children }) => React.createElement('p', null, children);
-  const OverlayTrigger = ({ children }) => React.createElement('span', null, children);
-  const { CHARLOTTE_PARCELS, LeadOfferCard } = loadJsxWithMocks('src/components/LeadOfferCard.jsx', {
-    './Shell.jsx': { Card, CardTitle, OverlayTrigger, Button: ({ children, ...p }) => React.createElement('button', p, children) },
-  });
-  const { default: LeadGuest } = loadJsxWithMocks('src/views/LeadGuest.jsx', {
-    '../lib/useDealModel.js': {
-      useDealModel: () => ({
-        offers: [{ id: 'o1', name: 'Option B: Carry', structure: 'carry', inputs: {} }],
-        base: {},
-        error: '',
-      }),
-    },
-    '../lib/dealmath.js': dealmath,
-    '../lib/plain.js': plainMod,
-    '../components/Files.jsx': { useUploads: () => [[], () => {}] },
-    '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-cover': '1' }), photosOf: (r) => r || [] },
-    '../components/Shell.jsx': { Card, CardTitle, Empty, OverlayTrigger },
-    '../components/LeadOfferCard.jsx': { CHARLOTTE_PARCELS, LeadOfferCard },
-  });
-
-  const html = renderToStaticMarkup(React.createElement(LeadGuest, {
-    deal: {
-      id: 'd1',
-      slug: 'charlotte',
-      title: 'Charlotte',
-      address: '2327 Charlotte Hwy, Mooresville, NC 28117',
-      seller_content: {},
-    },
-    preview: true,
-  }));
-  assert.match(html, /Deal overview/);
-  assert.match(html, /6801234 and 6807893/);
-  assert.match(html, /Lender clearance condition/);
-  assert.match(html, /Option B: Carry/);
-  assert.doesNotMatch(html, /AMHA|Section 8|group home|sublease|\$1,810/i);
+  const reviewerSrc = read('src/views/Reviewer.jsx');
+  assert.match(reviewerSrc, /The property/);
+  assert.match(reviewerSrc, /10-unit residential property/);
+  assert.doesNotMatch(reviewerSrc, /lead_guest/);
 });
 
 test('0018 scopes lender City Records to city_records prefix/folder and updates LenderTerms to Bridge/DSCR/Both 13 required questions', async () => {

@@ -75,7 +75,7 @@ test('photos by unit share the same way as the walkthrough', async () => {
 });
 
 test('no qualifiers on any figure: no estimate, about, or what you owe, assumed', () => {
-  const files = ['src/lib/dealplan.js', 'src/lib/dealmath.js', 'src/lib/plain.js', 'src/lib/leaseUp.js', 'src/components/LoanPosition.jsx', 'src/components/LeadOfferCard.jsx', 'src/components/UnitsRentedGuide.jsx', 'src/views/Offers.jsx', 'src/views/Lender.jsx', 'src/views/Reviewer.jsx', 'src/views/Dashboard.jsx', 'src/views/Comps.jsx', 'src/views/LeadGuest.jsx', 'src/views/Seller.jsx'];
+  const files = ['src/lib/dealplan.js', 'src/lib/dealmath.js', 'src/lib/plain.js', 'src/lib/leaseUp.js', 'src/components/LoanPosition.jsx', 'src/components/LeadOfferCard.jsx', 'src/components/UnitsRentedGuide.jsx', 'src/views/Offers.jsx', 'src/views/Lender.jsx', 'src/views/Reviewer.jsx', 'src/views/Dashboard.jsx', 'src/views/Comps.jsx', 'src/views/Seller.jsx'];
   for (const f of files) {
     const code = read(f).split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
     assert.doesNotMatch(code, /\(estimate\)|estimates\)|Estimated value|estimated value|or what (you|he) owe|Rent assumed|Refinance assumed|`about \$\{|, about \$\{|About \$\{/, f);

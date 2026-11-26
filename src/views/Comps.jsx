@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5Access, validComp } from '../lib/leaseUp.js';
 import { money, operating } from '../lib/dealmath.js';
 import { roleLabel } from '../lib/format.js';
-import { COMP_SORTS, checkedLabel, compSource, compsForView, latestCompDate, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
+import { COMP_SORTS, checkedLabel, compSource, compsForView, latestCompDate, milesLabel, nextCompSort, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
 import { Button, Card, CardTitle, Empty, Field, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
 import { buyerName, possessive } from '../lib/people.js';
@@ -37,6 +37,7 @@ export default function Comps({ deal, me, role, preview }) {
   const [localComps, setLocalComps] = useState([]);
   const [draft, setDraft] = useState(BLANK);
   const [picks, setPicks] = useState([]);
+  const [previewPicks, setPreviewPicks] = useState([]);
   const [view, setView] = useState('all'); // 'all' or a picker's uid; only changes what this screen shows
   const [loadErr, setLoadErr] = useState('');
   const [status, setStatus] = useState('');
@@ -45,8 +46,8 @@ export default function Comps({ deal, me, role, preview }) {
   const [sendStatus, setSendStatus] = useState('');
   const [showPreviewMsg, setShowPreviewMsg] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const [sort, setSort] = useState({ key: null, dir: 'asc' }); // only changes this screen's order
-  const sortBy = (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: ['sale_price', 'per_unit', 'sale_date', 'units'].includes(key) ? 'desc' : 'asc' }));
+  const [sort, setSort] = useState({ key: null, dir: 'asc', key2: null, dir2: 'asc' }); // only changes this screen's order
+  const sortBy = (key, shiftKey = false) => setSort((s) => nextCompSort(s, key, shiftKey));
 
   useEffect(() => {
     if (!access.comps) return;
@@ -74,18 +75,25 @@ export default function Comps({ deal, me, role, preview }) {
   const units = 10;
   const noi = base ? operating({ ...base, units }).noi : null;
   const allComps = [...(savedComps || []), ...localComps];
-  const shownComps = sortComps(allComps, sort.key, sort.dir);
-  const people = canPick ? pickers(picks, me?.uid, (r) => roleLabel[r] || r) : [];
+  const shownComps = sortComps(allComps, sort.key, sort.dir, sort.key2, sort.dir2);
+  const selectable = allComps.filter((c) => !c.local);
+  const canSelectRows = canPick || Boolean(preview);
+  const myUid = canPick ? me.uid : '__preview__';
+  const effectivePicks = canPick ? picks : previewPicks.map((id) => ({ comp_id: id, picker_uid: '__preview__', picker_role: role, picker_name: 'You' }));
+  const people = canSelectRows ? pickers(effectivePicks, myUid, (r) => roleLabel[r] || r) : [];
   const viewOn = people.some((p) => p.uid === view) ? view : 'all';
-  const viewComps = compsForView(allComps, picks, viewOn);
+  const viewComps = compsForView(allComps, effectivePicks, viewOn);
   const inView = (c) => viewOn === 'all' || viewComps.includes(c);
   const calc = arvEstimate(viewComps, units, noi, cap);
-  const valueFor = (uid) => arvEstimate(compsForView(allComps, picks, uid), units, noi, cap).market;
+  const valueFor = (uid) => arvEstimate(compsForView(allComps, effectivePicks, uid), units, noi, cap).market;
   const canAdd = validComp(draft);
   const dirty = !owner && (localComps.length > 0 || cap !== savedCap);
   const autoPerUnit = perUnitOf(draft.sale_price, draft.units);
   const autoYear = yearOf(draft.sale_date);
-  const myPick = (c) => picks.find((p) => p.comp_id === c.id && p.picker_uid === me?.uid);
+  const myPick = (c) => (canPick
+    ? picks.find((p) => p.comp_id === c.id && p.picker_uid === me?.uid)
+    : previewPicks.includes(c.id));
+  const selectedCount = selectable.filter((c) => Boolean(myPick(c))).length;
   const pickedBy = picksByComp(picks.filter((p) => p.picker_uid !== me?.uid), (r) => roleLabel[r] || r);
 
   const setCapRate = async (nextCap) => {
@@ -153,14 +161,55 @@ export default function Comps({ deal, me, role, preview }) {
   };
 
   const togglePick = async (c) => {
-    if (!canPick || c.local || pending) return;
+    if (!canSelectRows || c.local || pending) return;
+    if (!canPick) {
+      setPreviewPicks((prev) => (prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]));
+      return;
+    }
     setPending(true);
     try {
       const mine = myPick(c);
       const { error } = mine
         ? await supabase.from('commercial_comp_picks').delete().eq('id', mine.id)
         : await supabase.from('commercial_comp_picks').insert({ deal_id: deal.id, comp_id: c.id, picker_uid: me.uid, picker_role: role, picker_name: me.name || '' });
-      setStatus(error ? 'Your pick did not save. Try again.' : mine ? 'Pick removed.' : 'Picked.');
+      setStatus(error ? 'Your selection did not save. Try again.' : mine ? 'Deselected.' : 'Selected.');
+      if (!error) setRefresh((n) => n + 1);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const selectAllPicks = async () => {
+    if (!canSelectRows || pending || !selectable.length) return;
+    const missing = selectable.filter((c) => !myPick(c));
+    if (!canPick) {
+      setPreviewPicks(selectable.map((c) => c.id));
+      return;
+    }
+    if (!missing.length) return;
+    setPending(true);
+    try {
+      const rowsToInsert = missing.map((c) => ({ deal_id: deal.id, comp_id: c.id, picker_uid: me.uid, picker_role: role, picker_name: me.name || '' }));
+      const { error } = await supabase.from('commercial_comp_picks').insert(rowsToInsert);
+      setStatus(error ? 'Could not select all. Try again.' : `Selected ${selectable.length}.`);
+      if (!error) setRefresh((n) => n + 1);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const clearAllPicks = async () => {
+    if (!canSelectRows || pending) return;
+    if (!canPick) {
+      setPreviewPicks([]);
+      return;
+    }
+    const mineIds = picks.filter((p) => p.picker_uid === me.uid).map((p) => p.id);
+    if (!mineIds.length) return;
+    setPending(true);
+    try {
+      const { error } = await supabase.from('commercial_comp_picks').delete().in('id', mineIds);
+      setStatus(error ? 'Could not clear selections. Try again.' : 'Cleared.');
       if (!error) setRefresh((n) => n + 1);
     } finally {
       setPending(false);
@@ -201,12 +250,24 @@ export default function Comps({ deal, me, role, preview }) {
     setShowPreviewMsg(false);
   };
 
-  const PickButton = ({ c }) => (canPick && !c.local ? (
-    <button type="button" aria-pressed={Boolean(myPick(c))} disabled={pending} onClick={() => togglePick(c)}
-      className={`inline-flex min-h-[40px] items-center rounded-full px-3 text-sm font-medium ${myPick(c) ? 'bg-ink text-white' : 'border border-line bg-white hover:border-ink'}`}>
-      {myPick(c) ? '★ My pick' : '☆ Pick'}
-    </button>
+  const PickBox = ({ c }) => (canSelectRows && !c.local ? (
+    <label className="inline-flex min-h-[36px] cursor-pointer items-center gap-2 text-sm font-medium">
+      <input
+        type="checkbox"
+        aria-label={`Select ${c.address}`}
+        checked={Boolean(myPick(c))}
+        disabled={pending}
+        onChange={() => void togglePick(c)}
+        className="h-5 w-5 rounded border-line accent-ink"
+      />
+    </label>
   ) : null);
+  const sortName = (k) => COMP_SORTS.find(([x]) => x === k)?.[1] || k;
+  const sortArrow = (k) => {
+    if (sort.key === k) return sort.key2 ? `1 ${sort.dir === 'asc' ? '↑' : '↓'}` : (sort.dir === 'asc' ? '↑' : '↓');
+    if (sort.key2 === k) return `2 ${sort.dir2 === 'asc' ? '↑' : '↓'}`;
+    return '↕';
+  };
   const meta = (c) => [c.city, milesLabel(c.distance_mi)].filter(Boolean).join(' · ');
 
   return (
@@ -277,27 +338,61 @@ export default function Comps({ deal, me, role, preview }) {
           <Empty>No comps entered yet.</Empty>
         ) : (
           <>
-            {/* Phone: a sort picker, then one card per comp. */}
-            <div className="mb-3 flex flex-wrap items-center gap-2 md:hidden">
-              <label htmlFor="comp-sort" className="text-sm text-ink-soft">Sort by</label>
-              <select id="comp-sort" value={sort.key || ''} onChange={(e) => setSort({ key: e.target.value || null, dir: ['sale_price', 'per_unit', 'sale_date', 'units'].includes(e.target.value) ? 'desc' : 'asc' })}
-                className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">
-                <option value="">As entered</option>
-                {COMP_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
-              {sort.key && <button type="button" onClick={() => sortBy(sort.key)} className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">{sort.dir === 'asc' ? 'Low to high ↑' : 'High to low ↓'}</button>}
+            {canSelectRows && selectable.length > 0 && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-paper px-3 py-2 text-sm">
+                <span className="font-medium text-ink">{selectedCount} of {selectable.length} selected</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" disabled={pending || selectedCount === selectable.length} onClick={() => void selectAllPicks()}
+                    className="min-h-[36px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
+                    Select all
+                  </button>
+                  <button type="button" disabled={pending || selectedCount === 0} onClick={() => void clearAllPicks()}
+                    className="min-h-[36px] rounded-full border border-line bg-white px-3 py-1 text-xs font-medium hover:border-ink disabled:opacity-50">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Phone: primary + secondary sort pickers, then one card per comp. */}
+            <div className="mb-3 space-y-2 md:hidden">
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="comp-sort" className="text-sm text-ink-soft">Sort by</label>
+                <select id="comp-sort" value={sort.key || ''} onChange={(e) => setSort((s) => nextCompSort({ key: null, dir: 'asc', key2: s.key2 === e.target.value ? null : s.key2, dir2: s.dir2 }, e.target.value || null, false))}
+                  className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">
+                  <option value="">As entered</option>
+                  {COMP_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+                {sort.key && <button type="button" onClick={() => sortBy(sort.key, false)} className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">{sort.dir === 'asc' ? 'Low to high ↑' : 'High to low ↓'}</button>}
+              </div>
+              {sort.key && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="comp-sort-2" className="text-sm text-ink-soft">Then by</label>
+                  <select id="comp-sort-2" value={sort.key2 || ''} onChange={(e) => {
+                    const k2 = e.target.value || null;
+                    setSort((s) => k2 ? { ...s, key2: k2, dir2: ['sale_price', 'per_unit', 'sale_date', 'units'].includes(k2) ? 'desc' : 'asc' } : { ...s, key2: null, dir2: 'asc' });
+                  }}
+                    className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">
+                    <option value="">None</option>
+                    {COMP_SORTS.filter(([k]) => k !== sort.key).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                  {sort.key2 && <button type="button" onClick={() => sortBy(sort.key2, true)} className="min-h-[40px] rounded-full border border-line bg-white px-3 text-sm">{sort.dir2 === 'asc' ? 'Low to high ↑' : 'High to low ↓'}</button>}
+                </div>
+              )}
             </div>
             <ul className="space-y-3 md:hidden">
               {shownComps.map((c) => (
                 <li key={c.id} className={`space-y-3 rounded-2xl border border-line bg-white p-4 ${inView(c) ? '' : 'opacity-50'}`}>
-                  <div className="flex items-start gap-2">
-                    <p className="text-base font-semibold break-words">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
-                    {meta(c) && <InfoTip label={`Where ${c.address} is`} lines={[meta(c)]} />}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5">
+                      <PickBox c={c} />
+                      <p className="text-base font-semibold break-words">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
+                      {meta(c) && <InfoTip label={`Where ${c.address} is`} lines={[meta(c)]} />}
+                    </div>
                   </div>
                   <CompFacts c={c} />
                   {role === 'owner' && pickedBy[c.id] && <p className="text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
                   <div className="flex flex-wrap items-center gap-3">
-                    <PickButton c={c} />
                     {compSource(c) && <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} />}
                     {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
                   </div>
@@ -305,48 +400,64 @@ export default function Comps({ deal, me, role, preview }) {
               ))}
             </ul>
             {/* Desktop: a roomy table. */}
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full border-separate border-spacing-0 text-left text-base">
-                <thead>
-                  <tr className="text-sm text-ink-soft">
-                    {COMP_SORTS.map(([k, h]) => (
-                      <th key={k} className="border-b border-line px-1 py-2 font-medium" aria-sort={sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-                        <button type="button" onClick={() => sortBy(k)} className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2 hover:bg-warm-soft ${sort.key === k ? 'text-ink' : ''}`}>
-                          {h}<span aria-hidden="true" className="text-xs">{sort.key === k ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}</span>
-                        </button>
-                      </th>
-                    ))}
-                    <th className="border-b border-line px-3 py-3 font-medium"><span className="sr-only">Pick</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shownComps.map((c) => (
-                    <tr key={c.id} className={`align-top ${inView(c) ? '' : 'opacity-50'}`}>
-                      <td className="border-b border-line px-3 py-4">
-                        <div className="flex items-start gap-2">
-                          <p className="font-semibold">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
-                          {c.city && <InfoTip label={`City for ${c.address}`} lines={[c.city]} />}
-                        </div>
-                        {role === 'owner' && pickedBy[c.id] && <p className="mt-1 text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
-                      </td>
-                      <td className="border-b border-line px-3 py-4 font-semibold">{c.units}</td>
-                      <td className="border-b border-line px-3 py-4 font-semibold">{money(+c.sale_price)}</td>
-                      <td className="border-b border-line px-3 py-4 font-semibold">{money(pricePerUnit(c))}</td>
-                      <td className="border-b border-line px-3 py-4 font-semibold">{soldLabel(c.sale_date) || 'Not found'}</td>
-                      <td className="border-b border-line px-3 py-4">{milesLabel(c.distance_mi) || '—'}</td>
-                      <td className="border-b border-line px-3 py-4 text-sm text-ink-soft">
-                        {compSource(c) ? <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} /> : '—'}
-                      </td>
-                      <td className="border-b border-line px-3 py-4">
-                        <div className="flex flex-col items-start gap-2">
-                          <PickButton c={c} />
-                          {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
-                        </div>
-                      </td>
+            <div className="hidden md:block">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
+                <div className="flex items-center gap-2">
+                  <span>{sort.key ? `Sorted by ${sortName(sort.key)} (${sort.dir})${sort.key2 ? `, then ${sortName(sort.key2)} (${sort.dir2})` : ''}` : 'Sorted as entered'}</span>
+                  <InfoTip label="Multi-column sort" lines={['Click a column to sort. Hold Shift and click another column to add a second sort.']} />
+                </div>
+                {sort.key && (
+                  <button type="button" onClick={() => setSort({ key: null, dir: 'asc', key2: null, dir2: 'asc' })} className="underline hover:text-ink">
+                    Clear sort
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-separate border-spacing-0 text-left text-base">
+                  <thead>
+                    <tr className="text-sm text-ink-soft">
+                      {canSelectRows && <th className="border-b border-line px-2 py-2 font-medium"><span className="sr-only">Select</span></th>}
+                      {COMP_SORTS.map(([k, h]) => {
+                        const isSorted = sort.key === k || sort.key2 === k;
+                        const ariaSort = sort.key === k ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+                        return (
+                          <th key={k} className="border-b border-line px-1 py-2 font-medium" aria-sort={ariaSort}>
+                            <button type="button" onClick={(e) => sortBy(k, e.shiftKey)} className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg px-2 hover:bg-warm-soft ${isSorted ? 'font-semibold text-ink' : ''}`}>
+                              {h}<span aria-hidden="true" className="text-xs">{sortArrow(k)}</span>
+                            </button>
+                          </th>
+                        );
+                      })}
+                      <th className="border-b border-line px-3 py-3 font-medium"><span className="sr-only">Actions</span></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {shownComps.map((c) => (
+                      <tr key={c.id} className={`align-top ${inView(c) ? '' : 'opacity-50'}`}>
+                        {canSelectRows && <td className="border-b border-line px-2 py-4"><PickBox c={c} /></td>}
+                        <td className="border-b border-line px-3 py-4">
+                          <div className="flex items-start gap-2">
+                            <p className="font-semibold">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
+                            {c.city && <InfoTip label={`City for ${c.address}`} lines={[c.city]} />}
+                          </div>
+                          {role === 'owner' && pickedBy[c.id] && <p className="mt-1 text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
+                        </td>
+                        <td className="border-b border-line px-3 py-4 font-semibold">{c.units}</td>
+                        <td className="border-b border-line px-3 py-4 font-semibold">{money(+c.sale_price)}</td>
+                        <td className="border-b border-line px-3 py-4 font-semibold">{money(pricePerUnit(c))}</td>
+                        <td className="border-b border-line px-3 py-4 font-semibold">{soldLabel(c.sale_date) || 'Not found'}</td>
+                        <td className="border-b border-line px-3 py-4">{milesLabel(c.distance_mi) || '—'}</td>
+                        <td className="border-b border-line px-3 py-4 text-sm text-ink-soft">
+                          {compSource(c) ? <InfoTip label={`Source for ${c.address}`} lines={[compSource(c)]} /> : '—'}
+                        </td>
+                        <td className="border-b border-line px-3 py-4">
+                          {(owner || c.local) && <button type="button" disabled={pending} onClick={() => removeComp(c)} className="text-sm text-ink-soft underline hover:text-red-700">Remove</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}

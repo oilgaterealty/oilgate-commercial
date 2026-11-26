@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
+import { money } from '../lib/dealmath.js';
 import { WALK_SPACES, WALK_UNITS, spaceLabel, ROOMS, AREA_ROOMS } from '../lib/leaseUp.js';
 import { when } from '../lib/format.js';
 import { authorLabel } from '../lib/people.js';
@@ -161,8 +162,22 @@ function UnitNotes({ deal, me, role, unit, preview }) {
   );
 }
 
+export function UnitSummary({ unit, summary }) {
+  if (!summary) return null;
+  const status = summary.occupied ? 'Rented' : 'Vacant';
+  const note = String(summary.note || '').trim();
+  return (
+    <div className="mt-4 rounded-xl bg-paper px-3.5 py-2.5 text-sm text-ink">
+      <div className="font-medium">
+        Unit {summary.id || unit} · Repair budget: {money(summary.repairs)} · {status}
+      </div>
+      {note && <div className="mt-0.5 text-ink-soft">{note}</div>}
+    </div>
+  );
+}
+
 // Walkthrough photos and videos, one unit or space at a time. The owner shares each one here the same way as in the Walkthrough.
-export default function UnitGallery({ deal, me, role, preview }) {
+export default function UnitGallery({ deal, me, role, preview, unitSummaries = null }) {
   const [photos, setPhotos] = useState(null);
   const [videos, setVideos] = useState(null);
   const [unit, setUnit] = useState(1);
@@ -248,6 +263,9 @@ export default function UnitGallery({ deal, me, role, preview }) {
 
   useEffect(() => { setView(null); }, [unit]);
   const RBadge = readinessState.Badge;
+  const unitSummary = unit <= WALK_UNITS && Array.isArray(unitSummaries)
+    ? unitSummaries.find((s) => String(s?.id) === String(unit)) || null
+    : null;
 
   return (
     <div className="space-y-5">
@@ -323,6 +341,7 @@ export default function UnitGallery({ deal, me, role, preview }) {
         )}
         <PhotoViewer items={ready.map((p) => ({ url: urls[p.storage_path], alt: `${spaceLabel(unit)} ${roomName(p.room)}` }))} index={view} onIndex={setView}
           actions={canShare ? (_, j) => (ready[j] ? walkShareButtons(ready[j], toggleShare, shareBusy) : []) : undefined} />
+        <UnitSummary unit={unit} summary={unitSummary} />
       </Card>
       <UnitNotes deal={deal} me={me} role={role} unit={unit} preview={preview} />
     </div>

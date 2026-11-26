@@ -20,7 +20,7 @@ const CityRecords = lazy(() => import('./CityRecords.jsx'));
 
 // Pills never show a month guess: "1st Unit 9 · month 1" reads "1st Unit 9".
 const noMonth = (s) => (typeof s === 'string' ? s.replace(/\s*·\s*months?\s+\d+(\s*[–-]\s*\d+)?/gi, '').replace(/\s*\(month \d+ refi\)/gi, '') : s);
-const debtOf =(e) => e.operating.cashFlow / 12 - e.keepMonthly;
+const debtOf = (e) => e.operating.cashFlow / 12 - e.keepMonthly;
 const times = (v) => (Number.isFinite(v) ? `${v.toFixed(2)}x` : 'No payment');
 
 function Stat({ label, value, overlay }) {
@@ -34,16 +34,19 @@ function Stat({ label, value, overlay }) {
   );
 }
 
-// The lender's page: single lead plan, full read-only City Records, approved supporting documents, and required questionnaire.
+// The lender's page: short phone-first overview, full plan tab, City Records, supporting documents, unit photos, and terms.
 export default function Lender({ deal, me, preview, tab }) {
   const tabs = [
-    ['overview', 'The plan'],
+    ['overview', 'Overview'],
+    ['plan', 'The plan'],
+    ['terms', 'Your terms'],
     ['city-records', 'City records'],
     ['documents', 'Documents'],
     ['photos', 'Photos'],
     ['messages', 'Messages'],
   ];
   const active = tabs.find(([k]) => k === tab)?.[0] || 'overview';
+  const root = preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
   const visible = preview ? seenBy('lender', rows) : rows || [];
   const photos = photosOf(visible);
@@ -74,12 +77,14 @@ export default function Lender({ deal, me, preview, tab }) {
     ? { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost }
     : null);
   const steps = guide?.steps?.length ? guide.steps : story?.steps;
+  const repairBudget = guideCostSummary?.total ?? o?.b?.rehab;
 
   return (
-    <div className="space-y-5">
-      <Tabs tabs={tabs} active={active} base={preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`} />
+    <div className="space-y-4">
+      <Tabs tabs={tabs} active={active} base={root} />
       {active === 'messages' && <Messages deal={deal} me={me} role="lender" preview={preview} />}
-      {active === 'photos' && <UnitGallery deal={deal} me={me} role="lender" preview={preview} />}
+      {active === 'photos' && <UnitGallery deal={deal} me={me} role="lender" preview={preview} unitSummaries={effectiveGuide?.rentValue?.units} />}
+      {active === 'terms' && <LenderTerms deal={deal} me={me} preview={preview} />}
       {active === 'city-records' && (
         <Suspense fallback={<Empty>Loading…</Empty>}>
           <CityRecords deal={deal} role="lender" preview={preview} />
@@ -91,63 +96,72 @@ export default function Lender({ deal, me, preview, tab }) {
           {rows === null ? <Empty>Loading…</Empty> : docs.length ? <FileList rows={docs} canShare={false} owner={false} /> : <Empty>No supporting documents shared yet.</Empty>}
         </Card>
       )}
+
       {active === 'overview' && (
+        <>
+          <Cover rows={photos} compact />
+          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+          {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
+            <section className="rounded-3xl bg-ink p-5 text-white">
+              <h2 className="font-display text-2xl font-semibold sm:text-3xl">
+                <OverlayTrigger lines={effectiveGuide ? [] : [plain(plan.structure, e).glance]} className="text-white">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</OverlayTrigger>
+              </h2>
+              {effectiveGuide ? (
+                <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-white/60">Value</dt>
+                    <dd className="font-display text-2xl font-semibold sm:text-3xl">
+                      <OverlayTrigger lines={effectiveGuide.refi.estimatedValueOverlay} className="text-white">
+                        {money(effectiveGuide.refi.estimatedValue)}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/60">Loan at {effectiveGuide.refi.ltvShownPct}%</dt>
+                    <dd className="font-display text-2xl font-semibold sm:text-3xl">
+                      <OverlayTrigger lines={effectiveGuide.refi.loanOverlay} className="text-white">
+                        {money(effectiveGuide.refi.loan)}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/60">Repair budget</dt>
+                    <dd className="font-display text-2xl font-semibold sm:text-3xl">{money(repairBudget)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/60">Left for you</dt>
+                    <dd className="font-display text-2xl font-semibold sm:text-3xl">
+                      <OverlayTrigger lines={effectiveGuide.refi.leftForYouOverlay} className="text-white">
+                        {money(effectiveGuide.refi.leftForYou)}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-white/60">{e.keepMonthly < 0 ? 'Short each month' : 'Left over each month after every bill'}</dt>
+                    <dd className="font-display text-2xl font-semibold">{money(e.keepMonthly < 0 ? -e.keepMonthly : e.keepMonthly)}</dd>
+                  </div>
+                  <div><dt className="text-xs text-white/60">Rent covers the payment</dt><dd className="font-display text-2xl font-semibold">{times(e.dscr)}</dd></div>
+                  <div><dt className="text-xs text-white/60">Bank loan at refinance</dt><dd className="font-display text-2xl font-semibold">{money(o.refiLoan)}</dd></div>
+                  <div><dt className="text-xs text-white/60">Repair budget</dt><dd className="font-display text-2xl font-semibold">{money(repairBudget)}</dd></div>
+                </dl>
+              )}
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <a href={`${root}/plan`} className="rounded-full bg-white px-4 py-1.5 font-medium text-ink">Open the plan</a>
+                <a href={`${root}/terms`} className="rounded-full border border-white/30 px-4 py-1.5 font-medium text-white">Your terms</a>
+              </div>
+            </section>
+          )}
+        </>
+      )}
+
+      {active === 'plan' && (
         <>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
           {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
             <>
-              <section className="rounded-3xl bg-ink p-6 text-white">
-                <h2 className="font-display text-3xl font-semibold">
-                  <OverlayTrigger lines={effectiveGuide ? [] : [plain(plan.structure, e).glance]} className="text-white">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</OverlayTrigger>
-                </h2>
-                {effectiveGuide ? (
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    <div>
-                      <p className="text-xs text-white/60">Value</p>
-                      <p className="font-display text-4xl font-semibold">
-                        <OverlayTrigger lines={effectiveGuide.refi.estimatedValueOverlay} className="text-white">
-                          {money(effectiveGuide.refi.estimatedValue)}
-                        </OverlayTrigger>
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/60">Loan at {effectiveGuide.refi.ltvShownPct}%</p>
-                      <p className="font-display text-4xl font-semibold">
-                        <OverlayTrigger lines={effectiveGuide.refi.loanOverlay} className="text-white">
-                          {money(effectiveGuide.refi.loan)}
-                        </OverlayTrigger>
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-white/60">Left for you</p>
-                      <p className="font-display text-3xl font-semibold">
-                        <OverlayTrigger lines={effectiveGuide.refi.leftForYouOverlay} className="text-white">
-                          {money(effectiveGuide.refi.leftForYou)}
-                        </OverlayTrigger>
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                      <div>
-                        <p className="text-xs text-white/60">{e.keepMonthly < 0 ? 'Short each month' : 'Left over each month after every bill'}</p>
-                        <p className="font-display text-4xl font-semibold">{money(e.keepMonthly < 0 ? -e.keepMonthly : e.keepMonthly)}</p>
-                      </div>
-                      <div><p className="text-xs text-white/60">Rent covers the payment</p><p className="font-display text-4xl font-semibold">{times(e.dscr)}</p></div>
-                      <div><p className="text-xs text-white/60">Bank loan at refinance</p><p className="font-display text-4xl font-semibold">{money(o.refiLoan)}</p></div>
-                    </div>
-                    {val && (
-                      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/90">
-                        <OverlayTrigger lines={[...(val.incomeOverlay || []), ...(val.compsLine ? [val.compsLine, ...(val.compsOverlay || [])] : [])]} className="font-medium text-white">{val.incomeLine}</OverlayTrigger>
-                      </div>
-                    )}
-                  </>
-                )}
-              </section>
-
-              <Cover rows={photos} />
-
               <Card>
                 <CardTitle>The numbers</CardTitle>
                 {effectiveGuide ? (
@@ -159,7 +173,7 @@ export default function Lender({ deal, me, preview, tab }) {
                       <Stat label="Rent per unit" value={`${money(o.b.rent)}/mo`} />
                       <Stat label="Yearly profit before payments" value={money(o.noi)} />
                       <Stat label="Monthly payment" value={money(debtOf(e))} />
-                      <Stat label="Value by income" value={money(val?.income ?? o.b.value)} overlay={val?.incomeOverlay} />
+                      <Stat label="Value" value={money(val?.income ?? o.b.value)} overlay={val?.incomeOverlay} />
                       <Stat label="Repair budget" value={money(o.b.rehab)} />
                       <Stat label="Total cost" value={money(e.allIn)} overlay={o.b.value ? [`${Math.round((e.allIn / o.b.value) * 100)}% of value`] : []} />
                       <Stat label="Rented units to break even" value={breakEvenCount(e)} />
@@ -207,7 +221,6 @@ export default function Lender({ deal, me, preview, tab }) {
               {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} showMarket />}
             </>
           )}
-          <LenderTerms deal={deal} me={me} preview={preview} />
         </>
       )}
     </div>

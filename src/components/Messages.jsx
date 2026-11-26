@@ -96,8 +96,8 @@ export function useInbox(deal, me, role, preview, sellerTo = 'realtor') {
 
 function slotLabel(k, role, sellerTo = 'realtor') {
   if (k === 'owner') return role === 'seller' ? (sellerTo === 'buyer' ? `${buyerName()} and the realtor` : 'The realtor') : buyerTag();
-  if (k === 'seller' && role === 'realtor') return `${sellerName() || 'Seller'} (${buyerName()} sees it)`;
-  if (k === 'lender' && role === 'realtor') return `Lender (${buyerName()} sees it)`;
+  if (k === 'seller' && role === 'realtor') return sellerName() || 'Seller';
+  if (k === 'lender' && role === 'realtor') return 'Lender';
   if (k === 'realtor' && role === 'lender') return `Realtor (${buyerName()} sees it)`;
   if (k === 'realtor-lender') return 'Realtor + lender';
   if (k === 'seller') return sellerTag();

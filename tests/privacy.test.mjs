@@ -91,7 +91,7 @@ test('v5 strategy was owner-only in 0009 (isolated realtor/reviewer ideas added 
   assert.match(pols[0], /commercial_member_role\(deal_id\) = 'owner'/);
   assert.doesNotMatch(pols[0], /'realtor'|'reviewer'|'lender'|'seller'|'viewer'/);
   assert.doesNotMatch(v5, /insert\s+into\s+public\.commercial_strategy_ideas/i);
-  for (const f of ['views/Lender.jsx', 'views/Seller.jsx', 'views/LeadGuest.jsx']) {
+  for (const f of ['views/Lender.jsx', 'views/Seller.jsx']) {
     const s = readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
     assert.doesNotMatch(s, /StrategyIdeas|commercial_strategy_ideas|'strategy'/, f);
   }
@@ -132,10 +132,10 @@ test('v5 comps tab and tables are hidden from lender, seller and viewer', () => 
     assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
   }
   const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
-  // v6.3+: reviewer gets Overview, Photos, Comps, private Ideas, Messages; viewer gets Overview + Photos.
-  assert.match(rev, /const tabs = viewer \? \[\['overview', 'Overview'\], \['photos', 'Photos'\]\] : \[\['overview', 'Overview'\], \['photos', 'Photos'\], \['comps', 'Comps'\], \['ideas', 'Ideas'\], \['messages', 'Messages'\]\]/);
+  // Reviewer gets Overview, Photos, Comps, Rent & value (when available), Documents, Messages; viewer gets Overview + Photos; Ideas tab removed.
+  assert.match(rev, /\['overview', 'Overview'\], \['photos', 'Photos'\]/);
   assert.match(rev, /!viewer && active === 'comps'/);
-  assert.match(rev, /!viewer && active === 'ideas'/);
+  assert.doesNotMatch(rev, /StrategyIdeas|active === 'ideas'/);
 });
 
 test('v5 migration only creates commercial_ objects and storage.objects policies', () => {

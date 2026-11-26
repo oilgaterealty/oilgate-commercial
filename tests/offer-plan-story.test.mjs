@@ -80,7 +80,7 @@ const TEST_PLAN = normalizePlan({
     { id: '6', rehab: 5000, ready: 18 },
     { id: '7', rehab: 5000, ready: 20 },
     { id: '8', rehab: 5000, ready: 22 },
-    { id: '10', rehab: 0, ready: 24, optional: true },
+    { id: '10', rehab: 30000, ready: 24 },
   ],
   costs: [
     { label: 'Building systems', cost: 15000, start: 0, end: 8, group: 'systems' },
@@ -102,8 +102,9 @@ test('compsMedian and valueSummary compute income primary and median comps secon
   assert.equal(cm.total, 650000);
 
   const val = valueSummary({ base: TEST_BASE, noi: 81000, units: 10, comps: TEST_COMPS });
-  assert.equal(val.incomeLine, 'Value by income: $750,000 ($75,000/unit)');
+  assert.equal(val.incomeLine, 'Value $750,000');
   assert.equal(val.compsLine, 'Value by comps: $650,000 ($65,000/unit)');
+  assert.ok(val.incomeOverlay.some((l) => l.includes('Value by income: $750,000 ($75,000/unit)')));
   assert.ok(val.incomeOverlay.some((l) => l.includes('81,000') && l.includes('9%')));
   assert.ok(val.incomeOverlay.some((l) => l.includes('Sample valuation note')));
   assert.ok(val.compsOverlay[0].includes('$65,000 median/unit × 10 units = $650,000'));
@@ -149,7 +150,7 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
   const s2 = story.steps[1];
   const expectedRehab = 39000 + 30000 + 15000 + 3000;
   assert.equal(s2.lines[0].value, money(expectedRehab));
-  assert.ok(s2.lines[0].overlay.some((l) => l.includes('Unit 10 (added unit) rehab: $30,000')));
+  assert.ok(s2.lines[0].overlay.some((l) => l.includes('Unit 10 rehab: $30,000')));
   assert.ok(s2.lines[0].overlay.some((l) => l.includes('Building systems: $15,000')));
 
   // Step 3: Holding cost marks estimates and explains negative cash flow without bare "You keep"
@@ -169,7 +170,7 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
 
   // Step 6: Refinance shows income + comps + You take home in big type
   const s6 = story.steps[5];
-  assert.ok(s6.lines.some((l) => l.label.startsWith('Value by income:')));
+  assert.ok(s6.lines.some((l) => l.label.startsWith('Value ')));
   assert.ok(s6.lines.some((l) => l.label.startsWith('Value by comps:')));
   assert.ok(s6.lines.some((l) => l.big && l.label.startsWith('You take home ')));
 
@@ -244,19 +245,16 @@ test('Offers OptionCard and OptionTable render the units-rented table and refina
   assert.doesNotMatch(tableHtml, /You keep|Month \d+/i);
 });
 
-test('Plans removes as-is switch, defaults Unit 10 to $30K, uses plain pending wording, and overlays never scroll inside', () => {
-  assert.equal(BASE_DEFAULTS.tenthUnitRepair, 30000);
+test('Plans removes as-is switch, removes tenthUnitRepair, uses plain pending wording, and overlays never scroll inside', () => {
+  assert.equal('tenthUnitRepair' in BASE_DEFAULTS, false);
 
   const dealPlanSrc = read('src/views/DealPlan.jsx');
   const shellSrc = read('src/components/Shell.jsx');
   const citySrc = read('src/components/CityRecordsView.jsx');
-  const leadGuestSrc = read('src/views/LeadGuest.jsx');
   const offersSrc = read('src/views/Offers.jsx');
 
-  assert.doesNotMatch(dealPlanSrc, /as-is|Pending lender underwriting|Stabilized 10 units \(pending approvals\)/i);
-  assert.doesNotMatch(leadGuestSrc, /as-is/i);
+  assert.doesNotMatch(dealPlanSrc, /as-is|Pending lender underwriting|Stabilized 10 units \(pending approvals\)|tenthUnitRepair|Added unit/i);
   assert.match(dealPlanSrc, /No lender has confirmed yet/);
-  assert.match(dealPlanSrc, /Added unit \(Unit \{addedId\}\) rehab/);
   assert.match(dealPlanSrc, /Left over each month after every bill/);
 
   // No max-h-* or overflow-y-auto in any overlay/tooltip
@@ -268,7 +266,7 @@ test('Plans removes as-is switch, defaults Unit 10 to $30K, uses plain pending w
   assert.match(offersSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \|\| import\.meta\.env\.VITE_SITE_KIND === 'seller'\s*\?\s*null/);
   assert.match(offersSrc, /canAccessDealPlan\(SITE_KIND, role, preview\)/);
   assert.match(offersSrc, /offerPlanStory\(/);
-  for (const view of ['Seller.jsx', 'Lender.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'LeadGuest.jsx']) {
+  for (const view of ['Seller.jsx', 'Lender.jsx', 'Realtor.jsx', 'Reviewer.jsx']) {
     assert.doesNotMatch(read(`src/views/${view}`), /dealplan|DealPlan|deal_plan/i, view);
   }
 });

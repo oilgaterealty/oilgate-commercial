@@ -1,7 +1,7 @@
 // Which site this build serves. Set at build time only, never from the address bar.
 //   'owner'  = the owner's private address: only the owner's page loads.
 //   'seller' = 2327charlotte: the seller's page only.
-//   'public' = the shared private address for realtor, lender, reviewer, viewer and lead guest: no owner or seller page here.
+//   'public' = the shared private address for realtor, lender, reviewer and viewer: no owner or seller page here.
 //   unset    = both (local dev and older builds).
 export const SITE_KIND = import.meta.env?.VITE_SITE_KIND || '';
 

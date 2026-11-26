@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useHashRoute } from '../lib/useHashRoute.js';
-import { OPTION_E_OVERLAY, addedUnitId, buildCostSummary, buildLeadGuide, monthlyPlan, offerSellerSummary, derivations, normalizePlan, ordinal } from '../lib/dealplan.js';
+import { OPTION_E_OVERLAY, buildCostSummary, buildLeadGuide, monthlyPlan, offerSellerSummary, derivations, normalizePlan, ordinal, overallRepairBudget } from '../lib/dealplan.js';
 import { money, sellerLoanText, valueSummary } from '../lib/dealmath.js';
 import { loadReadinessMap } from '../lib/readiness.js';
 import CostSummary from '../components/CostSummary.jsx';
@@ -77,8 +77,12 @@ const stageNames = { vacant: 'Fixing up', partial: 'Filling up', full: 'Full', a
 const stageColors = { vacant: 'bg-amber-50', partial: 'bg-orange-50', full: 'bg-emerald-50', after: 'bg-sky-50' };
 const tone = (value) => value < 0 ? 'text-red-700' : 'text-ink';
 
-export function DealPlanView({ result, base, offers, selected, onSelect, setBase, onChangeShortCarry, comps = [], readiness = {} }) {
+export function DealPlanView({ result, base, offers, selected, onSelect, setBase, onChangeShortCarry, onSavePlan, comps = [], readiness = {} }) {
   const [showMonthly, setShowMonthly] = useState(false);
+  const [editBudget, setEditBudget] = useState(false);
+  const [draftPlan, setDraftPlan] = useState(() => normalizePlan(result.plan));
+  const [budgetStatus, setBudgetStatus] = useState('');
+  useEffect(() => { setDraftPlan(normalizePlan(result.plan)); }, [result.plan]);
   const explanations = derivations(result);
   const explain = (...titles) => explanations.filter(([title]) => titles.includes(title)).map(([title, text]) => `${title}: ${text}`);
   const sources = Object.entries(result.plan.sources).map(([key, value]) => `${key}: ${String(value)}`);
@@ -87,9 +91,7 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
     `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance and water and trash divided by 12.`];
   const { exit, totals, eligibility } = result;
   const val = valueSummary({ base: { ...result.operating.b, ...base }, noi: result.full.noi * 12, units: result.units.length || result.operating.b.units, comps });
-  const addedId = addedUnitId(result.plan);
   const unitsGuide = buildLeadGuide(base, result.plan, selected, comps);
-  const addedUnitRehab = base.tenthUnitRepair ?? result.operating.b.tenthUnitRepair;
   const shortCarry = selected?.inputs?.shortCarry ?? 0;
   const advancesStart = result.structure === 'master_lease' || result.structure === 'partnership'
     ? result.inputs.sellerAdvances
@@ -124,19 +126,67 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
-          <span>Added unit (Unit {addedId}) rehab</span>
-          <input type="number" inputMode="decimal" min={0} step={1000} aria-label={`Added unit (Unit ${addedId}) rehab`} value={addedUnitRehab}
-            onChange={(e) => setBase({ ...base, tenthUnitRepair: e.target.value === '' ? 0 : +e.target.value })}
-            className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
-        </label>
-        <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
           <span>Short months carried by the repair loan ($)</span>
           <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months carried by the repair loan ($)" value={shortCarry}
             onChange={(e) => onChangeShortCarry?.(e.target.value === '' ? 0 : +e.target.value)}
             className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
         </label>
+        {onSavePlan && (
+          <button type="button" aria-expanded={editBudget} onClick={() => setEditBudget((v) => !v)}
+            className="rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:border-ink">
+            {editBudget ? 'Hide repair budget' : 'Edit repair budget'}
+          </button>
+        )}
       </div>
     </div>
+
+    {editBudget && onSavePlan && (
+      <Card className="!p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-lg font-semibold">Repair budget: {money(overallRepairBudget(draftPlan))}</h2>
+          <div className="flex items-center gap-2">
+            {budgetStatus && <span role="status" className="text-xs text-ink-soft">{budgetStatus}</span>}
+            <button type="button" onClick={async () => {
+              setBudgetStatus('Saving…');
+              const err = await onSavePlan(draftPlan);
+              setBudgetStatus(err ? 'Could not save. Try again.' : 'Saved.');
+            }} className="rounded-xl bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-ink-soft">
+              Save repair budget
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {draftPlan.units.map((u, idx) => (
+            <label key={u.id || idx} className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 text-xs">
+              <span className="font-medium text-ink">Unit {u.id}</span>
+              <input type="number" inputMode="decimal" min={0} step={500} aria-label={`Unit ${u.id} rehab`} value={u.rehab}
+                onChange={(e) => {
+                  const valNum = e.target.value === '' ? 0 : +e.target.value;
+                  setDraftPlan((p) => ({ ...p, units: p.units.map((x, j) => (j === idx ? { ...x, rehab: valNum } : x)) }));
+                }}
+                className="w-24 rounded border border-line bg-white px-2 py-1 text-right text-sm font-semibold text-ink outline-none focus:border-ink" />
+            </label>
+          ))}
+          {draftPlan.costs.map((c, idx) => (
+            <label key={`${c.label}-${idx}`} className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 text-xs">
+              <span className="font-medium text-ink">{c.label}</span>
+              <input type="number" inputMode="decimal" min={0} step={500} aria-label={`${c.label} cost`} value={c.cost}
+                onChange={(e) => {
+                  const valNum = e.target.value === '' ? 0 : +e.target.value;
+                  setDraftPlan((p) => ({ ...p, costs: p.costs.map((x, j) => (j === idx ? { ...x, cost: valNum } : x)) }));
+                }}
+                className="w-24 rounded border border-line bg-white px-2 py-1 text-right text-sm font-semibold text-ink outline-none focus:border-ink" />
+            </label>
+          ))}
+          <label className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 text-xs">
+            <span className="font-medium text-ink">Contingency</span>
+            <input type="number" inputMode="decimal" min={0} step={500} aria-label="Repair contingency" value={draftPlan.contingency}
+              onChange={(e) => setDraftPlan((p) => ({ ...p, contingency: e.target.value === '' ? 0 : +e.target.value }))}
+              className="w-24 rounded border border-line bg-white px-2 py-1 text-right text-sm font-semibold text-ink outline-none focus:border-ink" />
+          </label>
+        </div>
+      </Card>
+    )}
 
     <UnitsRentedGuide guide={unitsGuide} Trigger={PlanOverlay} />
 
@@ -220,7 +270,7 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
           <div className="flex flex-wrap gap-2">{result.units.map((unit, idx) => {
             const rLabel = readiness[Number(unit.id)]?.body;
             return (
-              <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`, unit.optional ? `Unit ${unit.id} needs its zoning certificate.` : null]}
+              <PlanOverlay key={unit.id} lines={[...sources, unit.note, `Ready week ${unit.ready}; rent-ready work ${money(unit.rehab)}.`]}
                 className="inline-flex flex-wrap items-center gap-1.5 rounded-full border border-line bg-paper px-3 py-2 text-xs">
                 <span>{ordinal(idx + 1)} Unit {unit.id}</span>
                 {rLabel && <ReadinessBadge unitNumber={Number(unit.id)} label={rLabel} compact />}
@@ -272,16 +322,29 @@ function LoadedDealPlan({ deal }) {
     model.setOffers((list) => list.map((o) => (o.id === selected.id ? { ...o, inputs: nextInputs, seller_summary: nextSummary } : o)));
     model.later(`short-${selected.id}`, () => supabase.from('commercial_offers').update({ inputs: nextInputs, seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', selected.id));
   };
-  const handleSetBase = (nextBase) => {
+  const handleSetBase = (nextBase, nextPlanOverride = state.plan) => {
     model.setBase(nextBase);
     const lead = model.offers.find((o) => o.is_lead) || selected;
     if (lead) {
-      const nextSummary = offerSellerSummary(lead, { ...nextBase, units: 10 }, state.plan, state.comps, false);
+      const nextSummary = offerSellerSummary(lead, { ...nextBase, units: 10 }, nextPlanOverride, state.comps, false);
       model.setOffers((list) => list.map((o) => (o.id === lead.id ? { ...o, seller_summary: nextSummary } : o)));
       model.later(`summary-${lead.id}`, () => supabase.from('commercial_offers').update({ seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', lead.id));
     }
   };
-  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={handleSetBase} onChangeShortCarry={saveShortCarry} comps={state.comps} readiness={state.readiness}
+  const handleSavePlan = async (nextPlan) => {
+    const clean = normalizePlan(nextPlan);
+    const total = overallRepairBudget(clean);
+    const { error } = await supabase.from('commercial_settings').upsert({
+      key: `deal_plan:${deal.slug}`,
+      value: clean,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) return error;
+    setState((prev) => ({ ...prev, plan: clean }));
+    handleSetBase({ ...model.base, rehab: total }, clean);
+    return null;
+  };
+  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={handleSetBase} onChangeShortCarry={saveShortCarry} onSavePlan={handleSavePlan} comps={state.comps} readiness={state.readiness}
     onSelect={(offer) => { setChosen(offer.id); window.location.hash = `#/d/${deal.slug}/plans/${offer.structure}`; }} />;
 }
 

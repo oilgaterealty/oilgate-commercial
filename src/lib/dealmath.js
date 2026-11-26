@@ -3,7 +3,6 @@
 // Building numbers shared by every offer. Each deal's real numbers live in its private database row,
 // never in this (public) code. These blanks are only a starting template.
 export const BASE_FIELDS = [
-  ['tenthUnitRepair', 'Added unit rehab', '$'],
   ['rent', 'Rent per unit / mo', '$'],
   ['vacancyPct', 'Vacancy + collection loss', '%'],
   ['taxes', 'Taxes / yr', '$'],
@@ -11,7 +10,7 @@ export const BASE_FIELDS = [
   ['waterMo', 'Water and trash / mo', '$'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
   ['value', 'Value after repairs', '$'],
-  ['rehab', 'Rent-ready budget', '$'],
+  ['rehab', 'Repair budget', '$'],
   ['refiRate', 'Refinance rate', '%'],
   ['refiYears', 'Refinance term (years)', 'n'],
   ['refiLtv', 'Most a bank lends, as % of value', '%'],
@@ -27,7 +26,7 @@ export const BASE_FIELDS = [
 export const KNOWN_BASE = ['taxes', 'insurance', 'waterMo', 'emptyUnitUtilMo'];
 
 export const BASE_DEFAULTS = {
-  units: 10, tenthUnitRepair: 30000, rent: 0, vacancyPct: 7,
+  units: 10, rent: 0, vacancyPct: 7,
   taxes: 0, insurance: 0, waterMo: 0, emptyUnitUtilMo: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 0, reservesPerUnit: 300, value: 0, rehab: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
@@ -56,8 +55,9 @@ export const STRUCTURES = {
       ['sellerLoanPayment', 'Seller’s own loan payment / mo (0 = unknown)', '$'],
       ['closing', 'Closing costs', '$'],
       ['buyerCash', 'Your cash in', '$'],
+      ['billsFromRent', 'Bills paid from rent; seller carries until then', 'bool'],
     ],
-    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, closing: 0, shortCarry: 0, buyerCash: 0 },
+    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, closing: 0, shortCarry: 0, buyerCash: 0, billsFromRent: false },
   },
   partnership: {
     label: 'Partner now, buy out later',
@@ -120,8 +120,6 @@ export function operating(baseIn = {}) {
   const egi = gpr * (1 - b.vacancyPct / 100);
   const mgmt = egi * (b.mgmtPct / 100);
   const fixed = b.taxes + b.insurance + b.utilities + b.admin + b.turns;
-  const extraRepair = num(b.tenthUnitRepair, 0);
-  b.rehab += extraRepair;
   const noi = egi - mgmt - fixed;
   const reserves = b.units * b.reservesPerUnit;
   const cashFlow = noi - reserves; // yearly, before any debt or payment to the seller
@@ -130,7 +128,7 @@ export function operating(baseIn = {}) {
   const refiLoan = Math.min(loanByDscr, loanByLtv);
   const refiNet = refiLoan - (refiLoan * b.refiFeesPct) / 100 - b.refiFeesFlat - b.refiReserve;
   const refiPayment = pmt(b.refiRate, b.refiYears, refiLoan);
-  return { b, strUnits, ltrUnits, extraRepair, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
+  return { b, strUnits, ltrUnits, gpr, egi, mgmt, fixed, noi, reserves, cashFlow, capRate: b.value ? noi / b.value : null, refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment };
 }
 
 // Occupancy needed to cover fixed costs, reserves and the yearly payment.
@@ -188,7 +186,6 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     ];
   }
 
-  if (structure !== 'cash') allIn += o.extraRepair;
   const keepMonthly = o.cashFlow / 12 - debtMonthly;
   const dscr = debtMonthly > 0 ? o.cashFlow / (debtMonthly * 12) : Infinity;
   return {
@@ -267,14 +264,15 @@ export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {})
     compsCalc = { count: Math.round(+base.compsCount || 0), perUnit, total };
   }
 
-  const incomeLine = income !== null
-    ? (incomePerUnit !== null ? `Value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Value by income: ${money(income)}`)
-    : 'Value by income: —';
+  const incomeLine = income !== null ? `Value ${money(income)}` : 'Value —';
   const compsLine = compsCalc.total !== null
     ? (compsCalc.perUnit !== null ? `Value by comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `Value by comps: ${money(compsCalc.total)}`)
     : null;
 
   const incomeOverlay = [];
+  if (income !== null) {
+    incomeOverlay.push(incomePerUnit !== null ? `Value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Value by income: ${money(income)}`);
+  }
   if (noiAnnual > 0) {
     const computed = noiAnnual / (capRate / 100);
     incomeOverlay.push(`${money(noiAnnual)} yearly NOI ÷ ${capRate}% cap rate = ${money(computed)}${unitCount > 0 ? ` (${money(computed / unitCount)}/unit across ${unitCount} units)` : ''}.`);
@@ -362,11 +360,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
             ]
           : [`${money(x.price)} paid at closing; bank payment ${money(paymentMo)}/mo (${x.downPct}% down, ${x.rate}% / ${x.years} yrs).`];
 
-  const rehabItems = [];
-  const baseRehab = Math.max(0, b.rehab - o.extraRepair);
-  if (baseRehab > 0) rehabItems.push(`Rent-ready budget: ${money(baseRehab)}`);
-  if (o.extraRepair > 0) rehabItems.push(`Added unit rehab: ${money(o.extraRepair)}`);
-  if (!rehabItems.length) rehabItems.push(`Total rehab budget: ${money(b.rehab)}`);
+  const rehabItems = [`Repair budget: ${money(b.rehab)}`];
 
   const steps = [
     {
@@ -387,7 +381,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
       num: 2,
       title: 'Rehab',
       lines: [
-        { label: 'Total rehab', value: money(b.rehab), overlay: [...rehabItems, `Total: ${money(b.rehab)}.`] },
+        { label: 'Repair budget', value: money(b.rehab), overlay: [...rehabItems, `Total: ${money(b.rehab)}.`] },
       ],
     },
     {
@@ -427,7 +421,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
             { label: 'Loan', value: `${money(x.price * (1 - x.downPct / 100))} at closing`, overlay: [`Straight bank purchase loan from day 1.`] },
           ]
         : [
-            { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms and the added unit needs its zoning certificate; the math still runs on today’s numbers.'] },
+            { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms; the math still runs on today’s numbers.'] },
             ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
             { label: 'Loan', value: money(o.refiLoan), overlay: [`${money(o.refiLoan)} (${o.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − fees & holdback = ${money(o.refiNet)} net.`] },
             {

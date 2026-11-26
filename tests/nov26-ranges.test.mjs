@@ -39,11 +39,13 @@ test('market range shows for lender and owner, not the reviewer', () => {
   assert.match(mig, /'noteWaits', t->'noteWaits'/);
 });
 
-test('realtor overview: building facts only, no money tiles', () => {
-  const d = read('src/views/Dashboard.jsx');
-  const realtorBlock = d.slice(d.indexOf('{realtor ? ('), d.indexOf(') : (', d.indexOf('{realtor ? (')));
-  assert.match(realtorBlock, /label="Units"/);
-  assert.match(realtorBlock, /label="Status"/);
-  assert.doesNotMatch(realtorBlock.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n"), /money\(|Repair budget|Value|offer|profit|cash flow/i);
-  assert.doesNotMatch(d, /sub=\{|sub="/);
+test('realtor overview: short phone-first overview with cover, address, units, repair budget, lead offer and next step', () => {
+  const r = read('src/views/Realtor.jsx');
+  assert.match(r, /<Cover rows=\{photos\} compact \/>/);
+  assert.match(r, />Address</);
+  assert.match(r, />Units</);
+  assert.match(r, />Repair budget</);
+  assert.match(r, />Lead offer</);
+  assert.match(r, />Next step</);
+  assert.doesNotMatch(read('src/views/Dashboard.jsx'), /sub=\{|sub="/);
 });
