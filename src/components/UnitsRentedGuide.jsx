@@ -23,7 +23,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
     { label: r.estimatedValueLabel || 'Estimated value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'In hand after fees and reserve', value: money(r.inHand), overlay: r.inHandOverlay },
-    { label: 'Seller paid off', value: r.sellerPayoffText, overlay: r.sellerPayoffOverlay },
+    { label: r.sellerPayoffLabel || 'Seller paid off', value: r.sellerPayoffText, overlay: r.sellerPayoffOverlay },
     {
       label: 'Repair loan paid off',
       value: `${money(r.repairLoanPayoff)} unused · ${money(r.repairLoanPayoffContUsed)} all used`,
@@ -42,7 +42,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Units</th>
               <th scope="col" className="px-3 py-2.5">Rent in</th>
-              <th scope="col" className="px-3 py-2.5">Seller’s costs</th>
+              <th scope="col" className="px-3 py-2.5">{guide.costsLabel || 'Seller’s costs'}</th>
               <th scope="col" className="px-3 py-2.5 text-center">Covered</th>
               <th scope="col" className="px-3 py-2.5">You net</th>
               <th scope="col" className="px-3 py-2.5">You net, contingency used</th>

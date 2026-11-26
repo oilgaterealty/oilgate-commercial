@@ -10,6 +10,7 @@ import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
+import RentValue, { isRentValue } from '../components/RentValue.jsx';
 import { Card, CardTitle, Empty, Tabs, OverlayTrigger } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
@@ -200,6 +201,8 @@ export default function Lender({ deal, me, preview, tab }) {
                   </>
                 )}
               </Card>
+
+              {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} />}
             </>
           )}
           <LenderTerms deal={deal} me={me} preview={preview} />

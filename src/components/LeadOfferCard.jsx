@@ -82,7 +82,7 @@ export function validProofItems(content = {}) {
 const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
 
 // Single plain-English offer card shown to the seller (and lead_guest). Never renders multiple options.
-export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false }) {
+export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false, coveredLabel = 'Your costs covered' }) {
   const lead = normalizeLeadOffer(content);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
@@ -154,7 +154,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                 <tr>
                   <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
                   <th scope="col" className="px-3 py-2.5">Rent in</th>
-                  <th scope="col" className="px-3 py-2.5 text-center">Your costs covered</th>
+                  <th scope="col" className="px-3 py-2.5 text-center">{coveredLabel}</th>
                 </tr>
               </thead>
               <tbody>

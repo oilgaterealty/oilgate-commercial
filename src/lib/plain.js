@@ -24,12 +24,12 @@ export function plain(structure, r) {
     return {
       glance: 'We buy now and pay the seller every month. Their loan stays in place.',
       owns: 'We do, from closing',
-      payoff: 'When we refinance or sell',
+      payoff: 'Once all 10 units are rented',
       cash: cashUp,
       risk: 'The seller’s bank could ask for its loan back when the building changes hands',
       lines: [
         'We buy the building now and pay the seller every month instead of paying a bank. The seller’s own loan stays where it is.',
-        `We pay the seller ${money(r.sellerMonthly)}/mo and they keep paying their own loan from it. We pay the rest in full when we refinance or sell, and no date is set yet.`,
+        `We pay the seller ${money(r.sellerMonthly)}/mo and they keep paying their own loan from it. We pay off the note when all 10 units are rented and we refinance.`,
       ],
     };
   }

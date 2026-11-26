@@ -12,6 +12,7 @@ import Offers from './Offers.jsx';
 import StrategyIdeas from './StrategyIdeas.jsx';
 import { seenBy } from '../lib/visibility.js';
 import { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
+import RentValue, { isRentValue } from '../components/RentValue.jsx';
 
 function Facts({ deal, numbers }) {
   const [base, setBase] = useState(null);
@@ -79,6 +80,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
               <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} leadGuide={leadGuide} />
             </section>
           )}
+          {!viewer && role === 'reviewer' && isRentValue(leadGuide?.rentValue) && <RentValue data={leadGuide.rentValue} />}
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardTitle>Documents</CardTitle>

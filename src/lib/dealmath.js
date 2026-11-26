@@ -49,15 +49,16 @@ export const STRUCTURES = {
     defaults: { payment: 0, optionPrice: 0, sellerAdvances: 0, creditPct: 100, exerciseClosing: 0, shortCarry: 0, buyerCash: 0 },
   },
   wrap: {
-    label: 'Buy now, seller is paid monthly',
+    label: 'Seller financing',
     fields: [
       ['note', 'What we owe the seller (price + their upfront money)', '$'],
       ['rate', 'Interest rate we pay the seller', '%'],
       ['amortYears', 'Years to pay it down (0 = interest only)', 'n'],
       ['sellerLoanPayment', 'Seller’s own loan payment / mo (0 = unknown)', '$'],
+      ['closing', 'Closing costs', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
-    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, shortCarry: 0, buyerCash: 0 },
+    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, closing: 0, shortCarry: 0, buyerCash: 0 },
   },
   partnership: {
     label: 'Partner now, buy out later',
@@ -161,7 +162,7 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
   } else if (structure === 'wrap') {
     debtMonthly = sellerMonthly = x.amortYears > 0 ? pmt(x.rate, x.amortYears, x.note) : (x.note * x.rate) / 100 / 12;
     if (x.sellerLoanPayment > 0) sellerNet = sellerMonthly - x.sellerLoanPayment;
-    allIn = x.note + cashIn;
+    allIn = x.note + x.closing + cashIn;
     extra = [['Seller keeps after their own loan payment', sellerNet, '$/mo']];
   } else if (structure === 'partnership') {
     sellerMonthly = x.stepUp;
@@ -334,7 +335,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const fullLeft = evalResult.keepMonthly;
 
   const advances = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : structure === 'seller_rehab' ? x.sellerFund : 0;
-  const closingCost = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab') ? x.closing : 0;
+  const closingCost = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab' || structure === 'wrap') ? x.closing : 0;
   const sellerPayoffEst = structure === 'master_lease'
     ? x.optionPrice + x.sellerAdvances
     : structure === 'wrap'

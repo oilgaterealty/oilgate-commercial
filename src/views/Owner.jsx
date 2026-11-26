@@ -17,6 +17,7 @@ import Offers from './Offers.jsx';
 import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
+import OwnerRentValue from '../components/OwnerRentValue.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
@@ -265,6 +266,7 @@ export default function Owner({ deal: initial, me, tab }) {
         <div className="space-y-5">
           <Dashboard deal={deal} me={me} role="owner" />
           <LoanPosition deal={deal} role="owner" />
+          <OwnerRentValue deal={deal} />
           <LenderBoard deal={deal} me={me} role="owner" />
         </div>
       )}

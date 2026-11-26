@@ -9,13 +9,14 @@ import UnitGallery from '../components/UnitGallery.jsx';
 import Activity from '../components/Activity.jsx';
 import { SellerPulse, AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
-import Offers from './Offers.jsx';
+import SellerOffer from '../components/SellerOffer.jsx';
+import { sendToOwner } from '../components/Messages.jsx';
 
 export { SellerPulse, AlertsCard };
 
 const TABS = [
   ['overview', 'Overview'],
-  ['offers', 'Offers'],
+  ['offers', 'The offer'],
   ['walkthrough', 'Walkthrough'],
   ['photos', 'Photos'],
   ['tenants', 'Tenants'],
@@ -33,7 +34,7 @@ export default function Realtor({ deal, me, member, preview, tab }) {
     <div className="readable">
       <Tabs tabs={TABS} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
       {active === 'overview' && <Dashboard deal={deal} me={me} role="realtor" preview={preview} />}
-      {active === 'offers' && <Offers deal={deal} me={me} role="realtor" preview={preview} onlyShared={preview ? 'realtor' : undefined} />}
+      {active === 'offers' && <SellerOffer deal={deal} preview={preview} onAsk={(q) => sendToOwner(deal, me, 'realtor', q, 'Offer question')} />}
       {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'photos' && (
         <div className="space-y-5">

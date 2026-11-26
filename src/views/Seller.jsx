@@ -6,6 +6,7 @@ import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Cover, PhotoStrip, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 import { ExecutionPlanCard, LeadOfferCard } from '../components/LeadOfferCard.jsx';
+import { coveredLabelOf } from '../components/SellerOffer.jsx';
 
 // The seller shares documents only (no photo uploads).
 const DOCS = 'application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt';
@@ -79,6 +80,7 @@ export default function Seller({ deal, me, preview }) {
         summary={summary}
         preview={preview}
         sellerOnly
+        coveredLabel={coveredLabelOf(sellerOffer?.structure)}
         onAsk={(q) => sendToOwner(deal, me, 'seller', q, 'Offer question')}
       />
 
