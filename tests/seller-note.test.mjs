@@ -62,12 +62,12 @@ test('seller summary: seller financing steps, no buyer numbers', () => {
   const s = offerSellerSummary(NOTE, BASE, PLAN, [], false);
   assert.equal(s.title, 'Seller financing');
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Your choice: fund the repairs', 'Refinance']);
-  assert.match(s.steps[3].detail, /You can also be my repair lender: \$[\d,]+ as a second note, paid off at the refinance/);
+  assert.match(s.steps[3].detail, /You can also be the buyer's repair lender: \$[\d,]+ as a second note, paid off at the refinance/);
   assert.ok(s.terms.some((t) => t.label === 'You can also fund the repairs'));
   assert.match(s.steps[2].detail, /added to your payoff/);
   const visible = JSON.stringify({ intro: s.intro, terms: s.terms, steps: s.steps, refiLine: s.refiLine, sellerTable: s.sellerTable });
   assert.doesNotMatch(visible, /net|cash flow|left for you|DSCR|interest|reserve|lease/i);
-  assert.match(s.refiLine, /pay off your note/);
+  assert.match(s.refiLine, /pays off your note/);
   assert.ok(s.sellerTable.every((r) => ['bills,billsLines,covered,note,rentIn,units', 'bills,billsLines,covered,note,noteWaits,rentIn,units'].includes(Object.keys(r).sort().join())));
   const n = sellerNote(NOTE, PLAN).notePay;
   assert.ok(s.sellerTable.every((r) => Math.abs(r.note + (r.noteWaits || 0) - n) < 1e-6 && r.note <= r.rentIn + 1e-6));

@@ -1633,7 +1633,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       `Total paid back: ${totalText}, on top of your payments from rent.`,
     ].filter(Boolean);
     const terms = [
-      { label: 'Purchase note', value: notePrincipalText, overlay: ['Seller financing. You deed me the building at closing. Paid from rent as units are rented, then paid back in full.'] },
+      { label: 'Purchase note', value: notePrincipalText, overlay: ['Seller financing. You deed the building to the buyer at closing. Paid from rent as units are rented, then paid back in full.'] },
       { label: 'Renovation note', value: money(renoAmt), overlay: repairLendOverlay },
       ...(rc ? [
         { label: 'Renovation note rate', value: `${rc.sellerRate}% a year`, overlay: compareOverlay },
@@ -1644,11 +1644,11 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       { label: 'Paid back in full', value: totalText, overlay: payoffLines },
     ];
     const steps = [
-      { title: 'Seller financing', detail: `At closing you deed me the building. Your purchase note is reported as ${notePrincipalText}. You can change this if it's not accurate. I take over the leasing and the repairs.`, overlay: [] },
-      { title: 'Repairs', detail: `You fund the repairs with a second seller note, ${money(renoAmt)}, at ${rf.renoRate}% a year${num(rl.contingency, 0) > 0 ? `, plus a ${money(rl.contingency)} contingency only if it's needed` : ''}. I run the work.`, overlay: [...repairsOverlay, ...compareOverlay] },
+      { title: 'Seller financing', detail: `At closing you deed the building to the buyer. Your purchase note is reported as ${notePrincipalText}. You can change this if it's not accurate. The buyer takes over the leasing and the repairs.`, overlay: [] },
+      { title: 'Repairs', detail: `You fund the repairs with a second seller note, ${money(renoAmt)}, at ${rf.renoRate}% a year${num(rl.contingency, 0) > 0 ? `, plus a ${money(rl.contingency)} contingency only if it's needed` : ''}. The buyer runs the work.`, overlay: [...repairsOverlay, ...compareOverlay] },
       { title: 'Paid as units are rented', detail: billsFromRent
         ? `Your payments start as units are rented and grow with each one. Rent pays the property tax, insurance, water and trash first, then you. ${fullAt[0].toUpperCase()}${fullAt.slice(1)} you get the full ${money(notePay + renoPay)} a month: ${money(notePay)} on the purchase note and ${money(renoPay)} on the renovation note. Any part not paid before then is added to what you are paid back.`
-        : `Your payments start as units are rented and grow with each one. ${fullAt[0].toUpperCase()}${fullAt.slice(1)} you get the full ${money(notePay + renoPay)} a month: ${money(notePay)} on the purchase note and ${money(renoPay)} on the renovation note. Any part not paid before then is added to what you are paid back. I pay the taxes, insurance, water and trash.`, overlay: payLines },
+        : `Your payments start as units are rented and grow with each one. ${fullAt[0].toUpperCase()}${fullAt.slice(1)} you get the full ${money(notePay + renoPay)} a month: ${money(notePay)} on the purchase note and ${money(renoPay)} on the renovation note. Any part not paid before then is added to what you are paid back. The buyer pays the taxes, insurance, water and trash.`, overlay: payLines },
       { title: 'Paid back in full', detail: `You are paid back in full, ${totalText}, on top of your payments from rent.`, overlay: payoffLines },
     ];
     return {
@@ -1670,24 +1670,24 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
   }
 
   const optionTerm = repairLend > 0 ? [{ label: 'You can also fund the repairs', value: `${money(repairLend)} second note`, overlay: repairLendOverlay }] : [];
-  const optionStep = repairLend > 0 ? [{ title: 'Your choice: fund the repairs', detail: `You can also be my repair lender: ${money(repairLend)} as a second note, paid off at the refinance with your first note.`, overlay: repairLendOverlay }] : [];
-  const repairsStep = { title: 'Repairs', detail: repairsTotal > 0 ? `I pay for the repairs, ${money(repairsTotal)}. You put in nothing.` : 'I pay for the repairs. You put in nothing.', overlay: repairsOverlay };
+  const optionStep = repairLend > 0 ? [{ title: 'Your choice: fund the repairs', detail: `You can also be the buyer's repair lender: ${money(repairLend)} as a second note, paid off at the refinance with your first note.`, overlay: repairLendOverlay }] : [];
+  const repairsStep = { title: 'Repairs', detail: repairsTotal > 0 ? `The buyer pays for the repairs, ${money(repairsTotal)}. You put in nothing.` : 'The buyer pays for the repairs. You put in nothing.', overlay: repairsOverlay };
 
   if (billsFromRent) {
     const terms = [
-      { label: 'Your note', value: notePrincipalText, overlay: [`Seller financing. You deed me the building at closing. Paid back in full when all ${unitsCount} units are rented.`] },
+      { label: 'Your note', value: notePrincipalText, overlay: [`Seller financing. You deed the building to the buyer at closing. Paid back in full when all ${unitsCount} units are rented.`] },
       { label: 'Note payment', value: `${money(notePay)}/mo`, overlay: ['Paid from rent after property tax, insurance, water and trash. Any part rent does not cover yet is added to your payoff.'] },
       { label: 'Holding bills', value: 'Paid from rent first', overlay: ['Rent pays property tax, insurance, water and trash first. Any part rent does not cover yet is added to your payoff.'] },
       { label: 'All bills + note covered', value: coveredAt !== null ? `Covered at ${coveredAt} units rented` : 'Rent pays bills first, then note', overlay: [] },
-      { label: 'Paid off when', value: `All ${unitsCount} units are rented`, overlay: [`I refinance and pay off your note (${notePrincipalText})${deferredAmt > 0 ? ` plus ${money(deferredAmt)} in deferred holding costs` : ''}.`] },
+      { label: 'Paid off when', value: `All ${unitsCount} units are rented`, overlay: [`The buyer refinances and pays off your note (${notePrincipalText})${deferredAmt > 0 ? ` plus ${money(deferredAmt)} in deferred holding costs` : ''}.`] },
       ...optionTerm,
     ];
     const steps = [
-      { title: 'Seller financing', detail: `At closing you deed me the building. Your note is ${notePrincipalText}. I take over the leasing and the repairs.`, overlay: [] },
+      { title: 'Seller financing', detail: `At closing you deed the building to the buyer. Your note is ${notePrincipalText}. The buyer takes over the leasing and the repairs.`, overlay: [] },
       repairsStep,
       { title: 'Rent', detail: `Rent pays the property tax, insurance, water and trash first, then your note.${coveredLine} Any part rent does not cover yet is added to your payoff.`, overlay: [] },
       ...optionStep,
-      { title: 'Refinance', detail: `Once all ${unitsCount} are rented, I refinance and pay off your note${deferredAmt > 0 ? ' and the deferred holding costs' : ''}.`, overlay: [] },
+      { title: 'Refinance', detail: `Once all ${unitsCount} are rented, the buyer refinances and pays off your note${deferredAmt > 0 ? ' and the deferred holding costs' : ''}.`, overlay: [] },
     ];
     return {
       version: 1,
@@ -1698,8 +1698,8 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       sellerTable,
       sellerCoveredAt: coveredAt,
       refiLine: deferredAmt > 0
-        ? `Once all ${unitsCount} are rented, I refinance and pay off your note (${notePrincipalText}) plus ${money(deferredAmt)} in deferred holding costs: ${payoffText}.`
-        : `Once all ${unitsCount} are rented, I refinance and pay off your note: ${payoffText}.`,
+        ? `Once all ${unitsCount} are rented, the buyer refinances and pays off your note (${notePrincipalText}) plus ${money(deferredAmt)} in deferred holding costs: ${payoffText}.`
+        : `Once all ${unitsCount} are rented, the buyer refinances and pays off your note: ${payoffText}.`,
       terms,
       steps,
       guide,
@@ -1707,27 +1707,27 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
   }
 
   const terms = [
-    { label: 'Your note', value: notePrincipalText, overlay: [`Seller financing. You deed me the building at closing. Paid back in full when all ${unitsCount} units are rented.`] },
+    { label: 'Your note', value: notePrincipalText, overlay: [`Seller financing. You deed the building to the buyer at closing. Paid back in full when all ${unitsCount} units are rented.`] },
     { label: 'Note payment', value: `${money(notePay)}/mo`, overlay: ['You keep paying your own loan from it.'] },
-    { label: 'Rent pays you first', value: coveredAt !== null ? `Covered at ${coveredAt} units rented` : 'Rent goes to your note first', overlay: ['Any part rent does not cover yet is added to your payoff.', 'I pay the taxes, insurance, water and trash.'] },
-    { label: 'Paid off when', value: `All ${unitsCount} units are rented`, overlay: [`I refinance and pay off your note${deferredAmt > 0 ? ` plus ${money(deferredAmt)} in deferred payments` : ''}: ${payoffText}.`] },
+    { label: 'Rent pays you first', value: coveredAt !== null ? `Covered at ${coveredAt} units rented` : 'Rent goes to your note first', overlay: ['Any part rent does not cover yet is added to your payoff.', 'The buyer pays the taxes, insurance, water and trash.'] },
+    { label: 'Paid off when', value: `All ${unitsCount} units are rented`, overlay: [`The buyer refinances and pays off your note${deferredAmt > 0 ? ` plus ${money(deferredAmt)} in deferred payments` : ''}: ${payoffText}.`] },
     ...optionTerm,
   ];
   const steps = [
-    { title: 'Seller financing', detail: `At closing you deed me the building. Your note is ${notePrincipalText}. I take over the leasing and the repairs.`, overlay: [] },
+    { title: 'Seller financing', detail: `At closing you deed the building to the buyer. Your note is ${notePrincipalText}. The buyer takes over the leasing and the repairs.`, overlay: [] },
     repairsStep,
-    { title: 'Rent', detail: `Rent pays your note first.${coveredAt !== null ? ` It is covered at ${coveredAt} units rented.` : ''} Any part rent does not cover yet is added to your payoff. I pay the taxes, insurance, water and trash.`, overlay: [] },
+    { title: 'Rent', detail: `Rent pays your note first.${coveredAt !== null ? ` It is covered at ${coveredAt} units rented.` : ''} Any part rent does not cover yet is added to your payoff. The buyer pays the taxes, insurance, water and trash.`, overlay: [] },
     ...optionStep,
-    { title: 'Refinance', detail: `Once all ${unitsCount} are rented, I refinance and pay off your note.`, overlay: [] },
+    { title: 'Refinance', detail: `Once all ${unitsCount} are rented, the buyer refinances and pays off your note.`, overlay: [] },
   ];
   return {
     version: 1,
     locked: false,
     title,
-    intro: 'Seller financing. Rent pays your note first, and any part rent does not cover yet is paid at refi. Once every unit is rented, I refinance and pay off your note.',
+    intro: 'Seller financing. Rent pays your note first, and any part rent does not cover yet is paid at refi. Once every unit is rented, the buyer refinances and pays off your note.',
     sellerTable,
     sellerCoveredAt: coveredAt,
-    refiLine: `Once all ${unitsCount} are rented, I refinance and pay off your note: ${payoffText}.`,
+    refiLine: `Once all ${unitsCount} are rented, the buyer refinances and pays off your note: ${payoffText}.`,
     terms,
     steps,
     guide,

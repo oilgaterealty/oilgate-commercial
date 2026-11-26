@@ -44,7 +44,7 @@ test('seller messages go to the realtor', () => {
 test('seller table: note payment, bills I pay, "covered"', () => {
   const card = read('src/components/LeadOfferCard.jsx');
   assert.match(card, /Your note payment/);
-  assert.match(card, /Taxes, insurance, utilities \(I pay\)/);
+  assert.match(card, /Taxes, insurance, utilities \(buyer pays\)/);
   assert.match(card, /coveredWord = \(c\) => \(c === 'yes' \? 'covered' : c\)/);
   const mig = read('supabase/migrations/0022_seller_table_costs.sql');
   assert.match(mig, /'note', t->'note', 'bills', t->'bills', 'billsLines', t->'billsLines'/);

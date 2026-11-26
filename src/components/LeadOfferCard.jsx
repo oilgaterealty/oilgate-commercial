@@ -106,7 +106,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
     : [
         { label: 'Parcels included', value: `Both parcels: ${CHARLOTTE_PARCELS}`, overlay: [] },
         { label: 'Purchase price', value: lead.price || 'To be agreed upfront in writing', overlay: [] },
-        { label: 'What I take on', value: lead.buyer_takes_on, overlay: [] },
+        { label: 'What the buyer takes on', value: lead.buyer_takes_on, overlay: [] },
         { label: 'What you contribute and receive', value: lead.seller_contributes_receives, overlay: [] },
         { label: 'Where payments come from', value: lead.payment_source, overlay: [] },
         { label: 'When the purchase happens', value: lead.closing_timing, overlay: [] },
@@ -160,7 +160,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                   <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
                   <th scope="col" className="px-3 py-2.5">Rent in</th>
                   {hasCosts && <th scope="col" className="px-3 py-2.5">{twoNotes ? 'Your note payments' : 'Your note payment'}</th>}
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills added to your payoff' : 'Taxes, insurance, utilities (I pay)'}</th>}
+                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills added to your payoff' : 'Taxes, insurance, utilities (buyer pays)'}</th>}
                   <th scope="col" className="px-3 py-2.5 text-center">{coveredLabel}</th>
                 </tr>
               </thead>
