@@ -4,7 +4,13 @@ import Shell, { Card, Button, Field, InfoTip } from '../components/Shell.jsx';
 import RoleChoice from '../components/RoleChoice.jsx';
 import { readRequestRole, saveRequestRole } from '../lib/requestRoles.js';
 
-const redirect = () => window.location.origin + window.location.pathname;
+import { SITE_KIND } from '../lib/site.js';
+import { POPUP_QUERY_PARAM, isPopupSignInFlow } from '../lib/frameAuth.js';
+
+const redirect = () => {
+  const base = window.location.origin + window.location.pathname;
+  return SITE_KIND === 'owner' && isPopupSignInFlow(window) ? `${base}?${POPUP_QUERY_PARAM}=1` : base;
+};
 const remember = () => { if (window.location.hash.length > 2) localStorage.setItem('returnTo', window.location.hash); };
 
 export default function SignIn({ canRequestAccess, requestingAccess }) {
