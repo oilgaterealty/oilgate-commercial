@@ -1204,7 +1204,7 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
       ].filter(Boolean);
       sellerCosts = billsSellerCarries + noteWaits + renoWaits;
       sellerCostsOverlay = [
-        ...sellerCostsBreakdown.filter((i) => i.key !== 'sellerLoan').map((i) => i.text),
+        ...sellerCostsBreakdown.filter((i) => i.key !== 'sellerLoan' && i.key !== 'renoNote').map((i) => i.text),
         `Holding bills total: ${money(billsTotal)}/mo.`,
         `Paid from rent: ${money(billsPaidFromRent)}/mo.`,
         billsSellerCarries > 0 ? `Bills that wait for the refi: ${money(billsSellerCarries)}/mo.` : 'Bills covered by rent.',
@@ -1264,7 +1264,7 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
     const buyerNetContUsed = aboveSellerCosts - buyerCostsContUsed;
 
     const aboveLabel = billsFromRent
-      ? `Rent after bills and note: ${money(aboveSellerCosts)}/mo`
+      ? `Rent after bills and ${renoMo > 0 ? 'notes' : 'note'}: ${money(aboveSellerCosts)}/mo`
       : `${isNote ? 'Rent after the note and bills' : 'Above seller’s costs'}: ${money(aboveSellerCosts)}/mo`;
     const waitNoteLine = billsFromRent && (billsSellerCarries > 0 || noteWaits > 0 || renoWaits > 0)
       ? 'You pay $0 out of pocket for the notes or bills during lease-up.'
