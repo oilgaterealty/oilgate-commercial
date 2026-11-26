@@ -8,7 +8,7 @@ export const BASE_FIELDS = [
   ['vacancyPct', 'Vacancy + collection loss', '%'],
   ['taxes', 'Taxes / yr', '$'],
   ['insurance', 'Insurance / yr', '$'],
-  ['waterMo', 'Water / mo', '$'],
+  ['waterMo', 'Water and trash / mo', '$'],
   ['emptyUnitUtilMo', 'Utilities per empty unit / mo', '$'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
   ['value', 'Value after repairs', '$'],
@@ -325,7 +325,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const runningParts = [
     taxesMo > 0 ? `Taxes ${money(taxesMo)}/mo` : null,
     insMo > 0 ? `Insurance ${money(insMo)}/mo` : null,
-    waterMo > 0 ? `Water ${money(waterMo)}/mo` : null,
+    waterMo > 0 ? `Water and trash ${money(waterMo)}/mo` : null,
     reservesMo > 0 ? `Reserves ${money(reservesMo)}/mo` : null,
   ].filter(Boolean);
   const runningOverlay = runningParts.length
