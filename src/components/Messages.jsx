@@ -86,7 +86,7 @@ export function useInbox(deal, me, role, preview, sellerTo = 'realtor') {
   useEffect(() => {
     load();
     if (preview) return;
-    const sub = supabase.channel(`inbox-${deal.id}-${role}`)
+    const sub = supabase.channel(`${Math.random().toString(36).slice(2, 8)}-inbox-${deal.id}-${role}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_messages', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
@@ -156,7 +156,7 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
   useEffect(() => {
     load();
     if (!conv) return;
-    const sub = supabase.channel(`c-${conv.id}`)
+    const sub = supabase.channel(`${Math.random().toString(36).slice(2, 8)}-c-${conv.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_messages', filter: `conversation_id=eq.${conv.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };

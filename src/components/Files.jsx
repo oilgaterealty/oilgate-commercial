@@ -23,7 +23,7 @@ export function useUploads(deal) {
   };
   useEffect(() => {
     load();
-    const sub = supabase.channel(`u-${deal.id}`)
+    const sub = supabase.channel(`${Math.random().toString(36).slice(2, 8)}-u-${deal.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commercial_uploads', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };

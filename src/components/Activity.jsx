@@ -16,7 +16,7 @@ export default function Activity({ deal, title = 'Activity', kinds, actors, empt
   };
   useEffect(() => {
     load();
-    const sub = supabase.channel(`a-${deal.id}-${(kinds || []).join()}-${(actors || []).join()}`)
+    const sub = supabase.channel(`${Math.random().toString(36).slice(2, 8)}-a-${deal.id}-${(kinds || []).join()}-${(actors || []).join()}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commercial_activity', filter: `deal_id=eq.${deal.id}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(sub); };
