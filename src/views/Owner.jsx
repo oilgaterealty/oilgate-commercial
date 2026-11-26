@@ -257,26 +257,39 @@ export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
   setDealNames(deal);
   const root = `#/d/${deal.slug}`;
-  const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { people: 'settings' });
+  // One section at a time: Overview stays short and every other section is one tap away on the sticky bar.
+  const wanted = ({ people: 'settings' })[tab] || tab;
+  const active = SECTIONS.some(([k]) => k === wanted) ? wanted : 'overview';
+  const show = (k) => active === k;
+  const jumpTo = (k) => {
+    const next = k === 'overview' ? root : `${root}/${k}`;
+    if (window.location.hash !== next) window.location.hash = next;
+    try { window.scrollTo({ top: 0 }); } catch {}
+  };
+  useEffect(() => { try { window.scrollTo({ top: 0 }); } catch {} }, [active]);
   return (
     <div className="space-y-8">
       <div>
-        <JumpNav sections={SECTIONS} active={activeSection} onJump={jumpTo} base={root} />
-        <div className="flex flex-wrap items-center gap-1.5 text-sm">
+        <JumpNav sections={SECTIONS} active={active} onJump={jumpTo} base={root} />
+        {show('overview') && <div className="flex flex-wrap items-center gap-1.5 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>
           {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
-        </div>
+        </div>}
       </div>
 
-      <section id="sec-overview" data-section="overview" className="scroll-mt-20">
-        <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} />
-      </section>
+      {show('overview') && (
+        <section id="sec-overview" data-section="overview" className="scroll-mt-20">
+          <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} />
+        </section>
+      )}
 
-      <section id="sec-offers" data-section="offers" className="scroll-mt-20">
-        <Offers deal={deal} canSave me={me} role="owner" />
-      </section>
+      {show('offers') && (
+        <section id="sec-offers" data-section="offers" className="scroll-mt-20">
+          <Offers deal={deal} canSave me={me} role="owner" />
+        </section>
+      )}
 
-      {DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
+      {show('plans') && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
         <section id="sec-plans" data-section="plans" className="scroll-mt-20">
           <Suspense fallback={<Empty>Loading…</Empty>}>
             <DealPlan key={deal.id} deal={deal} role="owner" />
@@ -284,41 +297,57 @@ export default function Owner({ deal: initial, me, tab }) {
         </section>
       )}
 
-      <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
-        <OwnerRentValue deal={deal} />
-      </section>
+      {show('rent-value') && (
+        <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
+          <OwnerRentValue deal={deal} />
+        </section>
+      )}
 
-      <section id="sec-lenders" data-section="lenders" className="scroll-mt-20 space-y-5">
-        <LoanPosition deal={deal} role="owner" />
-        <LenderBoard deal={deal} me={me} role="owner" />
-      </section>
+      {show('lenders') && (
+        <section id="sec-lenders" data-section="lenders" className="scroll-mt-20 space-y-5">
+          <LoanPosition deal={deal} role="owner" />
+          <LenderBoard deal={deal} me={me} role="owner" />
+        </section>
+      )}
 
-      <section id="sec-walkthrough" data-section="walkthrough" className="scroll-mt-20">
-        <Walkthrough deal={deal} me={me} role="owner" />
-      </section>
+      {show('walkthrough') && (
+        <section id="sec-walkthrough" data-section="walkthrough" className="scroll-mt-20">
+          <Walkthrough deal={deal} me={me} role="owner" />
+        </section>
+      )}
 
-      <section id="sec-tenants" data-section="tenants" className="scroll-mt-20">
-        <Tenants deal={deal} me={me} role="owner" />
-      </section>
+      {show('tenants') && (
+        <section id="sec-tenants" data-section="tenants" className="scroll-mt-20">
+          <Tenants deal={deal} me={me} role="owner" />
+        </section>
+      )}
 
-      <section id="sec-comps" data-section="comps" className="scroll-mt-20">
-        <Comps deal={deal} me={me} role="owner" />
-      </section>
+      {show('comps') && (
+        <section id="sec-comps" data-section="comps" className="scroll-mt-20">
+          <Comps deal={deal} me={me} role="owner" />
+        </section>
+      )}
 
-      <section id="sec-photos" data-section="photos" className="scroll-mt-20 space-y-5">
-        <UnitGallery deal={deal} me={me} role="owner" />
-        <Photos deal={deal} role="owner" me={me} />
-      </section>
+      {show('photos') && (
+        <section id="sec-photos" data-section="photos" className="scroll-mt-20 space-y-5">
+          <UnitGallery deal={deal} me={me} role="owner" />
+          <Photos deal={deal} role="owner" me={me} />
+        </section>
+      )}
 
-      <section id="sec-messages" data-section="messages" className="scroll-mt-20">
-        <Messages deal={deal} me={me} role="owner" />
-      </section>
+      {show('messages') && (
+        <section id="sec-messages" data-section="messages" className="scroll-mt-20">
+          <Messages deal={deal} me={me} role="owner" />
+        </section>
+      )}
 
-      <section id="sec-files" data-section="files" className="scroll-mt-20">
-        <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />
-      </section>
+      {show('files') && (
+        <section id="sec-files" data-section="files" className="scroll-mt-20">
+          <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />
+        </section>
+      )}
 
-      {CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
+      {show('city-records') && CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
         <section id="sec-city-records" data-section="city-records" className="scroll-mt-20">
           <Suspense fallback={<Empty>Loading…</Empty>}>
             <CityRecords deal={deal} role="owner" />
@@ -326,18 +355,22 @@ export default function Owner({ deal: initial, me, tab }) {
         </section>
       )}
 
-      <section id="sec-activity" data-section="activity" className="scroll-mt-20">
-        <Activity deal={deal} title="Recent activity" />
-      </section>
+      {show('activity') && (
+        <section id="sec-activity" data-section="activity" className="scroll-mt-20">
+          <Activity deal={deal} title="Recent activity" />
+        </section>
+      )}
 
-      <section id="sec-settings" data-section="settings" className="scroll-mt-20 space-y-6">
-        <People deal={deal} />
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          <Settings deal={deal} onSaved={setDeal} />
-          <OwnerAlerts />
-        </div>
-        <Notes deal={deal} me={me} />
-      </section>
+      {show('settings') && (
+        <section id="sec-settings" data-section="settings" className="scroll-mt-20 space-y-6">
+          <People deal={deal} />
+          <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+            <Settings deal={deal} onSaved={setDeal} />
+            <OwnerAlerts />
+          </div>
+          <Notes deal={deal} me={me} />
+        </section>
+      )}
     </div>
   );
 }

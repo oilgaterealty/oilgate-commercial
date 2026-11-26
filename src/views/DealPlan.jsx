@@ -288,6 +288,7 @@ function LoadedDealPlan({ deal }) {
   const model = useDealModel(deal, { owner: true });
   const route = useHashRoute();
   const [chosen, setChosen] = useState(null);
+  const [picked, setPicked] = useState(null);
   const [state, setState] = useState({ slug: null, plan: null, comps: [], readiness: {}, status: 'loading' });
   useEffect(() => {
     let alive = true;
@@ -310,7 +311,7 @@ function LoadedDealPlan({ deal }) {
   if (state.status === 'error' || model.error) return <Card><Empty>Plan unavailable</Empty></Card>;
   if (!state.plan) return <Card><Empty>No plan yet</Empty></Card>;
   if (model.offers === null) return <Card><Empty>Loading…</Empty></Card>;
-  const structure = route.sub || 'master_lease';
+  const structure = picked || route.sub || 'master_lease';
   const selected = model.offers.find((offer) => offer.id === chosen && offer.structure === structure)
     || model.offers.find((offer) => offer.structure === structure) || model.offers[0];
   if (!selected) return <Card><Empty>No offers yet</Empty></Card>;
@@ -345,7 +346,11 @@ function LoadedDealPlan({ deal }) {
     return null;
   };
   return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={handleSetBase} onChangeShortCarry={saveShortCarry} onSavePlan={handleSavePlan} comps={state.comps} readiness={state.readiness}
-    onSelect={(offer) => { setChosen(offer.id); window.location.hash = `#/d/${deal.slug}/plans/${offer.structure}`; }} />;
+    onSelect={(offer) => {
+      // Switch offers in place: update the address without a page jump.
+      setChosen(offer.id); setPicked(offer.structure);
+      try { window.history.replaceState(null, '', `#/d/${deal.slug}/plans/${offer.structure}`); } catch {}
+    }} />;
 }
 
 export default function DealPlan({ deal, role, preview = false }) {
