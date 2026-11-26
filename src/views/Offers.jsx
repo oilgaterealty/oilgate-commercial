@@ -6,7 +6,7 @@ import { useDealModel } from '../lib/useDealModel.js';
 import { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
 import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
@@ -183,11 +183,11 @@ function StoryLines({ lines }) {
 }
 
 // Each offer reads as its units-rented table and refinance plan. All math and estimates live in tap/hover overlays.
-export function OptionCard({ o, i, story, planHref, hideUnitsTable = false }) {
+export function OptionCard({ o, i, story, planHref, hideUnitsTable = false, shared = false }) {
   const hasUnitsGuide = !hideUnitsTable && isUnitsGuide(story?.unitsGuide);
   const h = story?.headline;
-  const primaryHeadlines = h ? [h.moneyIn, h.cashOut] : [];
-  const secondaryHeadlines = h ? [h.sellerTotal, h.maxSellerAtRefi] : [];
+  const primaryHeadlines = h ? [h.moneyIn, h.cashOut].filter(Boolean) : [];
+  const secondaryHeadlines = h ? [h.sellerTotal, h.maxSellerAtRefi].filter(Boolean) : [];
   return (
     <div className="rounded-3xl border-2 border-ink bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -200,7 +200,7 @@ export function OptionCard({ o, i, story, planHref, hideUnitsTable = false }) {
       <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">{titleOf(o)}</h3>
 
       {hasUnitsGuide ? (
-        <UnitsRentedGuide guide={story.unitsGuide} className="mt-4" />
+        <UnitsRentedGuide guide={story.unitsGuide} className="mt-4" shared={shared} />
       ) : (
         <>
           {story.costSummary && <CostSummary summary={story.costSummary} className="mt-4" />}
@@ -529,6 +529,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
         baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
       }
     }
+    if (!owner) Object.assign(baseStory, sharedRefiStory(baseStory));
     return [o.id, baseStory];
   })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide, useStaticGuide]);
 
@@ -566,7 +567,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
       {offers.length > 0 && (view === 'cards' || (!owner && view === 'table')) && (
         <div className={owner ? 'grid items-start gap-4 lg:grid-cols-2' : 'max-w-xl'}>
           {(owner ? sortedOffers : sortedOffers.slice(0, 1)).map((x, i) => (
-            <OptionCard key={x.id} o={x} i={i} story={stories[x.id]} planHref={planHrefOf(x)} hideUnitsTable={role === 'reviewer'} />
+            <OptionCard key={x.id} o={x} i={i} story={stories[x.id]} planHref={planHrefOf(x)} hideUnitsTable={role === 'reviewer'} shared={!owner} />
           ))}
         </div>
       )}

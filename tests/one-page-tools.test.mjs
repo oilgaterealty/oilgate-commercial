@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
 import { plain } from '../src/lib/plain.js';
 import { breakEvenCount } from '../src/lib/occupancy.js';
 
@@ -112,7 +112,7 @@ function makeOfferMocks(touched = false) {
     '../components/Switches.jsx': switchesMod,
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
-    '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary },
+    '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, valueSummary },
     '../components/Shell.jsx': SHELL_MOCK,
     '../lib/plain.js': { plain },
     '../lib/occupancy.js': { breakEvenCount },

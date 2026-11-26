@@ -525,3 +525,17 @@ export function applyGuideRefi(story, rf) {
   }));
   return next;
 }
+
+// Shared views (realtor, reviewer, lender): the refinance step only says the seller is paid back in full.
+// What the buyer clears at the refi is owner-only.
+export function sharedRefiStory(story) {
+  if (!story) return story;
+  const h = story.headline || {};
+  const next = { ...story, headline: { ...h, cashOut: null, maxSellerAtRefi: null } };
+  next.steps = (story.steps || []).map((s) => {
+    if (s.title !== 'Refinance') return s;
+    const pays = s.lines.find((l) => l.label === 'Pays seller');
+    return pays ? { ...s, title: 'Seller paid back', lines: [{ ...pays, label: 'Paid back in full' }] } : s;
+  });
+  return next;
+}

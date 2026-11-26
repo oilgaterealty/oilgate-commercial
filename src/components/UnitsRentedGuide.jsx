@@ -13,7 +13,7 @@ const COVERED_CLS = {
 };
 
 // Pure presentation of the units-rented table (0..10 units) and refinance block. No plan-math imports.
-export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, showCostSummary = true, className = '' }) {
+export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, showCostSummary = true, className = '', shared = false }) {
   if (!isUnitsGuide(guide)) return null;
   const costSummary = guide.costSummary || (guide.cost?.length
     ? { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost }
@@ -29,7 +29,18 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
         `Regular repair lender: ${rc.regularRate}% interest only plus ${rc.regularPointsPct} points (${money(rc.regularPoints)}). ${money(rc.regularMo)}/mo.`,
       ]
     : [];
-  const refiLines = [
+  const paidBack = r.sellerTotalPayoff ?? r.sellerPayoff;
+  const paidBackLines = [
+    `Purchase note: ${money(r.sellerNotePrincipal ?? 0)}`,
+    reno ? `Renovation note: ${money(r.renoNotePrincipal ?? 0)}` : null,
+    (r.sellerCarriedBills || 0) > 0 ? `Deferred holding costs: ${money(r.sellerCarriedBills)}` : null,
+  ].filter(Boolean);
+  // Shared views only need to know the seller is paid back in full; the rest of the refi stays on the owner's page.
+  const refiLines = shared ? [
+    { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
+    { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
+    { label: 'Seller paid back in full', value: money(paidBack), overlay: paidBackLines },
+  ] : [
     { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'In hand after fees and reserve', value: money(r.inHand), overlay: r.inHandOverlay },
@@ -123,7 +134,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
               <Trigger lines={line.overlay} className="text-right font-semibold text-ink">{line.value}</Trigger>
             </li>
           ))}
-          <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line pt-2.5">
+          {!shared && <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line pt-2.5">
             <span className="flex items-center gap-2 font-semibold text-ink">
               <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{refiLines.length + 1}</span>
               <span>Left for you</span>
@@ -145,7 +156,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
                 </>
               )}
             </span>
-          </li>
+          </li>}
         </ol>
       </div>
     </div>

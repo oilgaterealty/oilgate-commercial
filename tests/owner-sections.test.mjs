@@ -38,3 +38,17 @@ test('every role with the jump bar shows one section at a time', () => {
   assert.doesNotMatch(shell, /IntersectionObserver/);
   for (const f of ['src/views/Realtor.jsx', 'src/views/Lender.jsx', 'src/views/Reviewer.jsx']) assert.match(read(f), /<JumpNav /, f);
 });
+
+test('shared views show only that the seller is paid back; buyer refi result stays with the owner', async () => {
+  const { sharedRefiStory } = await import('../src/lib/dealmath.js');
+  const story = { headline: { moneyIn: { label: 'a' }, cashOut: { label: 'b' }, sellerTotal: { label: 'c' }, maxSellerAtRefi: { label: 'd' } },
+    steps: [{ num: 6, title: 'Refinance', lines: [{ label: 'Loan', value: '$1' }, { label: 'Pays seller', value: '$418,113' }, { label: 'You bring $8,874', big: true }] }] };
+  const s = sharedRefiStory(story);
+  assert.equal(s.headline.cashOut, null);
+  assert.equal(s.headline.maxSellerAtRefi, null);
+  assert.deepEqual(s.steps[0].lines.map((l) => l.label), ['Paid back in full']);
+  assert.equal(s.steps[0].title, 'Seller paid back');
+  assert.match(read('src/views/Lender.jsx'), /<UnitsRentedGuide guide=\{effectiveGuide\} shared \/>/);
+  assert.doesNotMatch(read('src/views/Lender.jsx'), />Left for you</);
+  assert.match(read('src/components/UnitsRentedGuide.jsx'), /\{!shared && <li/);
+});

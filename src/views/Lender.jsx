@@ -117,10 +117,10 @@ export default function Lender({ deal, me, preview, tab }) {
                   <dd className="font-display text-2xl font-semibold sm:text-3xl">{money(repairBudget)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-white/60">Left for you</dt>
+                  <dt className="text-xs text-white/60">Seller paid back in full</dt>
                   <dd className="font-display text-2xl font-semibold sm:text-3xl">
-                    <OverlayTrigger lines={effectiveGuide.refi.leftForYouOverlay} className="text-white">
-                      {money(effectiveGuide.refi.leftForYou)}
+                    <OverlayTrigger lines={effectiveGuide.refi.sellerPayoffOverlay} className="text-white">
+                      {money(effectiveGuide.refi.sellerTotalPayoff ?? effectiveGuide.refi.sellerPayoff)}
                     </OverlayTrigger>
                   </dd>
                 </div>
@@ -151,7 +151,7 @@ export default function Lender({ deal, me, preview, tab }) {
             <Card>
               <CardTitle>The numbers</CardTitle>
               {effectiveGuide ? (
-                <UnitsRentedGuide guide={effectiveGuide} />
+                <UnitsRentedGuide guide={effectiveGuide} shared />
               ) : (
                 <>
                   <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
