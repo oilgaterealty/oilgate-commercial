@@ -34,7 +34,7 @@ export default function Realtor({ deal, me, member, preview, tab }) {
     <div className="readable">
       <Tabs tabs={TABS} active={active} base={preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`} />
       {active === 'overview' && <Dashboard deal={deal} me={me} role="realtor" preview={preview} />}
-      {active === 'offers' && <SellerOffer deal={deal} preview={preview} onAsk={(q) => sendToOwner(deal, me, 'realtor', q, 'Offer question')} />}
+      {active === 'offers' && <SellerOffer deal={deal} preview={preview} canInvite onAsk={(q) => sendToOwner(deal, me, 'realtor', q, 'Offer question')} />}
       {active === 'walkthrough' && <Walkthrough deal={deal} me={me} role="realtor" preview={preview} />}
       {active === 'photos' && (
         <div className="space-y-5">

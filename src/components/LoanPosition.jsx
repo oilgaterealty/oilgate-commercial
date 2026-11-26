@@ -5,7 +5,8 @@ import { Card, CardTitle, Field, Button } from './Shell.jsx';
 import { sendToOwner } from './Messages.jsx';
 
 const FIELDS = [['balance', 'Remaining loan balance', 'number'], ['lender', 'Lender', 'text'], ['payment', 'Monthly loan payment', 'number'], ['rate', 'Interest rate (%)', 'number'], ['maturity', 'Maturity / payoff terms', 'text']];
-export default function LoanPosition({ deal, role, preview, me }) {
+export default function LoanPosition({ deal, role, preview, me, sendTo = 'buyer' }) {
+  const toName = sendTo === 'realtor' ? 'the realtor' : buyerName();
   const [mine, setMine] = useState({});
   const [busy, setBusy] = useState(false);
   const [loan, setLoan] = useState({});
@@ -31,7 +32,7 @@ export default function LoanPosition({ deal, role, preview, me }) {
     setBusy(true);
     try {
       const error = await sendToOwner(deal, me, role, `My loan details:\n${lines.join('\n')}`, 'Loan details');
-      setStatus(error ? 'Not sent. Your entries are still here; try again.' : `Sent to ${buyerName()}. They’ll be added here.`);
+      setStatus(error ? 'Not sent. Your entries are still here; try again.' : sendTo === 'realtor' ? 'Sent to the realtor.' : `Sent to ${buyerName()}. They’ll be added here.`);
       if (!error) setMine({});
     } catch { setStatus('Not sent. Please try again.'); }
     finally { setBusy(false); }
@@ -45,5 +46,5 @@ export default function LoanPosition({ deal, role, preview, me }) {
     if (key === 'payment') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
     return key === 'rate' ? `${value}%` : value;
   };
-  return <Card><CardTitle>{owner ? 'Seller’s loan' : 'Your current loan'}</CardTitle>{owner ? <form onSubmit={save} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <label key={key} className="text-sm">{label}<Field disabled={!loaded} type={type} inputMode={type === 'number' ? 'decimal' : undefined} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} value={loan[key] ?? ''} onChange={e => setLoan({ ...loan, [key]: e.target.value })} /></label>)}</div><Button type="submit" disabled={!loaded}>Save loan</Button></form> : <form onSubmit={send} className="space-y-4"><dl className="grid gap-4 text-sm sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <div key={key}><dt className="text-ink-soft">{label}</dt>{blank(loan[key]) ? <dd><Field aria-label={label} disabled={preview || !loaded} type={type} inputMode={type === 'number' ? 'decimal' : undefined} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} placeholder="Not entered yet. Type it here" value={mine[key] ?? ''} onChange={e => setMine({ ...mine, [key]: e.target.value })} /></dd> : <dd className="font-medium">{shown(key, loan[key])}</dd>}</div>)}</dl>{FIELDS.some(([k]) => blank(loan[k])) && <Button type="submit" disabled={preview || busy || !FIELDS.some(([k]) => !blank(mine[k]))}>Send to {buyerName()}</Button>}</form>}<p role="status" className="mt-3 text-sm">{status}</p></Card>;
+  return <Card><CardTitle>{owner ? 'Seller’s loan' : 'Your current loan'}</CardTitle>{owner ? <form onSubmit={save} className="space-y-4"><div className="grid gap-3 sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <label key={key} className="text-sm">{label}<Field disabled={!loaded} type={type} inputMode={type === 'number' ? 'decimal' : undefined} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} value={loan[key] ?? ''} onChange={e => setLoan({ ...loan, [key]: e.target.value })} /></label>)}</div><Button type="submit" disabled={!loaded}>Save loan</Button></form> : <form onSubmit={send} className="space-y-4"><dl className="grid gap-4 text-sm sm:grid-cols-2">{FIELDS.map(([key, label, type]) => <div key={key}><dt className="text-ink-soft">{label}</dt>{blank(loan[key]) ? <dd><Field aria-label={label} disabled={preview || !loaded} type={type} inputMode={type === 'number' ? 'decimal' : undefined} min={type === 'number' ? 0 : undefined} step={type === 'number' ? 'any' : undefined} placeholder="Not entered yet. Type it here" value={mine[key] ?? ''} onChange={e => setMine({ ...mine, [key]: e.target.value })} /></dd> : <dd className="font-medium">{shown(key, loan[key])}</dd>}</div>)}</dl>{FIELDS.some(([k]) => blank(loan[k])) && <Button type="submit" disabled={preview || busy || !FIELDS.some(([k]) => !blank(mine[k]))}>{sendTo === 'realtor' ? 'Send to realtor' : `Send to ${toName}`}</Button>}</form>}<p role="status" className="mt-3 text-sm">{status}</p></Card>;
 }

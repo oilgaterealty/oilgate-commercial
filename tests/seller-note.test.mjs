@@ -49,7 +49,13 @@ test('seller summary: seller financing steps, no buyer numbers', () => {
   const visible = JSON.stringify({ intro: s.intro, terms: s.terms, steps: s.steps, refiLine: s.refiLine, sellerTable: s.sellerTable });
   assert.doesNotMatch(visible, /net|cash flow|left for you|DSCR|interest|reserve|lease/i);
   assert.match(s.refiLine, /pay off your note/);
-  assert.ok(s.sellerTable.every((r) => Object.keys(r).sort().join() === 'covered,rentIn,units'));
+  assert.ok(s.sellerTable.every((r) => Object.keys(r).sort().join() === 'bills,billsLines,covered,note,rentIn,units'));
+  const n = sellerNote(NOTE, PLAN).notePay;
+  assert.ok(s.sellerTable.every((r) => Math.abs(r.note - n) < 1e-6));
+  // Bills: taxes, insurance, water and empty-unit utilities; fewer empty units, smaller bills.
+  assert.ok(Math.abs(s.sellerTable[10].bills - (6000 / 12 + 3000 / 12 + 200)) < 1e-6);
+  assert.ok(s.sellerTable[0].bills > s.sellerTable[10].bills);
+  assert.doesNotMatch(JSON.stringify(s.sellerTable.flatMap((r) => r.billsLines)), /interest|reserve|net/i);
 });
 
 test('realtor sees the seller’s one offer, not the buyer’s offers page', () => {

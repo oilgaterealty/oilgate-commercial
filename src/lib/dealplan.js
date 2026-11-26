@@ -1338,7 +1338,19 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
   const payoffText = sellerLoanText(table.refi.sellerPayoff, true);
   const coveredAt = table.noteCoveredAt;
   const notePay = table.notePay;
-  const sellerTable = table.rows.map((r) => ({ units: r.units, rentIn: r.rentIn, covered: r.noteCovered }));
+  // The seller's table: rent in, the note payment we assume he pays from it, the bills I pay, and whether the note is covered.
+  const BILL_KEYS = ['taxes', 'insurance', 'water', 'emptyUtils'];
+  const sellerTable = table.rows.map((r) => {
+    const bills = (r.sellerCostsBreakdown || []).filter((i) => BILL_KEYS.includes(i.key));
+    return {
+      units: r.units,
+      rentIn: r.rentIn,
+      note: notePay,
+      bills: bills.reduce((a, i) => a + i.amount, 0),
+      billsLines: bills.map((i) => i.text),
+      covered: r.noteCovered,
+    };
+  });
   const repairsTotal = Math.round(num(costSummary.total, 0) / 1000) * 1000;
   const repairsOverlay = (costSummary.lines || []).map((l) => l.label.replace(/^Setup about /, 'Setup ')).filter(Boolean);
   const terms = [

@@ -81,6 +81,7 @@ function People({ deal }) {
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <div>
                   <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                  {r.invited_by_email && <p className="text-xs text-ink-soft">Invited by {r.invited_by_email}</p>}
                   <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}{r.link_id ? ' · joined with a link' : ''}</p>
                   {r.ntfy_topic && r.status === 'active' && <p className="mt-1 text-xs text-ink-soft">Alert topic: <code className="select-all">{r.ntfy_topic}</code></p>}
                 </div>

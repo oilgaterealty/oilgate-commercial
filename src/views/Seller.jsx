@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Empty } from '../components/Shell.jsx';
-import Messages, { sendToOwner } from '../components/Messages.jsx';
+import Messages, { sendToOwner, useSellerMessagesTo } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Cover, PhotoStrip, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
+import { coverOf } from '../lib/v63.js';
 import LoanPosition from '../components/LoanPosition.jsx';
 import { ExecutionPlanCard, LeadOfferCard } from '../components/LeadOfferCard.jsx';
 import { coveredLabelOf } from '../components/SellerOffer.jsx';
@@ -23,10 +24,14 @@ export default function Seller({ deal, me, preview }) {
   const [level, setLevel] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [sellerOffer, setSellerOffer] = useState(null);
-  // The seller sees one cover photo (the starred upload) and only the walkthrough photos and videos shared with him.
+  const sellerTo = useSellerMessagesTo(deal);
+  // The seller sees one cover photo (the starred upload) and the photos and walkthrough videos shared with them.
   const walk = useSharedWalkPhotos(deal, 'seller');
   const walkVideos = useSharedWalkVideos(deal, 'seller');
   const coverRows = photosOf((rows || []).filter((r) => r.visibility === 'seller'));
+  // Photos section: every uploaded photo shared with the seller (besides the cover), then the shared walkthrough photos.
+  const cover = coverOf(coverRows);
+  const shownPhotos = [...coverRows.filter((r) => r !== cover), ...walk];
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
 
   useEffect(() => {
@@ -66,10 +71,10 @@ export default function Seller({ deal, me, preview }) {
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>
       </div>
 
-      {(walk.length > 0 || walkVideos.length > 0) && (
+      {(shownPhotos.length > 0 || walkVideos.length > 0) && (
         <section className="space-y-3">
           <h2 className="font-display text-2xl font-semibold">Photos</h2>
-          {walk.length > 0 && <PhotoStrip photos={walk} />}
+          {shownPhotos.length > 0 && <PhotoStrip photos={shownPhotos} />}
           <WalkVideos videos={walkVideos} />
         </section>
       )}
@@ -86,7 +91,7 @@ export default function Seller({ deal, me, preview }) {
 
       <ExecutionPlanCard content={c} summary={summary} sellerOnly />
 
-      <LoanPosition deal={deal} role="seller" preview={preview} me={me} />
+      <LoanPosition deal={deal} role="seller" preview={preview} me={me} sendTo={sellerTo} />
 
       <Card>
         <CardTitle>How do you feel about it?</CardTitle>
@@ -103,7 +108,7 @@ export default function Seller({ deal, me, preview }) {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <Messages deal={deal} me={me} role="seller" preview={preview} />
+        <Messages deal={deal} me={me} role="seller" preview={preview} sellerTo={sellerTo} />
         <Card>
           <CardTitle>Share documents</CardTitle>
           <Uploader deal={deal} role="seller" me={me} onDone={load} label="Choose files" accept={DOCS} preview={preview} />

@@ -8,6 +8,7 @@ import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
 import { Button, Card, Empty } from './Shell.jsx';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 import { DictatedField } from './Dictation.jsx';
+import { WALK_SHARES, saveWalkShare, walkShareButtons } from '../lib/walkShare.js';
 
 // Owner-only dynamic import so public and seller builds never query or bundle readiness.
 const loadReadinessLib =
@@ -160,20 +161,22 @@ function UnitNotes({ deal, me, role, unit, preview }) {
   );
 }
 
-// Walkthrough photos and videos, one unit or space at a time. Read only here; editing stays in Walkthrough.
+// Walkthrough photos and videos, one unit or space at a time. The owner shares each one here the same way as in the Walkthrough.
 export default function UnitGallery({ deal, me, role, preview }) {
   const [photos, setPhotos] = useState(null);
   const [videos, setVideos] = useState(null);
   const [unit, setUnit] = useState(1);
   const [view, setView] = useState(null);
   const [err, setErr] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const canShare = role === 'owner' && !preview;
   const [readinessState, setReadinessState] = useState({ lib: null, Badge: null, map: {} });
   const canReadiness = Boolean(loadReadinessLib && role === 'owner' && !preview && canAccessDealPlan(SITE_KIND, role, preview));
 
   useEffect(() => {
     let live = true;
     Promise.all([
-      supabase.from('commercial_walkthrough_photos').select('id,unit_number,room,storage_path,author_role,author_name,created_at').eq('deal_id', deal.id).order('created_at'),
+      supabase.from('commercial_walkthrough_photos').select(`id,unit_number,room,storage_path,author_role,author_name,created_at${role === 'owner' ? ',share_seller,share_lender' : ''}`).eq('deal_id', deal.id).order('created_at'),
       supabase.from('commercial_walkthrough_videos').select('*').eq('deal_id', deal.id).order('created_at'),
     ]).then(([p, v]) => {
       if (!live) return;
@@ -208,6 +211,27 @@ export default function UnitGallery({ deal, me, role, preview }) {
       setReadinessState((prev) => ({ ...prev, map: { ...prev.map, [unitNumber]: data } }));
     }
   };
+
+  const toggleShare = async (row, field, kind = 'photo') => {
+    if (!canShare || shareBusy || !row) return;
+    const next = !row[field];
+    const setRows = kind === 'video' ? setVideos : setPhotos;
+    setShareBusy(true);
+    setRows((rows) => (rows || []).map((x) => (x.id === row.id ? { ...x, [field]: next } : x)));
+    const error = await saveWalkShare(supabase, deal.id, row, field, next, kind);
+    if (error) {
+      setRows((rows) => (rows || []).map((x) => (x.id === row.id ? { ...x, [field]: !next } : x)));
+      setErr('Sharing did not save. Try again.');
+    }
+    setShareBusy(false);
+  };
+  const shareBoxes = (row, kind) => (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 py-1.5 text-xs">
+      {WALK_SHARES.map(([field, , , label]) => (
+        <label key={field} className="inline-flex items-center gap-1"><input type="checkbox" disabled={shareBusy} checked={Boolean(row[field])} onChange={() => void toggleShare(row, field, kind)} />{label}</label>
+      ))}
+    </div>
+  );
 
   const counts = useMemo(() => {
     const c = {};
@@ -264,11 +288,14 @@ export default function UnitGallery({ deal, me, role, preview }) {
                   {ready.filter((p) => p.room === room).map((p) => {
                     const j = ready.indexOf(p);
                     return (
-                      <li key={p.id} className="group relative overflow-hidden rounded-xl">
-                        <button type="button" onClick={() => setView(j)} aria-label={`Open photo ${j + 1}`} className="block w-full cursor-zoom-in">
-                          <img src={urls[p.storage_path]} alt={`${spaceLabel(unit)} ${roomName(room)}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
-                        </button>
-                        <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }]} />
+                      <li key={p.id} className="overflow-hidden rounded-xl">
+                        <div className="group relative">
+                          <button type="button" onClick={() => setView(j)} aria-label={`Open photo ${j + 1}`} className="block w-full cursor-zoom-in">
+                            <img src={urls[p.storage_path]} alt={`${spaceLabel(unit)} ${roomName(room)}`} loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                          </button>
+                          <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }, ...(canShare ? walkShareButtons(p, toggleShare, shareBusy) : [])]} />
+                        </div>
+                        {canShare && shareBoxes(p, 'photo')}
                       </li>
                     );
                   })}
@@ -285,6 +312,7 @@ export default function UnitGallery({ deal, me, role, preview }) {
                         ? <video src={urls[v.storage_path]} controls playsInline preload="metadata" className="aspect-video w-full rounded-xl bg-black" />
                         : <div className="flex aspect-video items-center justify-center rounded-xl bg-paper text-sm text-ink-soft">Loading video…</div>}
                       <p className="text-sm text-ink-soft">{roomName(v.room)} · {authorLabel(v)} · {when(v.created_at)}</p>
+                      {canShare && shareBoxes(v, 'video')}
                       <VideoExtras video={v} />
                     </li>
                   ))}
@@ -293,7 +321,8 @@ export default function UnitGallery({ deal, me, role, preview }) {
             )}
           </div>
         )}
-        <PhotoViewer items={ready.map((p) => ({ url: urls[p.storage_path], alt: `${spaceLabel(unit)} ${roomName(p.room)}` }))} index={view} onIndex={setView} />
+        <PhotoViewer items={ready.map((p) => ({ url: urls[p.storage_path], alt: `${spaceLabel(unit)} ${roomName(p.room)}` }))} index={view} onIndex={setView}
+          actions={canShare ? (_, j) => (ready[j] ? walkShareButtons(ready[j], toggleShare, shareBusy) : []) : undefined} />
       </Card>
       <UnitNotes deal={deal} me={me} role={role} unit={unit} preview={preview} />
     </div>

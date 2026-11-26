@@ -51,8 +51,11 @@ test('viewer has a bottom action bar fed by the caller, with pressed state', () 
   assert.match(walk, /actions=\{viewerActions\}/);
   assert.match(walk, /label: 'Move this one'/);
   assert.match(walk, /key: 'select', icon: '✓', label: 'Select', pressed: picked\.has\(k\)/);
-  assert.match(walk, /label: 'Share with seller'/);
-  assert.match(walk, /label: 'Share with lender'/);
+  // Share buttons come from the shared helper, used by the Walkthrough and Photos by unit alike.
+  assert.match(walk, /walkShareButtons\(row, toggleShare, busy\)/);
+  const share = read('src/lib/walkShare.js');
+  assert.match(share, /'Share with seller'/);
+  assert.match(share, /'Share with lender'/);
   // Move/Select only for what this role may move; sharing only for the owner outside preview.
   assert.match(walk, /if \(movable\.has\(k\)\) \{/);
   assert.match(walk, /if \(row && role === 'owner' && !preview\) \{/);

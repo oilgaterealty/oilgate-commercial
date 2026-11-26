@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { saveWalkShare, walkShareButtons } from '../lib/walkShare.js';
 import { buyerTag } from '../lib/people.js';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { ROOMS, AREA_ROOMS, WALK_SPACES, WALK_UNITS, spaceLabel, roomsFor, roomFits, stepSpace, canMoveMedia, uploadCounts, v5Access, visibleNotes } from '../lib/leaseUp.js';
@@ -1183,9 +1184,8 @@ export default function Walkthrough({ deal, me, role, preview }) {
     if (role !== 'owner' || preview || busy) return;
     const next = !p[field];
     const setRows = kind === 'video' ? setVideos : setPhotos;
-    const table = kind === 'video' ? 'commercial_walkthrough_videos' : 'commercial_walkthrough_photos';
     setRows((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: next } : x)));
-    const { error } = await supabase.from(table).update({ [field]: next }).eq('id', p.id).eq('deal_id', deal.id);
+    const error = await saveWalkShare(supabase, deal.id, p, field, next, kind);
     if (error) {
       setRows((rows) => (rows || []).map((x) => (x.id === p.id ? { ...x, [field]: !next } : x)));
       setStatus('Sharing did not save. Try again.');
@@ -1305,8 +1305,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
       list.push({ key: 'select', icon: '✓', label: 'Select', pressed: picked.has(k), onClick: () => selectOne(k) });
     }
     if (row && role === 'owner' && !preview) {
-      list.push({ key: 'seller', icon: 'S', label: 'Share with seller', pressed: Boolean(row.share_seller), disabled: busy, onClick: () => void toggleShare(row, 'share_seller') });
-      list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: Boolean(row.share_lender), disabled: busy, onClick: () => void toggleShare(row, 'share_lender') });
+      list.push(...walkShareButtons(row, toggleShare, busy));
     }
     return list;
   };
