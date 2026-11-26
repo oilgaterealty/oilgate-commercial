@@ -80,7 +80,7 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
   const rv = rentValue(BASE, PLAN, {});
   const ro = renderToStaticMarkup(React.createElement(mod.default, { data: rv }));
   assert.match(ro, /Unit by unit/);
-  assert.match(ro, /As is, after repairs, full market/);
+  assert.match(ro, /As is/);
   assert.match(ro, /Value by rent and cap rate/);
   assert.doesNotMatch(ro, /<input/);
   assert.doesNotMatch(ro, /<p[ >]/);

@@ -37,9 +37,9 @@ function Stat({ label, value, overlay }) {
 
 const SECTIONS = [
   ['overview', 'Overview'],
+  ['terms', 'Your terms'],
   ['plan', 'The plan'],
   ['what-if', 'What-if'],
-  ['terms', 'Your terms'],
   ['city-records', 'City records'],
   ['documents', 'Documents'],
   ['photos', 'Photos'],
@@ -144,6 +144,10 @@ export default function Lender({ deal, me, preview, tab }) {
         )}
       </section>
 
+      <section id="sec-terms" data-section="terms" className="scroll-mt-20">
+        <LenderTerms deal={deal} me={me} preview={preview} guide={effectiveGuide} base={b} />
+      </section>
+
       <section id="sec-plan" data-section="plan" className="scroll-mt-20 space-y-4">
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
@@ -204,7 +208,7 @@ export default function Lender({ deal, me, preview, tab }) {
               )}
             </Card>
 
-            {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} showMarket />}
+            {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} showMarket hideUnits />}
           </>
         )}
       </section>
@@ -212,10 +216,6 @@ export default function Lender({ deal, me, preview, tab }) {
       <section id="sec-what-if" data-section="what-if" className="scroll-mt-20">
         <h2 className="mb-3 font-display text-2xl font-semibold">What-if</h2>
         <Offers deal={deal} canSave={false} onlyShared={preview ? 'lender' : undefined} me={me} role="lender" preview={preview} leadGuide={effectiveGuide} />
-      </section>
-
-      <section id="sec-terms" data-section="terms" className="scroll-mt-20">
-        <LenderTerms deal={deal} me={me} preview={preview} />
       </section>
 
       <section id="sec-city-records" data-section="city-records" className="scroll-mt-20">

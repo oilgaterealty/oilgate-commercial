@@ -61,7 +61,19 @@ function Ranges({ data, showMarket, sourceLines, Trigger }) {
   );
 }
 
-export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null }) {
+// Views with the same numbers merge into one column, so the table never repeats itself.
+export function mergeViews(views) {
+  const out = [];
+  for (const v of views || []) {
+    const prev = out[out.length - 1];
+    const same = prev && ['rented', 'rentMo', 'costsMo', 'netYr', 'value', 'allIn'].every((k) => Math.round(+prev[k] || 0) === Math.round(+v[k] || 0));
+    if (same) out[out.length - 1] = { ...prev, key: `${prev.key}+${v.key}`, label: `${prev.label} / ${v.label}` };
+    else out.push(v);
+  }
+  return out;
+}
+
+export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
   useEffect(() => { setDraft({}); }, [data]);
@@ -90,7 +102,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
     />
   );
 
-  const views = data.views;
+  const views = mergeViews(data.views);
   const rows = [
     ['Units rented', (v) => `${v.rented} of ${v.total}`, (v) => v.rentOverlay],
     ['Rent in /mo', (v) => money(v.rentMo), (v) => v.rentOverlay],
@@ -103,7 +115,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
   return (
     <div className="space-y-5">
       <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} />
-      <Card>
+      {!hideUnits && <Card>
         <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">
           <table className="w-full min-w-[560px] border-collapse text-right text-sm tabular-nums">
@@ -132,10 +144,10 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
           </table>
         </div>
         {editable && state && <p role="status" className="mt-2 text-sm text-ink-soft">{state}</p>}
-      </Card>
+      </Card>}
 
       <Card>
-        <CardTitle>As is, after repairs, full market</CardTitle>
+        <CardTitle>{views.map((v) => v.label).join(', ')}</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Three views side by side">
           <table className="w-full min-w-[480px] border-collapse text-right text-sm tabular-nums">
             <thead className="bg-ink text-xs text-white">

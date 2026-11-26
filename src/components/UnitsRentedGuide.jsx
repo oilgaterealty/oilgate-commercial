@@ -37,8 +37,11 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
     (r.sellerCarriedBills || 0) > 0 ? `Deferred holding costs: ${money(r.sellerCarriedBills)}` : null,
   ].filter(Boolean);
   // Shared views only need to know the seller is paid back in full; the rest of the refi stays on the owner's page.
+  const vr = guide.rentValue?.valueRange;
   const refiLines = shared ? [
-    { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
+    vr && vr.low > 0 && vr.high > vr.low
+      ? { label: 'Value', value: `${money(vr.low)} to ${money(vr.high)}`, overlay: [...(vr.lowOverlay || []), ...(vr.highOverlay || []), `Loan figured on ${money(r.estimatedValue)}.`] }
+      : { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'Seller paid back in full', value: money(paidBack), overlay: paidBackLines },
   ] : [
@@ -74,8 +77,8 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
               <th scope="col" className="px-3 py-2.5">Rent in</th>
               <th scope="col" className="px-3 py-2.5">{guide.costsLabel || 'Seller’s costs'}</th>
               <th scope="col" className="px-3 py-2.5 text-center">Covered</th>
-              <th scope="col" className="px-3 py-2.5">You net</th>
-              {!oneBudget && <th scope="col" className="px-3 py-2.5">You net, contingency used</th>}
+              {!shared && <th scope="col" className="px-3 py-2.5">You net</th>}
+              {!oneBudget && !shared && <th scope="col" className="px-3 py-2.5">You net, contingency used</th>}
             </tr>
           </thead>
           <tbody>
@@ -92,12 +95,12 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
                     <Trigger lines={row.sellerCostsOverlay}>{money(row.sellerCosts)}</Trigger>
                   </td>
                   <td className={`px-3 py-2 text-center ${COVERED_CLS[row.covered] || 'text-ink-soft'}`}>{row.covered}</td>
-                  <td className="px-3 py-2">
+                  {!shared && <td className="px-3 py-2">
                     <Trigger lines={row.buyerNetOverlay} className={row.buyerNet >= 0 ? 'font-semibold text-good' : 'text-red-700'}>
                       {money(row.buyerNet)}
                     </Trigger>
-                  </td>
-                  {!oneBudget && <td className="px-3 py-2">
+                  </td>}
+                  {!oneBudget && !shared && <td className="px-3 py-2">
                     <Trigger lines={row.buyerNetContUsedOverlay} className={row.buyerNetContUsed >= 0 ? 'font-semibold text-good' : 'text-red-700'}>
                       {money(row.buyerNetContUsed)}
                     </Trigger>

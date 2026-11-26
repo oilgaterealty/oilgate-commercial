@@ -146,6 +146,7 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
     '../lib/supabase.js': { supabase: { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }), then: () => {} }) }) }) } },
     '../lib/format.js': formatMod,
     '../lib/v63.js': v63Mod,
+    '../lib/dealmath.js': await import('../src/lib/dealmath.js'),
     '../components/Shell.jsx': { Card, CardTitle, Button, Empty },
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });
@@ -164,7 +165,10 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
   assert.match(ltHtml, /Bridge \/ Hard money/);
   assert.match(ltHtml, /Commercial DSCR/);
   assert.match(ltHtml, /Both/);
-  assert.equal((ltHtml.match(/Not applicable/g) || []).length, ltMod.questionsForProgram('bridge').length);
+  // One "Not applicable" button per question, plus the prefilled short-term rental answer.
+  assert.equal((ltHtml.match(/>Not applicable</g) || []).length, ltMod.questionsForProgram('bridge').length);
+  assert.match(ltHtml, /value="Not applicable"/);
+  assert.match(ltHtml, /value="10 units"/);
 });
 
 test('0018 grants private own-row strategy ideas to both realtor and reviewer', async () => {
