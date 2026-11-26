@@ -529,7 +529,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
         baseStory.costSummary = { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost };
       }
     }
-    if (!owner) Object.assign(baseStory, sharedRefiStory(baseStory));
+    if (!owner) Object.assign(baseStory, sharedRefiStory(baseStory, { loanOption: role === 'reviewer' }));
     return [o.id, baseStory];
   })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide, useStaticGuide]);
 

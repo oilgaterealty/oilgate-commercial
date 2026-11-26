@@ -22,7 +22,8 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
   const reno = Boolean(r.renoFromSeller);
   const oneBudget = Boolean(guide.oneBudget || reno);
   const showDeferred = Boolean(r.billsFromRent || r.sellerCarriedBills > 0);
-  const rc = r.renoCompare || null;
+  // Rate comparison with a regular repair lender is owner-only.
+  const rc = shared ? null : r.renoCompare || null;
   const compareLines = rc
     ? [
         `Seller note: ${rc.sellerRate}% interest only, no points. ${money(rc.sellerMo)}/mo.`,

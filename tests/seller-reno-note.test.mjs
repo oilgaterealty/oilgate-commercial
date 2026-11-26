@@ -155,7 +155,10 @@ test('shared offer story adds up: purchase note, repairs by seller note or a rep
   const { sharedRefiStory } = await import('../src/lib/dealmath.js');
   const ev = evaluate('wrap', LEAD.inputs, BASE);
   const g = buildLeadGuide(BASE, PLAN, LEAD);
-  const st = sharedRefiStory(applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi, g));
+  const st = sharedRefiStory(applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi, g), { loanOption: true });
+  const other = sharedRefiStory(applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi, g));
+  assert.ok(!JSON.stringify(other).includes('Or a repair loan'));
+  assert.doesNotMatch(JSON.stringify(other.steps.find((s) => s.title === 'Rehab')), /11%|points upfront/);
   const titles = st.steps.map((s) => s.title);
   assert.deepEqual(titles, ['Take over', 'Rehab', 'Lease-up', 'Full', 'Seller paid back', 'After']);
   const rehab = st.steps.find((s) => s.title === 'Rehab').lines.map((l) => l.label);

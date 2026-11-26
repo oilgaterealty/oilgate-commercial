@@ -576,12 +576,13 @@ export function applyGuideRefi(story, rf, guide = null) {
 }
 
 // Shared views (realtor, reviewer, lender): the refinance step only says the seller is paid back in full.
-// What the buyer clears at the refi is owner-only.
-export function sharedRefiStory(story) {
+// What the buyer clears at the refi is owner-only. The repair-loan alternative shows only when loanOption is on (reviewer).
+export function sharedRefiStory(story, { loanOption = false } = {}) {
   if (!story) return story;
   const h = story.headline || {};
   const next = { ...story, headline: { ...h, cashOut: null, maxSellerAtRefi: null } };
   next.steps = (story.steps || []).map((s) => {
+    if (s.title === 'Rehab' && !loanOption) return { ...s, lines: s.lines.filter((l) => l.label !== 'Or a repair loan') };
     if (s.title !== 'Refinance') return s;
     const pays = s.lines.filter((l) => l.payback || l.label === 'Pays seller');
     if (!pays.length) return s;
