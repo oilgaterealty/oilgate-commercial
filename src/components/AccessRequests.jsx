@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { roleLabel, when } from '../lib/format.js';
 import { Button, Card, CardTitle, Empty } from './Shell.jsx';
 
-const roles = ['realtor', 'seller', 'reviewer', 'lender', 'lead_guest', 'viewer'];
+const roles = ['reviewer', 'lender', 'viewer', 'realtor', 'seller', 'lead_guest'];
 
 export default function AccessRequests({ dealId, onApproved }) {
   const [rows, setRows] = useState(null);
@@ -15,6 +15,7 @@ export default function AccessRequests({ dealId, onApproved }) {
     const { data, error } = await supabase.from('commercial_access_requests')
       .select('id,email,requested_role,created_at').eq('deal_id', dealId).eq('status', 'pending').order('created_at');
     setRows(data || []);
+    setSelected((cur) => { const next = { ...cur }; for (const r of data || []) if (!next[r.id] && roles.includes(r.requested_role)) next[r.id] = r.requested_role; return next; });
     if (error) setStatus('Couldn’t load access requests.');
   }
   useEffect(() => { load(); }, [dealId]);

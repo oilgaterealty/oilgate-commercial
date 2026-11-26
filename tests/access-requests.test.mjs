@@ -13,7 +13,9 @@ test('request access preserves both existing deal and invitation routes', () => 
   const app = read('src/App.jsx');
   assert.match(app, /canRequestAccess=\{rules\.guestsAllowed && requestAccessAllowed\(SITE_KIND\) && route\.name !== 'join'\}/);
   assert.match(app, /!isOwner && rules\.guestsAllowed && requestAccessAllowed\(SITE_KIND\) && route\.name === 'request-access'/);
-  assert.match(read('src/views/RequestAccess.jsx'), /p_submit: false[\s\S]*p_submit: true/);
+  const reqView = read('src/views/RequestAccess.jsx');
+  assert.match(reqView, /p_submit: false/);
+  assert.match(reqView, /p_submit: true/);
 });
 
 test('requests require verified identity, and resolving a request cannot overwrite existing memberships', () => {

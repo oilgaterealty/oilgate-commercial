@@ -38,6 +38,7 @@ const TABS = siteRules(SITE_KIND).ownerAllowed
   : BASE_TABS;
 const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['lead_guest', 'Lead guest'], ['viewer', 'Viewer']];
 const ALERTED = ['realtor', 'reviewer', 'lender'];
+const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller', 'lead_guest'];
 
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
 
@@ -62,8 +63,15 @@ function People({ deal }) {
   };
   const setStatus = async (r, status) => { await supabase.from('commercial_members').update({ status }).eq('id', r.id); load(); };
 
+  const setRole = async (r, role) => {
+    const ntfy = r.ntfy_topic || (ALERTED.includes(role) ? topic() : null);
+    await supabase.from('commercial_members').update({ role, ntfy_topic: ntfy }).eq('id', r.id);
+    load();
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      {deal.slug === 'charlotte' && <AccessRequests dealId={deal.id} onApproved={load} />}
       <Card>
         <CardTitle>People</CardTitle>
         {!rows ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>Only you so far.</Empty> : (
@@ -75,9 +83,15 @@ function People({ deal }) {
                   <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}{r.link_id ? ' · joined with a link' : ''}</p>
                   {r.ntfy_topic && r.status === 'active' && <p className="mt-1 text-xs text-ink-soft">Alert topic: <code className="select-all">{r.ntfy_topic}</code></p>}
                 </div>
-                {r.status === 'active'
-                  ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
-                  : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
+                    className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                    {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
+                  </select>
+                  {r.status === 'active'
+                    ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
+                    : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
+                </div>
               </li>
             ))}
           </ul>
@@ -103,7 +117,6 @@ function People({ deal }) {
             className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy site link</button>
         </form>
       </Card>
-      {deal.slug === 'charlotte' && <AccessRequests dealId={deal.id} onApproved={load} />}
       <RoleLinks deal={deal} onJoined={load} />
     </div>
   );

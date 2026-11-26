@@ -90,9 +90,9 @@ test('0018 enforces recipient-bound, expiring, single-use, revocable links and r
   assert.match(sql0018, /requested role required/);
 
   const reqSrc = read('src/views/RequestAccess.jsx');
-  assert.match(reqSrc, /Which role are you requesting\?/);
-  assert.match(reqSrc, /p_requested_role: role/);
-  assert.match(reqSrc, /lead_guest/);
+  assert.match(reqSrc, /<RoleChoice/);
+  assert.match(reqSrc, /p_requested_role: r\b/);
+  assert.doesNotMatch(reqSrc, /lead_guest/);
 
   const accSrc = read('src/components/AccessRequests.jsx');
   assert.match(accSrc, /row\.requested_role/);
