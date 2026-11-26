@@ -127,12 +127,12 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
         )}
         <ol className="mt-3 space-y-2 text-sm">
           {refiLines.map((line, idx) => (
-            <li key={line.label} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="flex items-center gap-2 text-ink-soft">
-                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-paper text-xs font-semibold text-ink">{idx + 1}</span>
-                <span>{line.label}</span>
+            <li key={line.label} className="flex items-start justify-between gap-3">
+              <span className="flex min-w-0 items-start gap-2 text-ink-soft">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-paper text-xs font-semibold text-ink">{idx + 1}</span>
+                <span className="min-w-0">{line.label}</span>
               </span>
-              <Trigger lines={line.overlay} className="text-right font-semibold text-ink">{line.value}</Trigger>
+              <span className="shrink-0 whitespace-nowrap text-right"><Trigger lines={line.overlay} className="font-semibold text-ink">{line.value}</Trigger></span>
             </li>
           ))}
           {!shared && <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line pt-2.5">

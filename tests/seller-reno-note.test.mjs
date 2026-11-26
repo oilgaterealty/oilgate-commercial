@@ -99,7 +99,8 @@ test('seller page: two notes, no regular lender rate, no buyer numbers, no carry
   assert.ok(!labels.includes('You can also fund the repairs'));
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Paid as units are rented', 'Paid back in full']);
   assert.match(s.refiLine, /paid back in full/);
-  assert.match(s.steps[1].detail, /at 8% a year\. I run the work\./);
+  assert.match(s.steps[1].detail, /at 8% a year, plus a \$20,000 contingency only if it's needed\. I run the work\./);
+  assert.match(s.steps[0].detail, /Your purchase note is reported as \$250,000\. You can change this if it's not accurate\./);
   assert.doesNotMatch(seen, /no points|every month|paid to you monthly|monthly payments|once all|when all/i);
   assert.match(s.steps[2].detail, /^Your payments start as units are rented and grow with each one\./);
   assert.match(s.steps[2].detail, /At \d+ units rented you get the full \$[0-9,]+ a month: \$[0-9,]+ on the purchase note and \$[0-9,]+ on the renovation note/);

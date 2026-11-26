@@ -1644,8 +1644,8 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       { label: 'Paid back in full', value: totalText, overlay: payoffLines },
     ];
     const steps = [
-      { title: 'Seller financing', detail: `At closing you deed me the building. Your purchase note is ${notePrincipalText}. I take over the leasing and the repairs.`, overlay: [] },
-      { title: 'Repairs', detail: `You fund the repairs with a second seller note, ${money(renoAmt)}, at ${rf.renoRate}% a year. I run the work.`, overlay: [...repairsOverlay, ...compareOverlay] },
+      { title: 'Seller financing', detail: `At closing you deed me the building. Your purchase note is reported as ${notePrincipalText}. You can change this if it's not accurate. I take over the leasing and the repairs.`, overlay: [] },
+      { title: 'Repairs', detail: `You fund the repairs with a second seller note, ${money(renoAmt)}, at ${rf.renoRate}% a year${num(rl.contingency, 0) > 0 ? `, plus a ${money(rl.contingency)} contingency only if it's needed` : ''}. I run the work.`, overlay: [...repairsOverlay, ...compareOverlay] },
       { title: 'Paid as units are rented', detail: billsFromRent
         ? `Your payments start as units are rented and grow with each one. Rent pays the property tax, insurance, water and trash first, then you. ${fullAt[0].toUpperCase()}${fullAt.slice(1)} you get the full ${money(notePay + renoPay)} a month: ${money(notePay)} on the purchase note and ${money(renoPay)} on the renovation note. Any part not paid before then is added to what you are paid back.`
         : `Your payments start as units are rented and grow with each one. ${fullAt[0].toUpperCase()}${fullAt.slice(1)} you get the full ${money(notePay + renoPay)} a month: ${money(notePay)} on the purchase note and ${money(renoPay)} on the renovation note. Any part not paid before then is added to what you are paid back. I pay the taxes, insurance, water and trash.`, overlay: payLines },
