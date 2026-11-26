@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
-import { Card, CardTitle, Empty } from './Shell.jsx';
+import { Card, CardTitle, Empty, InfoTip } from './Shell.jsx';
 import { useUploads, Uploader, ShareChips, uploadShareButtons } from './Files.jsx';
 import { sharedPhotos } from '../lib/leaseUp.js';
 import { coverOf } from '../lib/v63.js';
@@ -76,7 +76,7 @@ export default function Photos({ deal, role, me, preview }) {
               </div>
               <div className="space-y-2 p-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-xs text-ink-soft">{r.note || r.file_name}</p>
+                  <InfoTip label="Photo details" lines={[r.note || r.file_name]} />
                   {!preview && <button onClick={() => star(r)} title={r.featured ? 'Cover photo' : 'Make this the cover'} aria-label={r.featured ? 'Cover photo' : 'Make this the cover'} aria-pressed={Boolean(r.featured)} className={`text-lg leading-none ${r.featured ? 'text-warm' : 'text-line hover:text-warm'}`}>★</button>}
                 </div>
                 {!preview && <ShareChips r={r} owner={owner} onChange={load} />}

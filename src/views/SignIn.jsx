@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import Shell, { Card, Button, Field } from '../components/Shell.jsx';
+import Shell, { Card, Button, Field, InfoTip } from '../components/Shell.jsx';
 import RoleChoice from '../components/RoleChoice.jsx';
 import { readRequestRole, saveRequestRole } from '../lib/requestRoles.js';
 
@@ -42,7 +42,7 @@ export default function SignIn({ canRequestAccess, requestingAccess }) {
           {requestingAccess ? 'Email me a link to send it' : 'Email me a sign-in link'}
         </Button>
       </form>
-      {state && <p role="status" className="text-sm text-ink-soft">{state}</p>}
+      {state && <p role="status" className="text-sm text-ink">{state}</p>}
     </>
   );
 
@@ -50,8 +50,10 @@ export default function SignIn({ canRequestAccess, requestingAccess }) {
     return (
       <Shell>
         <div className="mx-auto max-w-md pt-6">
-          <h1 className="font-display text-4xl font-semibold tracking-tight">Request access</h1>
-          <p className="mt-2 text-ink-soft">Pick your role, then verify your email.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-4xl font-semibold tracking-tight">Request access</h1>
+            <InfoTip label="How to request access" lines={['Pick your role, then verify your email.']} />
+          </div>
           <Card className="mt-6 space-y-5">
             <section className="space-y-2">
               <h2 className="text-sm font-semibold text-ink">1. Your role</h2>
@@ -71,8 +73,10 @@ export default function SignIn({ canRequestAccess, requestingAccess }) {
   return (
     <Shell>
       <div className="mx-auto max-w-md pt-6">
-        <h1 className="font-display text-4xl font-semibold tracking-tight">Welcome</h1>
-        <p className="mt-2 text-ink-soft">Sign in to see the property page you were invited to.</p>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-4xl font-semibold tracking-tight">Welcome</h1>
+          <InfoTip label="Signing in" lines={['Sign in to see the property page you were invited to.']} />
+        </div>
         <Card className="mt-6 space-y-4">{signInButtons}</Card>
         {canRequestAccess && <a className="mt-3 inline-flex rounded-xl border border-line bg-white px-4 py-2 text-sm font-medium hover:bg-warm-soft" href="#/request-access">Request access</a>}
       </div>

@@ -10,9 +10,8 @@ export default function CostSummary({ summary, Trigger = OverlayTrigger, classNa
       <ul className="mt-2 space-y-1">
         {(summary.lines || []).map((line) => (
           <li key={line.key || line.label} className="flex flex-wrap items-baseline gap-x-1.5 text-sm leading-snug">
-            <Trigger lines={line.overlay} className="font-medium text-ink">
+            <Trigger lines={[line.detail, ...(line.overlay || [])].filter(Boolean)} className="font-medium text-ink">
               {line.label}
-              {line.detail ? <span className="font-normal text-ink-soft"> ({line.detail})</span> : null}
             </Trigger>
           </li>
         ))}

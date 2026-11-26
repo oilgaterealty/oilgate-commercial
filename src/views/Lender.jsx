@@ -18,7 +18,9 @@ import LenderTerms from './LenderTerms.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
 
-const debtOf = (e) => e.operating.cashFlow / 12 - e.keepMonthly;
+// Pills never show a month guess: "1st Unit 9 · month 1" reads "1st Unit 9".
+const noMonth = (s) => (typeof s === 'string' ? s.replace(/\s*·\s*months?\s+\d+(\s*[–-]\s*\d+)?/gi, '').replace(/\s*\(month \d+ refi\)/gi, '') : s);
+const debtOf =(e) => e.operating.cashFlow / 12 - e.keepMonthly;
 const times = (v) => (Number.isFinite(v) ? `${v.toFixed(2)}x` : 'No payment');
 
 function Stat({ label, value, overlay }) {
@@ -95,7 +97,9 @@ export default function Lender({ deal, me, preview, tab }) {
           {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
             <>
               <section className="rounded-3xl bg-ink p-6 text-white">
-                <h2 className="font-display text-3xl font-semibold">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</h2>
+                <h2 className="font-display text-3xl font-semibold">
+                  <OverlayTrigger lines={effectiveGuide ? [] : [plain(plan.structure, e).glance]} className="text-white">{plan.name.replace(/^[A-Z]\s*:\s*/, '')}</OverlayTrigger>
+                </h2>
                 {effectiveGuide ? (
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <div>
@@ -125,7 +129,6 @@ export default function Lender({ deal, me, preview, tab }) {
                   </div>
                 ) : (
                   <>
-                    <p className="mt-2 max-w-3xl text-white/80">{plain(plan.structure, e).glance}</p>
                     <div className="mt-5 grid gap-3 sm:grid-cols-3">
                       <div>
                         <p className="text-xs text-white/60">{e.keepMonthly < 0 ? 'Short each month' : 'Left over each month after every bill'}</p>
@@ -136,8 +139,7 @@ export default function Lender({ deal, me, preview, tab }) {
                     </div>
                     {val && (
                       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-white/90">
-                        <OverlayTrigger lines={val.incomeOverlay} className="font-medium text-white">{val.incomeLine}</OverlayTrigger>
-                        {val.compsLine && <OverlayTrigger lines={val.compsOverlay} className="text-white/75">{val.compsLine}</OverlayTrigger>}
+                        <OverlayTrigger lines={[...(val.incomeOverlay || []), ...(val.compsLine ? [val.compsLine, ...(val.compsOverlay || [])] : [])]} className="font-medium text-white">{val.incomeLine}</OverlayTrigger>
                       </div>
                     )}
                   </>
@@ -174,7 +176,7 @@ export default function Lender({ deal, me, preview, tab }) {
                                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                                   {step.pills.map((pill, pIdx) => (
                                     <OverlayTrigger key={pIdx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2.5 py-0.5 text-xs font-medium text-ink">
-                                      {pill.label}
+                                      {noMonth(pill.label)}
                                     </OverlayTrigger>
                                   ))}
                                 </div>

@@ -2,7 +2,7 @@ import { DictatedField } from './Dictation.jsx';
 import { useEffect, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { when, bytes, roleLabel } from '../lib/format.js';
-import { Card, CardTitle, Button, Empty } from './Shell.jsx';
+import { Card, CardTitle, Button, Empty, InfoTip } from './Shell.jsx';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 import { seenByLabel } from '../lib/v63.js';
 
@@ -81,8 +81,8 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
         )}
       </div>
       {preview && <p className="text-sm">Read-only preview. Member sign-in is required to upload.</p>}
-      {busy && <p role="status" className="text-sm text-ink-soft">{busy}</p>}
-      {hint && <p className="text-xs text-ink-soft">{hint}</p>}
+      {busy && <p role="status" className="text-sm text-ink">{busy}</p>}
+      {hint && <InfoTip label="Upload tips" lines={[hint]} />}
     </div>
   );
 }
@@ -137,12 +137,15 @@ export function FileList({ rows, canShare, owner, onChange }) {
           {r.kind === 'photo' && r.url
             ? <button type="button" onClick={() => open(r)} aria-label={`Open ${r.file_name}`} className="shrink-0 cursor-zoom-in"><img src={r.url} alt="" className="h-12 w-12 rounded-lg object-cover" /></button>
             : <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-warm-soft text-xs font-medium">DOC</span>}
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {r.kind === 'photo' && r.url
-              ? <button type="button" onClick={() => open(r)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{r.file_name}</button>
-              : <a href={r.url} target="_blank" rel="noreferrer" className="block break-words text-sm font-medium underline-offset-2 hover:underline">{r.file_name}</a>}
-            <p className="text-xs text-ink-soft">{r.kind === 'photo' ? 'Photo' : 'Document'} · from {roleLabel[r.uploaded_by_role] || 'the team'} · {when(r.created_at)} · {bytes(r.size_bytes)}{r.note ? ` · ${r.note}` : ''}</p>
-            {(canShare || owner) && <p className="text-xs font-medium text-ink">{seenByLabel(r)}</p>}
+              ? <button type="button" onClick={() => open(r)} className="block min-w-0 max-w-full truncate text-left text-sm font-medium hover:underline">{r.file_name}</button>
+              : <a href={r.url} target="_blank" rel="noreferrer" className="block min-w-0 break-words text-sm font-medium underline-offset-2 hover:underline">{r.file_name}</a>}
+            <InfoTip label={`Details for ${r.file_name}`} lines={[
+              `${r.kind === 'photo' ? 'Photo' : 'Document'} · from ${roleLabel[r.uploaded_by_role] || 'the team'} · ${when(r.created_at)} · ${bytes(r.size_bytes)}`,
+              r.note,
+              (canShare || owner) ? seenByLabel(r) : null,
+            ]} />
           </div>
           {canShare && <ShareChips r={r} owner={owner} onChange={onChange} />}
           {owner && <button onClick={() => remove(r)} className="text-xs text-ink-soft hover:text-red-700">Delete</button>}
@@ -167,7 +170,7 @@ export function PhotoGrid({ rows }) {
             </button>
             <ThumbOverlay buttons={[{ key: 'open', icon: '⤢', label: 'Open', onClick: () => setView(j) }]} />
           </div>
-          {p.note && <p className="px-3 py-2 text-xs text-ink-soft">{p.note}</p>}
+          {p.note && <div className="flex justify-end px-2 py-1.5"><InfoTip label="Photo note" lines={[p.note]} /></div>}
         </div>
       ))}
       <PhotoViewer items={photos.map((p) => ({ url: p.url, alt: p.note || 'Property photo' }))} index={view} onIndex={setView} />

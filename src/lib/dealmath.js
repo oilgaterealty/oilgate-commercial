@@ -88,7 +88,7 @@ export const STRUCTURES = {
       ['sellerFund', 'Seller’s rehab money', '$'],
       ['fillTarget', 'Units filled before you share in the rent', 'n'],
       ['buyerSplitPct', 'Your share of what’s left after that', '%'],
-      ['refiMonth', 'Refinance month', 'n'],
+      ['refiMonth', 'Months to the refinance', 'n'],
       ['closing', 'Closing costs at the refinance', '$'],
       ['buyerCash', 'Your cash in', '$'],
       ['addFundToBuyout', 'Add his rehab money to the buyout', 'bool'],
@@ -151,11 +151,8 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     debtMonthly = sellerMonthly = x.payment;
     allIn = x.optionPrice + x.sellerAdvances + x.exerciseClosing + cashIn;
     const needed = Math.max(0, x.optionPrice + x.sellerAdvances + x.exerciseClosing - o.refiNet);
-    const credit = (x.payment * x.creditPct) / 100;
-    const months = needed === 0 ? 0 : credit > 0 ? needed / credit : Infinity;
     extra = [
       ['Credits needed before a refi can buy it', needed, '$'],
-      ['Months until we can buy', months, 'mo'],
       ['You keep after we buy and refinance', o.cashFlow / 12 - o.refiPayment, '$/mo'],
     ];
   } else if (structure === 'wrap') {
@@ -187,7 +184,6 @@ export function evaluate(structure, inputsIn = {}, baseIn = {}) {
     allIn = (x.addFundToBuyout ? x.sellerFund : 0) + x.closing + cashIn;
     extra = [
       ['Seller’s rehab money', x.sellerFund, '$'],
-      ['Refinance month', x.refiMonth, 'mo'],
       ['You keep after refinance', o.cashFlow / 12 - o.refiPayment, '$/mo'],
     ];
   }

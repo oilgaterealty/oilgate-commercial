@@ -17,12 +17,12 @@ test('NOI, cash flow and refi follow the standard formulas', () => {
   near(o.refiPayment, 2494.88, 0.01);
 });
 
-test('master lease: keep, DSCR and months until we can buy', () => {
+test('master lease: keep, DSCR and credits needed, with no month guess row', () => {
   const r = evaluate('master_lease', { payment: 4000, optionPrice: 380000, sellerAdvances: 20000, exerciseClosing: 5000, creditPct: 50 }, B);
   near(r.keepMonthly, 2216.67, 0.01);
   near(r.dscr, 1.5542, 0.0001);
   near(r.extra[0][1], 50500, 0.01);
-  near(r.extra[1][1], 25.25, 0.01);
+  assert.ok(!r.extra.some(([l]) => /month/i.test(l)));
   assert.equal(r.cashOnCash, null);
 });
 

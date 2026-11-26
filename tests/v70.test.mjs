@@ -94,9 +94,10 @@ test('actual Plans markup renders units-rented table, collapses month-by-month, 
     assert.match(html, /Left for you/);
     assert.match(html, /Added unit \(Unit 10\) rehab/);
     assert.match(html, /Short months carried by the repair loan/);
-    assert.match(html, /Month by month \(example pace\)/);
-    // Collapsed by default: month-by-month table and rentOptions are not shown
-    assert.doesNotMatch(html, /Month-by-month cash flow|Database rent option/);
+    assert.match(html, /Step by step/);
+    assert.doesNotMatch(html, /example pace/);
+    // Collapsed by default: step-by-step table and rentOptions are not shown
+    assert.doesNotMatch(html, /Step-by-step cash flow|Month-by-month cash flow|Database rent option/);
     assert.doesNotMatch(html, /as-is|Pending lender underwriting|Stabilized 10 units \(pending approvals\)/i);
     for (const secret of ['PRIVATE_TAX_SOURCE', 'PRIVATE_SCHEDULE_SOURCE', 'PRIVATE_COST_DETAIL']) assert.ok(!html.includes(secret), secret);
     assert.doesNotMatch(html, /role="tooltip"|<p\b|<small\b|<caption\b/);

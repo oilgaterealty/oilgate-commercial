@@ -4,7 +4,7 @@ import { CAP_RATES, arvEstimate, compWhatIfMessage, pricePerUnit, unitCount, v5A
 import { money, operating } from '../lib/dealmath.js';
 import { roleLabel } from '../lib/format.js';
 import { COMP_SORTS, checkedLabel, compSource, compsForView, latestCompDate, milesLabel, perUnitOf, pickers, picksByComp, soldLabel, sortComps, yearOf } from '../lib/v63.js';
-import { Button, Card, CardTitle, Empty, Field, InfoTip } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, Field, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { sendToOwner } from '../components/Messages.jsx';
 import { buyerName, possessive } from '../lib/people.js';
 
@@ -220,16 +220,14 @@ export default function Comps({ deal, me, role, preview }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-2xl bg-ink p-5 text-white">
             <p className="text-xs uppercase tracking-[0.16em] text-warm">Value by comps</p>
-            <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">{money(calc.market)}</p>
-            <p className="mt-1 text-sm text-white/80">
-              {calc.avg !== null ? `${money(calc.avg)} average per unit × ${units} units` : viewOn === 'all' ? `Add comps below to value ${units} units` : 'No picks yet. Tap Pick on the comps you trust.'}
+            <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">
+              <OverlayTrigger label="How value by comps is figured" lines={[calc.avg !== null ? `${money(calc.avg)} average per unit × ${units} units` : viewOn === 'all' ? `Add comps below to value ${units} units` : 'No picks yet. Tap Pick on the comps you trust.']}>{money(calc.market)}</OverlayTrigger>
             </p>
           </div>
           <div className="rounded-2xl border border-line bg-paper p-5">
             <p className="text-xs uppercase tracking-[0.16em] text-ink-soft">Value by income</p>
-            <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">{money(calc.income)}</p>
-            <p className="mt-1 text-sm text-ink-soft">
-              {noi !== null ? `${money(noi)} yearly NOI ÷ ${cap}% cap rate` : 'Enter rent in the deal model for NOI'}
+            <p className="mt-1 font-display text-3xl font-semibold sm:text-4xl">
+              <OverlayTrigger label="How value by income is figured" lines={[noi !== null ? `${money(noi)} yearly NOI ÷ ${cap}% cap rate` : 'Enter rent in the deal model for NOI']}>{money(calc.income)}</OverlayTrigger>
             </p>
           </div>
         </div>
@@ -292,9 +290,9 @@ export default function Comps({ deal, me, role, preview }) {
             <ul className="space-y-3 md:hidden">
               {shownComps.map((c) => (
                 <li key={c.id} className={`space-y-3 rounded-2xl border border-line bg-white p-4 ${inView(c) ? '' : 'opacity-50'}`}>
-                  <div>
+                  <div className="flex items-start gap-2">
                     <p className="text-base font-semibold break-words">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
-                    {meta(c) && <p className="text-sm text-ink-soft">{meta(c)}</p>}
+                    {meta(c) && <InfoTip label={`Where ${c.address} is`} lines={[meta(c)]} />}
                   </div>
                   <CompFacts c={c} />
                   {role === 'owner' && pickedBy[c.id] && <p className="text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
@@ -325,8 +323,10 @@ export default function Comps({ deal, me, role, preview }) {
                   {shownComps.map((c) => (
                     <tr key={c.id} className={`align-top ${inView(c) ? '' : 'opacity-50'}`}>
                       <td className="border-b border-line px-3 py-4">
-                        <p className="font-semibold">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
-                        {c.city && <p className="text-sm text-ink-soft">{c.city}</p>}
+                        <div className="flex items-start gap-2">
+                          <p className="font-semibold">{c.address}{c.local && <span className="ml-1.5 rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium">what-if</span>}</p>
+                          {c.city && <InfoTip label={`City for ${c.address}`} lines={[c.city]} />}
+                        </div>
                         {role === 'owner' && pickedBy[c.id] && <p className="mt-1 text-sm"><span className="font-medium">Picked by:</span> {pickedBy[c.id].join(', ')}</p>}
                       </td>
                       <td className="border-b border-line px-3 py-4 font-semibold">{c.units}</td>

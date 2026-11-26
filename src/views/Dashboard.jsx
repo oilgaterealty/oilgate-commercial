@@ -13,12 +13,11 @@ import { SellerPulse } from '../components/Pulse.jsx';
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
 
-function Tile({ label, children, sub, strong }) {
+function Tile({ label, children, strong }) {
   return (
     <div className={`rounded-2xl p-3 ${strong ? 'bg-ink text-white' : 'bg-paper'}`}>
       <dt className={`text-xs ${strong ? 'text-warm' : 'text-ink-soft'}`}>{label}</dt>
       <dd className="mt-1 font-display text-xl font-semibold leading-tight">{children}</dd>
-      {sub && <p className={`mt-0.5 text-xs ${strong ? 'text-white/70' : 'text-ink-soft'}`}>{sub}</p>}
     </div>
   );
 }
@@ -102,7 +101,7 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
                 {!owner && <div className="mt-3"><SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} /></div>}
               </>
             )}
-            {owner && model.saved && <p className="mt-2 text-xs text-ink-soft">{model.saved}</p>}
+            {owner && model.saved && model.saved !== 'Saved' && <p role="status" className="mt-2 text-sm text-ink">{model.saved}</p>}
           </Card>
           <WorkBoard deal={deal} me={me} role={role} preview={preview} />
         </div>

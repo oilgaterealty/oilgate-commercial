@@ -229,7 +229,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
               </Button>
             </form>
           )}
-          {sent && <p role="status" className="text-sm text-ink-soft">{sent}</p>}
+          {sent && <p role="status" className="text-sm text-ink">{sent}</p>}
         </div>
       )}
     </Card>
@@ -286,8 +286,9 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
           <ul className="grid gap-3 sm:grid-cols-2">
             {proof.map((item, idx) => (
               <li key={idx} className="rounded-2xl border border-line bg-white p-3.5">
-                {item.title && <p className="text-sm font-semibold text-ink">{item.title}</p>}
-                {item.detail && <p className="mt-1 text-sm text-ink-soft">{item.detail}</p>}
+                {item.title
+                  ? <div className="text-sm font-semibold text-ink"><OverlayTrigger lines={[item.detail]}>{item.title}</OverlayTrigger></div>
+                  : item.detail && <div className="text-sm text-ink">{item.detail}</div>}
               </li>
             ))}
           </ul>

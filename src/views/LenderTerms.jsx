@@ -60,7 +60,7 @@ export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
             <li key={r.id} className="rounded-2xl border border-line bg-paper p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h3 className="text-lg font-semibold">{r.company_name}{r.lender_uid === me?.uid ? ' (you)' : ''}</h3>
-                <span className="text-sm text-ink-soft">{LENDER_BOARD_LABELS[r.lender_type]?.label || ''} · {when(r.updated_at || r.created_at)}</span>
+                <span className="text-sm text-ink" title={when(r.updated_at || r.created_at)}>{LENDER_BOARD_LABELS[r.lender_type]?.label || ''}</span>
               </div>
               {Object.entries(r.terms || {}).map(([type, fields]) => (
                 <div key={type} className="mt-3">

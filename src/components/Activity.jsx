@@ -28,9 +28,9 @@ export default function Activity({ deal, title = 'Activity', kinds, actors, empt
       {rows?.length === 0 && <Empty>{empty}</Empty>}
       <ol className="space-y-3">
         {rows?.map((a) => (
-          <li key={a.id} className="flex gap-3 text-sm">
+          <li key={a.id} className="flex gap-3 text-sm" title={when(a.created_at)}>
             <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-warm" />
-            <div className="min-w-0"><p className="break-words"><strong className="font-semibold">{actorLabel(a)}</strong> {activityText(a)}</p><p className="text-xs text-ink-soft">{when(a.created_at)}</p></div>
+            <div className="min-w-0"><p className="break-words"><strong className="font-semibold">{actorLabel(a)}</strong> {activityText(a)}</p></div>
           </li>
         ))}
       </ol>

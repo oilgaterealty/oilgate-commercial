@@ -116,6 +116,7 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
   const buildingOverlay = [
     ...val.incomeOverlay,
     `Yearly NOI: ${money(o.noi)} · Cap rate: ${pct(o.capRate, 1)} · Refinance loan: ${money(o.refiLoan)} (${o.refiLimitedBy === 'DSCR' ? 'rent-limited' : 'value-limited'}), nets ${money(o.refiNet)}.`,
+    ...(val.compsLine ? [val.compsLine, ...(val.compsOverlay || [])] : []),
   ];
   return (
     <Card>
@@ -126,7 +127,6 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
         </button>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           <OverlayTrigger lines={buildingOverlay} className="font-semibold text-ink">{val.incomeLine}</OverlayTrigger>
-          {val.compsLine && <OverlayTrigger lines={val.compsOverlay} className="text-ink-soft">{val.compsLine}</OverlayTrigger>}
         </div>
       </div>
       {open && (
@@ -143,7 +143,11 @@ function BuildingNumbers({ base, setBase, o, owner, comps }) {
   );
 }
 
-export const letterOf = (o, i) => (/^([A-Z])\s*:/.exec(o.name)?.[1]) || String.fromCharCode(65 + i);
+// Pills and figures never show a month guess: "1st Unit 9 · month 1" reads "1st Unit 9",
+// "$5,000 (month 12 refi)" reads "$5,000". The refinance happens when all 10 units are rented.
+const noMonth = (s) => (typeof s === 'string' ? s.replace(/\s*·\s*months?\s+\d+(\s*[–-]\s*\d+)?/gi, '').replace(/\s*\(month \d+ refi\)/gi, '') : s);
+
+export const letterOf =(o, i) => (/^([A-Z])\s*:/.exec(o.name)?.[1]) || String.fromCharCode(65 + i);
 export const titleOf = (o) => o.name.replace(/^[A-Z]\s*:\s*/, '');
 
 function StoryLines({ lines }) {
@@ -204,7 +208,7 @@ export function OptionCard({ o, i, story, planHref }) {
               <div key={item.label} className="rounded-2xl bg-paper p-3.5">
                 <div className="text-xs text-ink-soft">{item.label}</div>
                 <div className={`mt-1 font-display text-2xl font-semibold leading-tight ${item.positive === true ? 'text-good' : item.positive === false ? 'text-red-700' : 'text-ink'}`}>
-                  <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
+                  <OverlayTrigger lines={item.overlay}>{noMonth(item.value)}</OverlayTrigger>
                 </div>
               </div>
             ))}
@@ -212,7 +216,7 @@ export function OptionCard({ o, i, story, planHref }) {
               <div key={item.label} className="rounded-2xl bg-paper p-3">
                 <div className="text-xs text-ink-soft">{item.label}</div>
                 <div className="mt-1 font-display text-xl font-semibold leading-tight text-ink">
-                  <OverlayTrigger lines={item.overlay}>{item.value}</OverlayTrigger>
+                  <OverlayTrigger lines={item.overlay}>{noMonth(item.value)}</OverlayTrigger>
                 </div>
               </div>
             ))}
@@ -225,13 +229,12 @@ export function OptionCard({ o, i, story, planHref }) {
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-semibold text-ink">{step.title}</span>
-                    {step.when && <span className="text-xs font-medium text-ink-soft">{step.when}</span>}
                   </div>
                   {step.pills && (
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
                       {step.pills.map((pill, idx) => (
                         <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2.5 py-1 text-xs font-medium text-ink">
-                          {pill.label}
+                          {noMonth(pill.label)}
                         </OverlayTrigger>
                       ))}
                     </div>
@@ -328,12 +331,11 @@ export function OptionTable({ offers, stories, planHrefOf }) {
     if (!step) return '—';
     return (
       <div className="space-y-1.5">
-        {step.when && <div className="text-xs font-semibold text-ink-soft">{step.when}</div>}
         {step.pills && (
           <div className="flex flex-wrap gap-1">
             {step.pills.map((pill, idx) => (
               <OverlayTrigger key={idx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2 py-0.5 text-xs">
-                {pill.label}
+                {noMonth(pill.label)}
               </OverlayTrigger>
             ))}
           </div>
@@ -548,7 +550,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
             </select>
           </label>
         )}
-        {owner && saved && <span className="ml-auto text-xs text-ink-soft">{saved}</span>}
+        {owner && saved && saved !== 'Saved' && <span role="status" className="ml-auto text-sm text-ink">{saved}</span>}
       </div>
       {leadErr && <p role="alert" className="text-sm text-red-700">{leadErr}</p>}
       {!sortedOffers.length && <Card><Empty>{owner ? 'Add an offer to start.' : 'No lead offer has been shared with you yet.'}</Empty></Card>}
@@ -584,9 +586,8 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
                   ? <DictatedField aria-label="Offer name" value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value.slice(0, 80) || cur.name })}
                       className="mb-1 w-full rounded-lg border border-transparent px-1 font-display text-xl font-semibold outline-none hover:border-line focus:border-ink" />
                   : <h3 className="mb-1 px-1 font-display text-xl font-semibold">{cur.name}</h3>}
-                <div className="mb-3 space-y-1.5 rounded-xl bg-warm-soft/60 px-3 py-2.5 text-sm">
-                  {plain(cur.structure, r).lines.map((t, i) => <p key={i}>{t}</p>)}
-                  <p className="text-ink-soft"><span className="font-medium text-ink">Worth knowing:</span> {plain(cur.structure, r).risk}.</p>
+                <div className="mb-3 px-1">
+                  <InfoTip label="How this offer works" lines={[...plain(cur.structure, r).lines, `Worth knowing: ${plain(cur.structure, r).risk}.`]} />
                 </div>
                 {STRUCTURES[cur.structure].fields.map(([k, l, u]) => {
                   const d = STRUCTURES[cur.structure].defaults[k];

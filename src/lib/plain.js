@@ -64,12 +64,12 @@ export function plain(structure, r) {
     return {
       glance: 'The seller fronts part of the rehab and shares rent until a refinance pays off their loan.',
       owns: 'Seller until refinance, then us',
-      payoff: `At refinance, month ${x.refiMonth}`,
+      payoff: 'At the refinance, once all 10 units are rented',
       cash: cashUp,
       risk: 'His rehab money is only paid back through his share of the rent unless added to the buyout',
       lines: [
         `The seller puts ${money(x.sellerFund)} toward rehab while we run the building. Until ${x.fillTarget} units are filled, the seller gets the extra rent; after that, we split ${x.buyerSplitPct}% / ${100 - x.buyerSplitPct}%.`,
-        `At month ${x.refiMonth}, a bank refinance pays off the seller’s loan${x.addFundToBuyout ? ` plus ${money(x.sellerFund)}` : ''}.`,
+        `Once all 10 units are rented, a bank refinance pays off the seller’s loan${x.addFundToBuyout ? ` plus ${money(x.sellerFund)}` : ''}.`,
       ],
     };
   }

@@ -104,7 +104,7 @@ export default function Seller({ deal, me, preview }) {
             </button>
           ))}
         </div>
-        {level && <p role="status" className="mt-3 text-sm text-ink-soft">Saved. We’ll follow your pace.</p>}
+        {level && <p role="status" className="mt-3 text-sm text-ink">Saved. We’ll follow your pace.</p>}
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">

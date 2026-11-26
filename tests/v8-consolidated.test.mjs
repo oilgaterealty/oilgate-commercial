@@ -117,8 +117,9 @@ test('lead_guest role is isolated in uploads/messages and renders a read-only Le
   const Card = ({ children }) => React.createElement('section', null, children);
   const CardTitle = ({ children }) => React.createElement('h2', null, children);
   const Empty = ({ children }) => React.createElement('p', null, children);
+  const OverlayTrigger = ({ children }) => React.createElement('span', null, children);
   const { CHARLOTTE_PARCELS, LeadOfferCard } = loadJsxWithMocks('src/components/LeadOfferCard.jsx', {
-    './Shell.jsx': { Card, CardTitle, Button: ({ children, ...p }) => React.createElement('button', p, children) },
+    './Shell.jsx': { Card, CardTitle, OverlayTrigger, Button: ({ children, ...p }) => React.createElement('button', p, children) },
   });
   const { default: LeadGuest } = loadJsxWithMocks('src/views/LeadGuest.jsx', {
     '../lib/useDealModel.js': {
@@ -132,7 +133,7 @@ test('lead_guest role is isolated in uploads/messages and renders a read-only Le
     '../lib/plain.js': plainMod,
     '../components/Files.jsx': { useUploads: () => [[], () => {}] },
     '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-cover': '1' }), photosOf: (r) => r || [] },
-    '../components/Shell.jsx': { Card, CardTitle, Empty },
+    '../components/Shell.jsx': { Card, CardTitle, Empty, OverlayTrigger },
     '../components/LeadOfferCard.jsx': { CHARLOTTE_PARCELS, LeadOfferCard },
   });
 

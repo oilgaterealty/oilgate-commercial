@@ -3,7 +3,7 @@ import Comps from './Comps.jsx';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { operating, money, pct } from '../lib/dealmath.js';
-import { Card, CardTitle, Empty, Tabs } from '../components/Shell.jsx';
+import { Card, CardTitle, Empty, InfoTip, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
@@ -37,7 +37,7 @@ function Facts({ deal, numbers }) {
           <div><dt className="text-ink-soft">Refinance</dt><dd className="font-medium">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
         </>}
       </dl>
-      {!numbers && <div className="mt-5 space-y-3 text-sm"><p>A proposed purchase of this 10-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.</p><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol></div>}
+      {!numbers && <div className="mt-5 space-y-3 text-sm"><InfoTip label="This purchase" lines={['A proposed purchase of this 10-unit property. The parties are reviewing the purchase structure and arranging due diligence; final terms remain subject to agreement.']} /><ol className="list-decimal space-y-2 pl-5"><li>Walk the property and confirm its condition.</li><li>Verify occupancy, leases, and property records.</li><li>Agree purchase terms, financing, and a closing timeline.</li></ol></div>}
     </Card>
   );
 }

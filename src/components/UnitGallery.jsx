@@ -5,7 +5,7 @@ import { when } from '../lib/format.js';
 import { authorLabel } from '../lib/people.js';
 import { visibleUnitNotes, canWriteUnitNotes } from '../lib/v63.js';
 import { SITE_KIND, canAccessDealPlan } from '../lib/site.js';
-import { Button, Card, Empty } from './Shell.jsx';
+import { Button, Card, Empty, InfoTip } from './Shell.jsx';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 import { DictatedField } from './Dictation.jsx';
 import { WALK_SHARES, saveWalkShare, walkShareButtons } from '../lib/walkShare.js';
@@ -142,7 +142,7 @@ function UnitNotes({ deal, me, role, unit, preview }) {
             <li key={x.id} className="rounded-xl bg-white px-3 py-2">
               <p className="whitespace-pre-wrap text-base">{x.body}</p>
               <p className="mt-1 flex flex-wrap justify-between gap-2 text-sm text-ink-soft">
-                <span>{authorLabel(x)} · {when(x.created_at)}</span>
+                <InfoTip label="Who wrote this and when" lines={[`${authorLabel(x)} · ${when(x.created_at)}`]} />
                 {!preview && (owner || x.author_uid === me?.uid) && <button type="button" onClick={() => remove(x)} className="underline hover:text-red-700">Delete</button>}
               </p>
             </li>
@@ -311,7 +311,7 @@ export default function UnitGallery({ deal, me, role, preview }) {
                       {urls[v.storage_path]
                         ? <video src={urls[v.storage_path]} controls playsInline preload="metadata" className="aspect-video w-full rounded-xl bg-black" />
                         : <div className="flex aspect-video items-center justify-center rounded-xl bg-paper text-sm text-ink-soft">Loading video…</div>}
-                      <p className="text-sm text-ink-soft">{roomName(v.room)} · {authorLabel(v)} · {when(v.created_at)}</p>
+                      <div className="flex items-center gap-2"><span className="text-sm text-ink">{roomName(v.room)}</span><InfoTip label="Video details" lines={[`${authorLabel(v)} · ${when(v.created_at)}`]} /></div>
                       {canShare && shareBoxes(v, 'video')}
                       <VideoExtras video={v} />
                     </li>

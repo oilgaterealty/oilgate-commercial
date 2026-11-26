@@ -53,8 +53,7 @@ export default function LeadGuest({ deal, preview }) {
         <Empty>Loading…</Empty>
       ) : leadOffer && evalResult && summary ? (
         <Card>
-          <CardTitle>{leadOffer.name}</CardTitle>
-          <p className="mb-3 text-sm text-ink-soft">{summary.glance}</p>
+          <CardTitle><OverlayTrigger lines={[summary.glance]}>{leadOffer.name}</OverlayTrigger></CardTitle>
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl bg-paper p-3">
               <dt className="text-xs text-ink-soft">Buyer cash in</dt>

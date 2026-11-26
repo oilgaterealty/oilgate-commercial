@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { mediaCoordinator } from '../lib/mediaCoordinator.js';
-import { Button } from './Shell.jsx';
+import { Button, InfoTip } from './Shell.jsx';
 import { VIDEO_480P, VIDEO_BITRATE } from '../lib/videoPost.js';
 
 const VIDEO_MAX_BYTES = 50 * 1024 * 1024;
@@ -345,7 +345,12 @@ export default function WalkthroughCamera({
             ))}
           </div>
         )}
-        {(recordingVideo || videoSaving) && <p className="text-[11px] text-warm">Room is locked while this video records and saves.</p>}
+        {(recordingVideo || videoSaving) && (
+          <div className="flex items-center gap-2">
+            <span role="status" className="rounded-full bg-amber-400 px-2.5 py-1 text-xs font-semibold text-ink">Room locked</span>
+            <InfoTip label="Why the room is locked" lines={['Room is locked while this video records and saves.']} />
+          </div>
+        )}
       </div>
 
       {voiceBanner}
@@ -419,7 +424,7 @@ export default function WalkthroughCamera({
         ) : (
           <div className="space-y-2">
             {!hasAudioTrack && (
-              <p className="text-xs text-amber-300">Video only (no mic permission).</p>
+              <span role="status" className="inline-block rounded-full bg-amber-400 px-2.5 py-1 text-xs font-semibold text-ink">Video only (no mic permission)</span>
             )}
             {videoNote && <p role="status" className="text-xs text-warm">{videoNote}</p>}
             <div className="flex flex-wrap items-center justify-between gap-3">

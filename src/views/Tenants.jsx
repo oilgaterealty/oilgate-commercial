@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { STAGES, stageMove, unitCount, v5Access, canChangeLead, suggestionDiff } from '../lib/leaseUp.js';
 import { roleLabel } from '../lib/format.js';
-import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, Field, InfoTip } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
 import StrategyIdeas from './StrategyIdeas.jsx';
 
@@ -75,7 +75,7 @@ function SuggestForm({ lead, disabled, onSend, onCancel }) {
   const none = Object.keys(changes).length === 0;
   return (
     <form className="space-y-2 rounded-lg bg-paper p-2" onSubmit={(e) => { e.preventDefault(); if (!none) onSend(changes, note.trim()); }}>
-      <p className="text-xs font-medium">Suggest a change. The buyer accepts or turns it down.</p>
+      <div className="flex items-center gap-2"><span className="text-sm font-medium">Suggest a change</span><InfoTip label="How suggestions work" lines={['The buyer accepts or turns it down.']} /></div>
       <div className="grid gap-2 sm:grid-cols-2">
         <Field aria-label="Suggested name" maxLength={140} value={f.name} onChange={set('name')} />
         <Field aria-label="Suggested phone" maxLength={60} value={f.phone} onChange={set('phone')} />
@@ -271,9 +271,9 @@ export default function Tenants({ deal, me, role, preview }) {
 
       <Card className="!p-4">
         <CardTitle aside={<span className="text-xs text-ink-soft">{list.length} total</span>}>Tenant pipeline</CardTitle>
-        {preview && <p className="mb-3 text-xs text-ink-soft">Preview mode. Editing leads works on a real sign-in.</p>}
+        {preview && <div className="mb-3"><InfoTip label="Preview mode" lines={['Preview mode. Editing leads works on a real sign-in.']} /></div>}
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
-        {status && <p role="status" className="mb-3 text-sm text-ink-soft">{status}</p>}
+        {status && <p role="status" className="mb-3 text-sm text-ink">{status}</p>}
 
         {leads === null ? (
           <Empty>Loading…</Empty>
@@ -311,21 +311,21 @@ export default function Tenants({ deal, me, role, preview }) {
                                     </span>
                                   ) : null}
                                 </p>
-                                <span className="text-[11px] text-ink-soft">{roleLabel[lead.author_role] || lead.author_role}</span>
+                                <InfoTip label={`Who added ${lead.name}`} lines={[`Added by ${roleLabel[lead.author_role] || lead.author_role}`]} />
                               </div>
                               {(lead.phone || lead.email) && (
-                                <p className="break-words text-xs text-ink-soft">
+                                <p className="break-words text-sm text-ink">
                                   {[lead.phone, lead.email].filter(Boolean).join(' · ')}
                                 </p>
                               )}
                               {lead.notes && (
-                                <p className="whitespace-pre-wrap break-words text-xs text-ink">{lead.notes}</p>
+                                <p className="whitespace-pre-wrap break-words text-sm text-ink">{lead.notes}</p>
                               )}
                               {suggestions.filter((sg) => sg.lead_id === lead.id).map((sg) => (
                                 <div key={sg.id} className="space-y-1 rounded-lg border border-warm/40 bg-warm-soft p-2 text-xs">
                                   <p className="font-medium">{role === 'owner' ? `${sg.author_name || 'Realtor'} suggests:` : 'Suggestion pending'}</p>
                                   <ul>{Object.entries(sg.changes || {}).map(([k, v]) => <li key={k}><span className="text-ink-soft">{FIELD_LABEL[k] || k}:</span> {shown(k, lead[k])} → <strong>{shown(k, v)}</strong></li>)}</ul>
-                                  {sg.note && <p className="text-ink-soft">“{sg.note}”</p>}
+                                  {sg.note && <p className="text-ink">“{sg.note}”</p>}
                                   {role === 'owner' && !preview && (
                                     <div className="flex gap-2 pt-1">
                                       <Button type="button" className="!px-2.5 !py-1 !text-xs" disabled={pending} onClick={() => decide(sg, true)}>Accept</Button>

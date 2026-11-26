@@ -43,17 +43,14 @@ export default function AccessRequests({ dealId, onApproved }) {
   return (
     <Card className="lg:col-span-2">
       <CardTitle>Access requests</CardTitle>
-      <p className="text-sm text-ink-soft" role="status">{status}</p>
+      <p className="text-sm text-ink" role="status">{status}</p>
       {rows === null ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>No pending requests.</Empty> : (
         <ul className="divide-y divide-line">
           {rows.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-              <div>
+              <div title={when(row.created_at)}>
                 <p className="break-all font-medium">{row.email}</p>
-                <p className="text-xs text-ink-soft">
-                  {row.requested_role ? `Requested: ${roleLabel[row.requested_role] || row.requested_role} · ` : ''}
-                  {when(row.created_at)}
-                </p>
+                {row.requested_role && <p className="text-sm text-ink">Requested: {roleLabel[row.requested_role] || row.requested_role}</p>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <select aria-label={`Role for ${row.email}`} className="rounded-xl border border-line bg-white px-3 py-2 text-sm"

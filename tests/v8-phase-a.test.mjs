@@ -19,8 +19,9 @@ function loadLeadOfferModule() {
   const Card = ({ children }) => React.createElement('section', null, children);
   const CardTitle = ({ children, aside }) => React.createElement('div', null, React.createElement('h2', null, children), aside || null);
   const Button = ({ children, ...p }) => React.createElement('button', p, children);
-  const fn = new Function('module', 'exports', 'h', 'Fragment', 'useState', 'Button', 'Card', 'CardTitle', code);
-  fn(mod, mod.exports, React.createElement, React.Fragment, React.useState, Button, Card, CardTitle);
+  const OverlayTrigger = ({ children }) => React.createElement('span', null, children);
+  const fn = new Function('module', 'exports', 'h', 'Fragment', 'useState', 'Button', 'Card', 'CardTitle', 'OverlayTrigger', code);
+  fn(mod, mod.exports, React.createElement, React.Fragment, React.useState, Button, Card, CardTitle, OverlayTrigger);
   return mod.exports;
 }
 

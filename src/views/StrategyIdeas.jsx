@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when } from '../lib/format.js';
-import { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, Field, InfoTip } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
 import { canDeleteIdea, canEditIdea } from '../lib/v63.js';
 
@@ -133,10 +133,10 @@ export default function StrategyIdeas({ deal, me, role, preview }) {
                 <li key={r.id} className="flex flex-col justify-between gap-3 rounded-2xl border border-line bg-white p-4">
                   <div className="space-y-1.5">
                     <h3 className="font-display text-lg font-semibold leading-snug break-words">{r.title}</h3>
-                    {r.notes && <p className="whitespace-pre-wrap break-words text-sm text-ink-soft">{r.notes}</p>}
+                    {r.notes && <p className="whitespace-pre-wrap break-words text-sm text-ink">{r.notes}</p>}
                   </div>
                   <div className="flex items-center justify-between gap-2 border-t border-line pt-2 text-xs text-ink-soft">
-                    <span>{r.author_role === 'realtor' ? `${r.author_name || 'Realtor'} · ` : ''}{when(r.updated_at || r.created_at)}</span>
+                    <InfoTip label="Who added this and when" lines={[`${r.author_role === 'realtor' ? `${r.author_name || 'Realtor'} · ` : ''}${when(r.updated_at || r.created_at)}`]} />
                     <div className="flex gap-3">
                       {canEditIdea(role) && (
                         <button

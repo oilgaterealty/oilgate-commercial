@@ -26,7 +26,7 @@ import {
   updateAudioSession,
   updateMediaItem,
 } from '../lib/walkthroughStore.js';
-import { Button, Card, CardTitle, Empty } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, InfoTip } from '../components/Shell.jsx';
 import WalkthroughCamera from '../components/WalkthroughCamera.jsx';
 import MoveBar, { MoveOneDialog } from '../components/WalkMoveBar.jsx';
 import PhotoViewer, { ThumbOverlay } from '../components/PhotoViewer.jsx';
@@ -1600,20 +1600,18 @@ export default function Walkthrough({ deal, me, role, preview }) {
 
         {loadErr && <p role="alert" className="mb-3 text-sm text-red-700">{loadErr}</p>}
         {isUsingMemoryFallback() && (
-          <p role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p role="alert" className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             Browser storage is restricted in this session; unsaved recordings stay in memory until synced.
           </p>
         )}
 
         {activeVoiceUi && (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-900">
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
               <p className="font-semibold">
                 Recording {spaceLabel(activeVoiceUi.unitNumber)} — {roomLabel(activeVoiceUi.room)} ({fmtClock(activeVoiceUi.elapsedMs)})
               </p>
-              <p className="text-xs text-red-800">
-                {activeVoiceUi.chunkCount} chunks ({fmtBytes(activeVoiceUi.totalBytes)}) saved locally · bound to {spaceLabel(activeVoiceUi.unitNumber)} {roomLabel(activeVoiceUi.room)}
-              </p>
+              <InfoTip label="Recording details" lines={[`${activeVoiceUi.chunkCount} chunks (${fmtBytes(activeVoiceUi.totalBytes)}) saved locally · bound to ${spaceLabel(activeVoiceUi.unitNumber)} ${roomLabel(activeVoiceUi.room)}`]} />
             </div>
             <div className="flex flex-wrap gap-2">
               {(activeVoiceUi.unitNumber !== unit || activeVoiceUi.room !== selectedRoom) && (
@@ -1782,9 +1780,9 @@ export default function Walkthrough({ deal, me, role, preview }) {
           {spaceLabel(unit)} — {roomLabel(selectedRoom)}
         </CardTitle>
         {preview && (
-          <p className="mb-3 text-xs text-ink-soft">
-            Preview mode. Adding photos, videos, and voice notes works on a real sign-in.
-          </p>
+          <div className="mb-3">
+            <InfoTip label="Preview mode" lines={['Preview mode. Adding photos, videos, and voice notes works on a real sign-in.']} />
+          </div>
         )}
         {status && (
           <p role="status" className="mb-3 rounded-xl bg-paper px-3 py-2 text-sm text-ink">
@@ -1866,7 +1864,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         </span>
                       </div>
 
-                      {s.pauseReason && <p className="text-xs text-ink-soft">{s.pauseReason}</p>}
+                      {s.pauseReason && <p className="text-sm text-ink">{s.pauseReason}</p>}
                       {s.transcriptError && <p role="alert" className="text-xs text-red-700">{s.transcriptError}</p>}
                       {s.syncError && <p role="alert" className="text-xs text-red-700">{s.syncError}</p>}
 
@@ -1985,10 +1983,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                 {roomNotes.map((n) => (
                   <li key={n.id} className="space-y-2 rounded-xl border border-line bg-paper p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
-                      <span className="font-medium text-ink">
-                        {authorTag(n)} · {when(n.created_at)}
-                        {n.duration_sec ? ` · ${n.duration_sec}s` : ''}
-                      </span>
+                      <InfoTip label="Voice note details" lines={[`${authorTag(n)} · ${when(n.created_at)}${n.duration_sec ? ` · ${n.duration_sec}s` : ''}`]} />
                       <div className="flex flex-wrap items-center gap-3">
                         {edit && (role === 'owner' || n.author_uid === me.uid) && (
                           <button
@@ -2030,10 +2025,10 @@ export default function Walkthrough({ deal, me, role, preview }) {
                       urls[n.storage_path] ? (
                         <audio src={urls[n.storage_path]} controls preload="none" className="h-9 w-full" aria-label="Voice note audio" />
                       ) : (
-                        <p className="text-xs text-ink-soft">Loading audio…</p>
+                        <p className="text-sm text-ink">Loading audio…</p>
                       )
                     ) : (
-                      <p className="text-xs text-amber-800">Original audio file unavailable on this older note.</p>
+                      <InfoTip label="Audio unavailable" lines={['Original audio file unavailable on this older note.']} />
                     )}
 
                     {editingNoteId === n.id ? (
@@ -2073,15 +2068,13 @@ export default function Walkthrough({ deal, me, role, preview }) {
                               {openTranscripts[n.id] ? 'Hide transcript' : 'View transcript'}
                             </button>
                             {openTranscripts[n.id] && (
-                              <p className="whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 text-sm text-ink-soft">
+                              <p className="whitespace-pre-wrap break-words rounded-lg bg-white px-3 py-2 text-sm text-ink">
                                 {n.raw_transcript}
                               </p>
                             )}
                           </div>
                         ) : !n.polished || !String(n.polished).trim() ? (
-                          <p className="text-xs text-ink-soft">
-                            No transcript yet — tap Retranscribe or Edit.
-                          </p>
+                          <InfoTip label="No transcript yet" lines={['No transcript yet — tap Retranscribe or Edit.']} />
                         ) : null}
                       </div>
                     )}
@@ -2240,7 +2233,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         <div className="flex aspect-[4/3] items-center justify-center bg-paper text-xs text-ink-soft">Loading…</div>
                       )}
                       <div className="flex items-center justify-between gap-1 px-2 py-1.5 text-xs text-ink-soft">
-                        <span className="truncate">{authorTag(p)}</span>
+                        <InfoTip label="Photo details" lines={[authorTag(p)]} />
                         {edit && (role === 'owner' || p.author_uid === me.uid) && (
                           <button
                             type="button"
@@ -2385,10 +2378,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
                         </div>
                       )}
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">
-                        <span>
-                          {authorTag(v)} · {when(v.created_at)}
-                          {v.size_bytes ? ` · ${fmtBytes(v.size_bytes)}` : ''}
-                        </span>
+                        <InfoTip label="Video details" lines={[`${authorTag(v)} · ${when(v.created_at)}${v.size_bytes ? ` · ${fmtBytes(v.size_bytes)}` : ''}`]} />
                         {!selecting && movable.has(`v:${v.id}`) && (
                           <button type="button" disabled={moving} onClick={() => setMoveOne(`v:${v.id}`)} className="inline-flex min-h-[40px] items-center rounded-lg border border-line bg-white px-3 font-medium text-ink hover:border-ink">
                             ⇄ Move this one

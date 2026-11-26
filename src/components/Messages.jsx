@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
 import { buyerName, buyerTag, sellerTag, sellerName, authorLabel } from '../lib/people.js';
-import { Card, CardTitle, Button, Empty } from './Shell.jsx';
+import { Card, CardTitle, Button, Empty, InfoTip } from './Shell.jsx';
 
 // Finds (or opens) the person's own conversation with the buyer (owner) and posts into it.
 export async function sendToOwner(deal, me, role, body, topic) {
@@ -125,11 +125,13 @@ export function InboxSummary({ deal, me, role, preview }) {
           {slots.map((s) => (
             <li key={s.key} className="py-2.5">
               <div className="flex items-center justify-between gap-2">
-                <strong className="text-sm">{s.label}</strong>
+                <span className="flex items-center gap-2">
+                  <strong className="text-sm">{s.label}</strong>
+                  {owner && <InfoTip label={`Who is in ${s.label}`} lines={[who(s, owner)]} />}
+                </span>
                 <a className="text-sm underline" href={`${root}/messages?with=${s.key}`}>{s.last ? 'Reply' : 'Write'}</a>
               </div>
-              {owner && <p className="text-xs text-ink-soft">{who(s, owner)}</p>}
-              {s.last ? <><p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm">{s.last.body}</p><p className="mt-0.5 text-xs text-ink-soft">{authorLabel(s.last)} · {when(s.last.created_at)}</p></> : <p className="mt-1 text-sm text-ink-soft">No messages yet.</p>}
+              {s.last ? <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm" title={`${authorLabel(s.last)} · ${when(s.last.created_at)}`}>{s.last.body}</p> : <p className="mt-1 text-sm text-ink">No messages yet.</p>}
             </li>
           ))}
         </ul>
@@ -186,9 +188,9 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
 
   return (
     <div className="flex h-full min-h-[420px] flex-col">
-      <div className="mb-3 border-b border-line pb-2">
+      <div className="mb-3 flex items-center gap-2 border-b border-line pb-2">
         <h3 className="font-display text-lg font-semibold">{slot.label}</h3>
-        {owner && <p className="text-xs text-ink-soft">{who(slot, owner)}</p>}
+        {owner && <InfoTip label={`Who is in ${slot.label}`} lines={[who(slot, owner)]} />}
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto pr-1">
         {preview && <Empty>Preview. A real {role === 'owner' ? '' : roleLabel[role].toLowerCase() + ' '}sign-in sees the conversation here and can send.</Empty>}
@@ -197,9 +199,9 @@ function Thread({ deal, me, role, slot, preview, onSent }) {
           const mine = m.author_email === me.email;
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${mine ? 'bg-ink text-white' : 'bg-warm-soft'}`}>
-                <p className={`mb-0.5 text-xs ${mine ? 'text-white/70' : 'text-ink-soft'}`}>{authorLabel(m)} · {when(m.created_at)}{m.topic ? ` · ${m.topic}` : ''}</p>
-                <p className="whitespace-pre-wrap">{m.body}</p>
+              <div className={`flex max-w-[85%] items-start gap-2 rounded-2xl px-4 py-2.5 text-sm ${mine ? 'bg-ink text-white' : 'bg-warm-soft'}`}>
+                <p className="min-w-0 whitespace-pre-wrap">{m.body}</p>
+                <InfoTip label="Who sent this and when" lines={[`${authorLabel(m)} · ${when(m.created_at)}${m.topic ? ` · ${m.topic}` : ''}`]} />
               </div>
             </div>
           );
@@ -235,9 +237,8 @@ export default function Messages({ deal, me, role, preview, sellerTo = 'realtor'
             <ul className="space-y-1">
               {slots.map((s) => (
                 <li key={s.key}>
-                  <button onClick={() => setOpen(s.key)} className={`w-full rounded-xl px-3 py-2 text-left text-sm ${current?.key === s.key ? 'bg-ink text-white' : 'hover:bg-warm-soft'}`}>
+                  <button onClick={() => setOpen(s.key)} title={s.last ? s.last.body : owner ? who(s, owner) : 'No messages yet'} className={`w-full rounded-xl px-3 py-2 text-left text-sm ${current?.key === s.key ? 'bg-ink text-white' : 'hover:bg-warm-soft'}`}>
                     <span className="block font-medium">{s.label}</span>
-                    <span className={`line-clamp-1 text-xs ${current?.key === s.key ? 'text-white/70' : 'text-ink-soft'}`}>{s.last ? s.last.body : owner ? who(s, owner) : 'No messages yet'}</span>
                   </button>
                 </li>
               ))}

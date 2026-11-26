@@ -42,7 +42,7 @@ export default function Home({ session }) {
             <a key={d.id} href={`#/d/${d.slug}`} className="group rounded-2xl border border-line bg-white p-5 transition hover:border-ink">
               <p className="text-xs uppercase tracking-wider text-warm">{d.status === 'active' ? 'Active' : d.status}</p>
               <h3 className="mt-1 font-display text-2xl font-semibold group-hover:underline">{d.title}</h3>
-              <p className="mt-1 text-sm text-ink-soft">{d.address}</p>
+              <p className="mt-1 text-sm text-ink">{d.address}</p>
             </a>
           ))}
         </div>
@@ -55,7 +55,7 @@ export default function Home({ session }) {
               <Field placeholder={`Page name (${slugify(form.title) || 'auto'})`} value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
               <Field placeholder="Drive folder link for uploads (optional)" value={form.folder} onChange={(e) => setForm({ ...form, folder: e.target.value })} />
               <Button type="submit" className="w-full">Create deal page</Button>
-              {msg && <p className="text-sm text-ink-soft">{msg}</p>}
+              {msg && <p role="status" className="text-sm text-ink">{msg}</p>}
             </form>
           </Card>
         )}

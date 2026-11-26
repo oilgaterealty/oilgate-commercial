@@ -3,7 +3,7 @@ import { roleLabel } from '../lib/format.js';
 import { buyerName } from '../lib/people.js';
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { Card, CardTitle, Button, Empty } from './Shell.jsx';
+import { Card, CardTitle, Button, Empty, InfoTip } from './Shell.jsx';
 
 // Who a new task is for, and which roles can read it. The owner always sees every task.
 const FOR = () => [['owner', buyerName(), []], ['shared', `${buyerName()} + realtor`, ['realtor']], ['realtor', 'Realtor', ['realtor']], ['reviewer', 'Reviewer', ['reviewer']], ['lender', 'Lender', ['lender']]];
@@ -49,7 +49,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
     {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
     {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The buyer posts findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{rows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
       {kind === 'task' && <input type="checkbox" aria-label={`Complete ${r.body}`} checked={r.done} disabled={Boolean(pending) || preview || (role !== 'owner' && r.author_role !== 'owner' && r.author_email !== me.email)} onChange={() => toggle(r)} />}
-      <div className="min-w-0"><p className={`whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><p className="mt-1 text-xs text-ink-soft">{r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}{role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}</p></div>
+      <div className="flex min-w-0 items-start gap-2"><p className={`min-w-0 whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><InfoTip label="Who this is for" lines={[`${r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}${role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}`]} /></div>
     </li>)}</ul>}
     {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">
       <DictatedField as="textarea" aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />

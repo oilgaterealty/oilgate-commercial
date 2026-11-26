@@ -9,7 +9,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
 import { PUBLIC_SITE, SITE_KIND, canAccessCityRecords, canAccessDealPlan, roleLinkUrl, siteRules } from '../lib/site.js';
-import { Card, CardTitle, Button, Field, Empty, Tabs } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Field, Empty, InfoTip, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
@@ -79,11 +79,13 @@ function People({ deal }) {
           <ul className="divide-y divide-line">
             {rows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div>
+                <div className="flex items-center gap-2">
                   <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
-                  {r.invited_by_email && <p className="text-xs text-ink-soft">Invited by {r.invited_by_email}</p>}
-                  <p className="text-xs text-ink-soft">{r.email} · {r.status === 'active' ? 'Has access' : 'Access removed'}{r.link_id ? ' · joined with a link' : ''}</p>
-                  {r.ntfy_topic && r.status === 'active' && <p className="mt-1 text-xs text-ink-soft">Alert topic: <code className="select-all">{r.ntfy_topic}</code></p>}
+                  <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
+                    r.invited_by_email && <>Invited by {r.invited_by_email}</>,
+                    `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
+                    r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
+                  ]} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
@@ -180,14 +182,14 @@ function RoleLinks({ deal, onJoined }) {
           <button type="button" className="mt-2 rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
         </div>
       )}
-      {msg && <p role="status" className="mt-2 text-sm text-ink-soft">{msg}</p>}
-      {links === null ? <Empty>Loading…</Empty> : links.length === 0 ? <p className="mt-3 text-sm text-ink-soft">No links yet.</p> : (
+      {msg && <p role="status" className="mt-2 text-sm text-ink">{msg}</p>}
+      {links === null ? <Empty>Loading…</Empty> : links.length === 0 ? <div className="mt-3"><Empty>No links yet.</Empty></div> : (
         <ul className="mt-3 divide-y divide-line">
           {links.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-              <div>
+              <div className="flex items-center gap-2">
                 <p className="text-sm font-medium">{l.label || roleLabel[l.role]} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[l.role]}</span></p>
-                <p className="text-xs text-ink-soft">{l.recipient_email ? `${l.recipient_email} · ` : ''}{state(l)} · expires {when(l.expires_at)} · used {l.uses} {l.uses === 1 ? 'time' : 'times'}</p>
+                <InfoTip label={`Details for the ${l.label || roleLabel[l.role]} link`} lines={[`${l.recipient_email ? `${l.recipient_email} · ` : ''}${state(l)} · expires ${when(l.expires_at)} · used ${l.uses} ${l.uses === 1 ? 'time' : 'times'}`]} />
               </div>
               {!l.revoked_at && <Button kind="secondary" onClick={() => turnOff(l)}>Turn off</Button>}
             </li>
@@ -223,7 +225,7 @@ function Settings({ deal, onSaved }) {
           <option value="active">Active</option><option value="closed">Closed</option><option value="archived">Archived</option>
         </select>
       </div>
-      <div className="mt-4 flex items-center gap-3"><Button onClick={save}>Save</Button><span className="text-sm text-ink-soft">{msg}</span></div>
+      <div className="mt-4 flex items-center gap-3"><Button onClick={save}>Save</Button><span role="status" className="text-sm text-ink">{msg}</span></div>
     </Card>
   );
 }
@@ -238,7 +240,7 @@ function Notes({ deal, me }) {
     <Card>
       <CardTitle>Your private notes</CardTitle>
       <form onSubmit={add} className="mb-4 flex gap-2"><Field value={body} placeholder="Only you see these" onChange={(e) => setBody(e.target.value)} /><Button type="submit">Add</Button></form>
-      {rows.length === 0 ? <Empty>No notes yet.</Empty> : rows.map((n) => <p key={n.id} className="border-t border-line py-2 text-sm">{n.body} <span className="text-xs text-ink-soft">· {when(n.created_at)}</span></p>)}
+      {rows.length === 0 ? <Empty>No notes yet.</Empty> : rows.map((n) => <p key={n.id} className="border-t border-line py-2 text-sm" title={when(n.created_at)}>{n.body}</p>)}
     </Card>
   );
 }
