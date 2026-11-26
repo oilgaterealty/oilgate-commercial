@@ -95,7 +95,7 @@ export const Button = ({ kind = 'primary', className = '', ...p }) => (
 export const Field = (p) => (
   <DictatedField {...p} className={`w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink ${p.className || ''}`} />
 );
-export const Empty = ({ children }) => <p className="text-sm text-ink-soft">{children}</p>;
+export const Empty = ({ children }) => <p className="text-sm text-ink">{children}</p>;
 
 export const Badge = ({ tone = 'none', children }) => {
   const c = { pass: 'bg-good/10 text-good', close: 'bg-amber-100 text-amber-800', fail: 'bg-red-50 text-red-700', none: 'bg-warm-soft text-ink-soft' }[tone];
