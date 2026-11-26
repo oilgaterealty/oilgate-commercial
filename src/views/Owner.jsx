@@ -5,7 +5,7 @@ import Tenants from './Tenants.jsx';
 import Comps from './Comps.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import { LenderBoard } from './LenderTerms.jsx';
-import { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, roleLinkUrl, siteRules } from '../lib/site.js';
@@ -48,15 +48,6 @@ function People({ deal }) {
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
-  const [copiedId, setCopiedId] = useState(null);
-  const copyTimer = useRef(null);
-  useEffect(() => () => clearTimeout(copyTimer.current), []);
-  const copyMemberLink = (id, url) => {
-    navigator.clipboard?.writeText(url);
-    setCopiedId(id);
-    clearTimeout(copyTimer.current);
-    copyTimer.current = setTimeout(() => setCopiedId(null), 2000);
-  };
   const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
@@ -85,47 +76,27 @@ function People({ deal }) {
         <CardTitle>People</CardTitle>
         {!rows ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>Only you so far.</Empty> : (
           <ul className="divide-y divide-line">
-            {rows.map((r) => {
-              const url = memberPageUrl(r.role, deal.slug);
-              return (
-                <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
-                      <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
-                        r.invited_by_email && <>Invited by {r.invited_by_email}</>,
-                        `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
-                        r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
-                      ]} />
-                    </div>
-                    {r.status === 'active' && (
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block max-w-full break-all text-sm text-ink underline decoration-line underline-offset-2 hover:decoration-ink sm:truncate sm:break-normal"
-                      >
-                        {url.replace(/^https?:\/\//, '')}
-                      </a>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {r.status === 'active' && (
-                      <Button kind="secondary" type="button" onClick={() => copyMemberLink(r.id, url)}>
-                        {copiedId === r.id ? 'Copied' : 'Copy link'}
-                      </Button>
-                    )}
-                    <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
-                      className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
-                      {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
-                    </select>
-                    {r.status === 'active'
-                      ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
-                      : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
-                  </div>
-                </li>
-              );
-            })}
+            {rows.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                  <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
+                    r.invited_by_email && <>Invited by {r.invited_by_email}</>,
+                    `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
+                    r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
+                  ]} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
+                    className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                    {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
+                  </select>
+                  {r.status === 'active'
+                    ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
+                    : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </Card>

@@ -19,11 +19,11 @@ test('memberPageUrl builds role-specific deal page URLs', () => {
   assert.ok(lenderUrl.endsWith('#/d/charlotte'));
 });
 
-test('Owner People card uses memberPageUrl, Copy link, Copy their link, and removes PUBLIC_SITE constant', () => {
+test('Owner invite card copies the link for the chosen role; member rows show no links', () => {
   const owner = read('src/views/Owner.jsx');
-  assert.ok(owner.includes('memberPageUrl(r.role, deal.slug)'));
   assert.ok(owner.includes('memberPageUrl(f.role, deal.slug)'));
-  assert.ok(owner.includes('Copy link'));
   assert.ok(owner.includes('Copy their link'));
+  assert.ok(!owner.includes('memberPageUrl(r.role'));
+  assert.ok(!owner.includes('copyMemberLink'));
   assert.ok(!owner.includes('const link = PUBLIC_SITE'));
 });
