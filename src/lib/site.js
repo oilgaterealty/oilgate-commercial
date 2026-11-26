@@ -23,6 +23,7 @@ export const canAccessDealPlan = (kind, role, preview = false) =>
 // Role links: #/join/<token>. 64 hex characters, made by the database.
 export const isLinkToken = (t) => /^[a-f0-9]{64}$/.test(t || '');
 export const roleLinkUrl = (token, role) => `${role === 'seller' ? PUBLIC_SITE : GUEST_SITE}#/join/${token}`;
+export const memberPageUrl = (role, slug) => role === 'seller' ? PUBLIC_SITE : `${GUEST_SITE}#/d/${slug}${role === 'realtor' ? '/offers' : ''}`;
 
 // Which roles may open their page on this build.
 export const roleAllowedHere = (kind, role) => {

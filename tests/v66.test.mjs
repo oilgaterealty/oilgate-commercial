@@ -28,7 +28,7 @@ test('role links point at the guest site and carry a full token', () => {
   assert.ok(!isLinkToken('a'.repeat(63)));
   assert.ok(!isLinkToken('../x'));
   assert.deepEqual(parseHash(`#/join/${t.toUpperCase()}`), { name: 'join', token: t });
-  assert.match(read('src/views/Owner.jsx'), /const link = PUBLIC_SITE;/);
+  assert.match(read('src/views/Owner.jsx'), /memberPageUrl\(/);
   assert.doesNotMatch(read('src/views/Owner.jsx'), /location\.origin/);
 });
 

@@ -5,10 +5,10 @@ import Tenants from './Tenants.jsx';
 import Comps from './Comps.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import { LenderBoard } from './LenderTerms.jsx';
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { PUBLIC_SITE, SITE_KIND, canAccessCityRecords, canAccessDealPlan, roleLinkUrl, siteRules } from '../lib/site.js';
+import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, roleLinkUrl, siteRules } from '../lib/site.js';
 import { Card, CardTitle, Button, Field, Empty, InfoTip, Tabs } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -48,7 +48,15 @@ function People({ deal }) {
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
-  const link = PUBLIC_SITE;
+  const [copiedId, setCopiedId] = useState(null);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+  const copyMemberLink = (id, url) => {
+    navigator.clipboard?.writeText(url);
+    setCopiedId(id);
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedId(null), 2000);
+  };
   const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
   useEffect(() => { load(); }, [deal.id]);
 
@@ -58,7 +66,7 @@ function People({ deal }) {
     const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: ALERTED.includes(f.role) ? topic() : null };
     const { error } = await supabase.from('commercial_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
     if (error) return setErr(error.message);
-    setDone(`${row.email} can sign in now as ${roleLabel[row.role].toLowerCase()}. Send them the site link.`);
+    setDone(`${row.email} can sign in now as ${roleLabel[row.role].toLowerCase()}.`);
     setF({ email: '', role: 'realtor', display_name: '' });
     load();
   };
@@ -77,27 +85,47 @@ function People({ deal }) {
         <CardTitle>People</CardTitle>
         {!rows ? <Empty>Loading…</Empty> : rows.length === 0 ? <Empty>Only you so far.</Empty> : (
           <ul className="divide-y divide-line">
-            {rows.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
-                  <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
-                    r.invited_by_email && <>Invited by {r.invited_by_email}</>,
-                    `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
-                    r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
-                  ]} />
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
-                    className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
-                    {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
-                  </select>
-                  {r.status === 'active'
-                    ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
-                    : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
-                </div>
-              </li>
-            ))}
+            {rows.map((r) => {
+              const url = memberPageUrl(r.role, deal.slug);
+              return (
+                <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                      <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
+                        r.invited_by_email && <>Invited by {r.invited_by_email}</>,
+                        `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
+                        r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
+                      ]} />
+                    </div>
+                    {r.status === 'active' && (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block max-w-full break-all text-sm text-ink underline decoration-line underline-offset-2 hover:decoration-ink sm:truncate sm:break-normal"
+                      >
+                        {url.replace(/^https?:\/\//, '')}
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {r.status === 'active' && (
+                      <Button kind="secondary" type="button" onClick={() => copyMemberLink(r.id, url)}>
+                        {copiedId === r.id ? 'Copied' : 'Copy link'}
+                      </Button>
+                    )}
+                    <select aria-label={`Role for ${r.email}`} value={r.role} onChange={(e) => setRole(r, e.target.value)}
+                      className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                      {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
+                    </select>
+                    {r.status === 'active'
+                      ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
+                      : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -117,8 +145,8 @@ function People({ deal }) {
           {err && <p className="text-sm text-red-700">{err}</p>}
           <Button type="submit" className="w-full">Invite</Button>
           {done && <p className="text-sm text-green-800">{done}</p>}
-          <button type="button" onClick={() => { navigator.clipboard?.writeText(link); setDone('Site link copied.'); }}
-            className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy site link</button>
+          <button type="button" onClick={() => { navigator.clipboard?.writeText(memberPageUrl(f.role, deal.slug)); setDone('Link copied.'); }}
+            className="w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
         </form>
       </Card>
       <RoleLinks deal={deal} onJoined={load} />
