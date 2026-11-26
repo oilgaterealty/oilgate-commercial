@@ -60,7 +60,7 @@ export function whatIfMessage(original, base, offers) {
     const now = evaluate(o.structure, o.inputs, base);
     const was = original.list.find((x) => x.id === o.id);
     const then = was ? evaluate(was.structure, was.inputs, original.base) : null;
-    lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of estimated value`);
+    lines.push(`- ${o.name}: ${money(now.keepMonthly)}${then ? ` (was ${money(then.keepMonthly)})` : ''}, rent covers the payment ${Number.isFinite(now.dscr) ? now.dscr.toFixed(2) + 'x' : 'fully'}, total cost ${pct(now.allInPct)} of value`);
   }
   return lines.join('\n');
 }

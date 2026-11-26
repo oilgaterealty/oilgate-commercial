@@ -11,7 +11,7 @@ export const BASE_FIELDS = [
   ['waterMo', 'Water / mo', '$'],
   ['emptyUnitUtilMo', 'Utilities per empty unit / mo', '$'],
   ['reservesPerUnit', 'Reserves per unit / yr', '$'],
-  ['value', 'Estimated value after repairs', '$'],
+  ['value', 'Value after repairs', '$'],
   ['rehab', 'Rent-ready budget', '$'],
   ['refiRate', 'Refinance rate', '%'],
   ['refiYears', 'Refinance term (years)', 'n'],
@@ -239,7 +239,7 @@ export function moneyK(v) {
 }
 
 export function sellerLoanText(amount, forSeller = false) {
-  return `${money(amount)} (${forSeller ? 'or what you owe' : 'or what he owes'})`;
+  return money(amount);
 }
 
 // Exact median $/unit from valid comps, scaled to the property's unit count.
@@ -273,10 +273,10 @@ export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {})
   }
 
   const incomeLine = income !== null
-    ? (incomePerUnit !== null ? `Estimated value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Estimated value by income: ${money(income)}`)
-    : 'Estimated value by income: —';
+    ? (incomePerUnit !== null ? `Value by income: ${money(income)} (${money(incomePerUnit)}/unit)` : `Value by income: ${money(income)}`)
+    : 'Value by income: —';
   const compsLine = compsCalc.total !== null
-    ? (compsCalc.perUnit !== null ? `Estimated value by comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `Estimated value by comps: ${money(compsCalc.total)}`)
+    ? (compsCalc.perUnit !== null ? `Value by comps: ${money(compsCalc.total)} (${money(compsCalc.perUnit)}/unit)` : `Value by comps: ${money(compsCalc.total)}`)
     : null;
 
   const incomeOverlay = [];
@@ -324,9 +324,9 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const runningMo = taxesMo + insMo + waterMo + reservesMo;
   const runningParts = [
     taxesMo > 0 ? `Taxes ${money(taxesMo)}/mo` : null,
-    insMo > 0 ? `Insurance ${money(insMo)}/mo (estimate)` : null,
-    waterMo > 0 ? `Water ${money(waterMo)}/mo (estimate)` : null,
-    reservesMo > 0 ? `Reserves ${money(reservesMo)}/mo (estimate)` : null,
+    insMo > 0 ? `Insurance ${money(insMo)}/mo` : null,
+    waterMo > 0 ? `Water ${money(waterMo)}/mo` : null,
+    reservesMo > 0 ? `Reserves ${money(reservesMo)}/mo` : null,
   ].filter(Boolean);
   const runningOverlay = runningParts.length
     ? [`${runningParts.join(' + ')} = ${money(runningMo)}/mo.`]
@@ -352,14 +352,14 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const sellerLine = structure === 'cash'
     ? `Paid ${money(x.price)} at closing`
     : structure === 'seller_rehab'
-      ? `${money(evalResult.sellerMonthly)}/mo once full (estimate)`
+      ? `${money(evalResult.sellerMonthly)}/mo once full`
       : `${money(evalResult.sellerMonthly)}/mo once full`;
   const sellerOverlay = structure === 'master_lease'
     ? [`${money(x.payment)} full payment when all ${b.units} units rent (${x.creditPct}% credited toward the ${money(x.optionPrice)} locked price).`]
     : structure === 'partnership'
       ? [`${money(x.stepUp)} full payment once all ${b.units} units rent.`]
       : structure === 'wrap'
-        ? [`${money(x.note)} owed × ${x.rate}% ÷ 12 = ${money(evalResult.sellerMonthly)}/mo${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'} (seller loan terms are estimates).`]
+        ? [`${money(x.note)} owed × ${x.rate}% ÷ 12 = ${money(evalResult.sellerMonthly)}/mo${x.amortYears > 0 ? ` (${x.amortYears}-yr amort)` : ' (interest only)'}.`]
         : structure === 'seller_rehab'
           ? [
               `Seller gets all extra rent until ${x.fillTarget} units are filled, then ${100 - x.buyerSplitPct}% of what is left after his loan payment.`,
@@ -438,11 +438,11 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
             {
               label: 'Pays seller',
               value: structure === 'seller_rehab'
-                ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan (or what he owes)` : 'His loan (or what he owes)')
+                ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan` : 'His loan')
                 : money(sellerPayoffEst),
               overlay: structure === 'seller_rehab'
                 ? ['His remaining loan balance at refinance is paid off.', 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.']
-                : [`Estimated payoff ${money(sellerPayoffEst)} before monthly credits.`],
+                : [`Payoff ${money(sellerPayoffEst)} before monthly credits.`],
             },
             { label: 'Closing', value: money(closingCost), overlay: [`Closing costs at refinance: ${money(closingCost)}.`] },
             {
@@ -486,7 +486,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
       sellerTotal: {
         label: 'Seller gets at payoff',
         value: structure === 'seller_rehab'
-          ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan (or what he owes)` : 'His loan (or what he owes)')
+          ? (x.addFundToBuyout ? `${money(x.sellerFund)} + his loan` : 'His loan')
           : money(sellerPayoffEst),
         overlay: structure === 'seller_rehab'
           ? ['Seller loan payoff at refinance plus monthly rent share.', 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.']

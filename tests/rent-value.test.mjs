@@ -76,7 +76,7 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
     OverlayTrigger: ({ children }) => React.createElement('span', null, children),
   };
   const dealmath = { money: (v) => `$${Math.round(v)}`, moneyK: (v) => `$${Math.round(v / 1000)}K` };
-  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, '../lib/dealmath.js': dealmath });
+  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, '../lib/dealmath.js': dealmath, '../lib/rangeValue.js': { rangeValue: () => 123456 } });
   const rv = rentValue(BASE, PLAN, {});
   const ro = renderToStaticMarkup(React.createElement(mod.default, { data: rv }));
   assert.match(ro, /Unit by unit/);
@@ -87,6 +87,16 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
   const ed = renderToStaticMarkup(React.createElement(mod.default, { data: rv, editable: true, onSave: async () => null }));
   assert.equal((ed.match(/<input/g) || []).length, 8);
   assert.equal(mod.isRentValue(null), false);
+  const ranged = { ...rv, valueRange: { low: 500000, high: 800000, lowOverlay: [], highOverlay: [] }, marketRange: { low: 900, high: 1100, units: 10, vacancyPct: 7, costsMo: 3000, capRate: 9, allIn: 1 } };
+  const noMarket = renderToStaticMarkup(React.createElement(mod.default, { data: ranged }));
+  assert.match(noMarket, /\$500000<\/span> to <span>\$800000/);
+  assert.doesNotMatch(noMarket, /Market rent per unit|type="range"/);
+  const withMarket = renderToStaticMarkup(React.createElement(mod.default, { data: ranged, showMarket: true }));
+  assert.match(withMarket, /Market rent per unit/);
+  assert.match(withMarket, /\$900 to \$1100/);
+  assert.match(withMarket, /type="range"/);
+  assert.match(withMarket, /\$123456/);
+  assert.doesNotMatch(withMarket, /<p[ >]/);
 });
 
 test('Gating: lender, reviewer (not viewer) and owner only', () => {

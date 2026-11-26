@@ -118,7 +118,7 @@ export function arvEstimate(comps, units, noi, cap) {
 export function compWhatIfMessage({ savedComps, localComps, units, noi, cap }) {
   const all = [...(savedComps || []), ...(localComps || [])];
   const calc = arvEstimate(all, units, noi, cap);
-  const lines = ['Comps / estimated value what-if (nothing was saved):'];
+  const lines = ['Comps / value what-if (nothing was saved):'];
   if (localComps?.length) {
     lines.push('Added comps:');
     for (const c of localComps) {
@@ -129,8 +129,8 @@ export function compWhatIfMessage({ savedComps, localComps, units, noi, cap }) {
   }
   lines.push(
     `Units: ${unitCount(units)} · Annual NOI: ${money(noi === '' ? null : +noi)} · Cap rate: ${cap}%`,
-    `Estimated value by comps: ${money(calc.market)} (${money(calc.avg)} avg/unit × ${unitCount(units)})`,
-    `Estimated value by income: ${money(calc.income)} (NOI ÷ ${cap}%)`
+    `Value by comps: ${money(calc.market)} (${money(calc.avg)} avg/unit × ${unitCount(units)})`,
+    `Value by income: ${money(calc.income)} (NOI ÷ ${cap}%)`
   );
   return lines.join('\n');
 }

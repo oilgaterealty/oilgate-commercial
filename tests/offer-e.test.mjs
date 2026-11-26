@@ -210,5 +210,5 @@ test('Option E includes explanatory overlay and renders in Card, Table, Plans, a
 
   assert.match(cardHtml, /Seller funds part of the rehab, buyout at refi/);
   assert.match(tableHtml, /Seller funds part of the rehab, buyout at refi/);
-  assert.match(cardHtml, /\(or what he owes\)/);
+  assert.doesNotMatch(cardHtml, /\(or what he owes\)|\(estimate\)/);
 });

@@ -117,12 +117,12 @@ test('Task 0: always 10 units, no Airbnb anywhere, added unit follows optional:t
 test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Setup, Contingency, and skips $0 items', () => {
   const cs = buildCostSummary(SAMPLE_BASE, { ...SAMPLE_PLAN, contingency: 5000 });
   assert.equal(moneyK(74000), '$74K');
-  assert.equal(cs.heading, 'Whole job about $74K');
+  assert.equal(cs.heading, 'Whole job $74K');
   assert.equal(cs.lines[0].label, 'Units $55K');
   assert.equal(cs.lines[0].detail, 'Unit 4 $28K, Unit 3 $12K');
   assert.equal(cs.lines[1].label, 'Building $8K');
   assert.equal(cs.lines[1].detail, 'exterior $5K, common areas $3K');
-  assert.equal(cs.lines[2].label, 'Setup about $6K');
+  assert.equal(cs.lines[2].label, 'Setup $6K');
   assert.equal(cs.lines[2].detail, 'security, eviction, title, permits');
   assert.equal(cs.lines[3].label, 'Contingency $5K');
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
@@ -133,7 +133,7 @@ test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Set
     './Shell.jsx': { OverlayTrigger: ({ children, className }) => React.createElement('button', { type: 'button', className }, children) },
   });
   const html = renderToStaticMarkup(React.createElement(CostSummary, { summary: cs }));
-  assert.match(html, /Whole job about \$74K/);
+  assert.match(html, /Whole job \$74K/);
   assert.match(html, /Unit 4 \$28K, Unit 3 \$12K/);
   assert.match(html, /Contingency \$5K/);
   assert.doesNotMatch(html, /to inspect|\$0,|<p\b|<small\b|<caption\b/);
@@ -148,9 +148,9 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
   assert.equal(summary.title, 'Lease now, buy later');
   assert.ok(!summary.title.includes('A:'));
   assert.equal(summary.sellerTable.length, 11);
-  assert.ok(summary.terms.some((t) => t.label === 'Buyout' && t.value.includes('(or what you owe)')));
+  assert.ok(summary.terms.some((t) => t.label === 'Buyout' && !/or what you owe/.test(t.value)));
   assert.deepEqual(summary.steps.map((s) => s.title), ['Master lease', 'Repairs', 'Rent', 'Refinance']);
-  assert.ok(summary.steps[1].detail.includes('I pay for the repairs, about $69,000'));
+  assert.ok(summary.steps[1].detail.includes('I pay for the repairs, $69,000'));
   // Never exposes buyer returns, option letters, or months
   assert.doesNotMatch(JSON.stringify({ title: summary.title, intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR|Month \d+/i);
 
@@ -179,10 +179,10 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
     React.createElement(ExecutionPlanCard, { content: {}, summary })
   ));
   assert.match(html, /The offer: Lease now, buy later/);
-  assert.match(html, /\(or what you owe\)/);
+  assert.doesNotMatch(html, /or what you owe|\(estimate\)/);
   assert.match(html, /Units rented/);
   assert.match(html, /Your costs covered/);
-  assert.match(html, /I pay for the repairs, about \$\d/);
+  assert.match(html, /I pay for the repairs, \$\d/);
   assert.doesNotMatch(html, /Month 12/);
 
   const fallbackHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, {
@@ -194,15 +194,15 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
   assert.match(fallbackHtml, /6801234 and 6807893/);
 });
 
-test('Task 4: wording rules for seller loans and Estimated value labels', () => {
-  assert.equal(sellerLoanText(150000, false), '$150,000 (or what he owes)');
-  assert.equal(sellerLoanText(150000, true), '$150,000 (or what you owe)');
+test('Task 4: wording rules for seller loans and Value labels', () => {
+  assert.equal(sellerLoanText(150000, false), '$150,000');
+  assert.equal(sellerLoanText(150000, true), '$150,000');
   const val = valueSummary({ base: SAMPLE_BASE, noi: 80000, units: 10, comps: [{ units: 5, sale_price: 350000 }] });
-  assert.match(val.incomeLine, /^Estimated value by income:/);
-  assert.match(val.compsLine, /^Estimated value by comps:/);
-  assert.match(read('src/components/LoanPosition.jsx'), /\(or what you owe\)/);
+  assert.match(val.incomeLine, /^Value by income:/);
+  assert.match(val.compsLine, /^Value by comps:/);
+  assert.doesNotMatch(read('src/components/LoanPosition.jsx'), /\(or what you owe\)/);
   for (const f of ['src/views/Dashboard.jsx', 'src/views/Reviewer.jsx', 'src/lib/dealmath.js']) {
-    assert.doesNotMatch(read(f), /(?<!Estimated )Value after repairs/i, f);
+    assert.doesNotMatch(read(f), /Estimated value/i, f);
   }
 });
 

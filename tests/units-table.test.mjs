@@ -154,8 +154,8 @@ test('unitsRentedTable builds 11 rows (0..10), ignores mgmt/admin/turns/old util
   // Row 10: 0 empty units -> empty-unit utilities skipped from breakdown ($0 rule)
   const r10 = table.rows[10];
   assert.ok(!r10.sellerCostsBreakdown.some((b) => b.key === 'emptyUtils'));
-  assert.ok(r10.sellerCostsOverlay.some((l) => l.includes('(estimate)')));
-  assert.ok(r10.buyerNetOverlay.some((l) => l.includes('(estimate)')));
+  assert.ok(!r10.sellerCostsOverlay.some((l) => l.includes('(estimate)')));
+  assert.ok(!r10.buyerNetOverlay.some((l) => l.includes('(estimate)')));
 });
 
 test('refi() computes DSCR without mgmt/admin/turns, handles LTV vs DSCR cap, both contingency cases, and shortCarry', () => {
@@ -171,7 +171,7 @@ test('refi() computes DSCR without mgmt/admin/turns, handles LTV vs DSCR cap, bo
   const expectedInHand = res.loan - feesPctAmt - 2000 - 3000;
   near(res.inHand, expectedInHand);
   assert.equal(res.sellerPayoff, 180000);
-  assert.equal(res.sellerPayoffText, '$180,000 (or what he owes)');
+  assert.equal(res.sellerPayoffText, '$180,000');
   near(res.repairLoanPayoffContUsed - res.repairLoanPayoff, 10000);
   near(res.leftForYou, res.inHand - res.sellerPayoff - res.repairLoanPayoff - 4000);
   near(res.leftForYouContUsed, res.inHand - res.sellerPayoff - res.repairLoanPayoffContUsed - 4000);
@@ -195,7 +195,7 @@ test('buildCostSummary shows Contingency line and total with it, and never emits
   assert.equal(cs.rehabTotal, 68000);
   assert.equal(cs.contingency, 10000);
   assert.equal(cs.total, 78000);
-  assert.equal(cs.heading, 'Whole job about $78K');
+  assert.equal(cs.heading, 'Whole job $78K');
   assert.ok(cs.lines.some((l) => l.key === 'contingency' && l.label === 'Contingency $10K'));
   assert.ok(!cs.lines.some((l) => /\$0|to inspect/i.test(l.label)));
   assert.ok(cs.headingOverlay.some((l) => l.includes('Total with contingency: $78,000')));
@@ -208,7 +208,7 @@ test('buildSellerSummary writes plain sellerTable + refiLine without months/buye
   assert.equal(summary.sellerTable.length, 11);
   assert.equal(summary.sellerTable[0].covered, 'no');
   assert.equal(summary.sellerTable[4].covered, 'yes');
-  assert.equal(summary.refiLine, 'Once all 10 are rented, I refinance and pay you $180,000 (or what you owe), and your loan is paid off.');
+  assert.equal(summary.refiLine, 'Once all 10 are rented, I refinance and pay you $180,000, and your loan is paid off.');
   assert.match(summary.intro, /I take over the leasing and the repairs/);
   assert.doesNotMatch(JSON.stringify({ intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Month \d+|You net|repair loan payoff|Left for you/i);
 
@@ -242,13 +242,14 @@ test('UnitsRentedGuide and LeadOfferCard render cleanly without subtext, estimat
   const html = renderToStaticMarkup(React.createElement(UnitsRentedGuide, { guide }));
   assert.match(html, /Units rented table/);
   assert.match(html, /You net, contingency used/);
-  assert.match(html, /Estimated value/);
+  assert.match(html, /Value/);
   assert.match(html, /Loan at 75%/);
   assert.match(html, /In hand after fees and reserve/);
   assert.match(html, /Seller paid off/);
   assert.match(html, /Repair loan paid off/);
   assert.match(html, /Left for you/);
-  assert.match(html, /\$180,000 \(or what he owes\)/);
+  assert.match(html, /\$180,000/);
+  assert.doesNotMatch(html, /or what he owes/);
   assert.doesNotMatch(html, /\(estimate\)|<p\b|<small\b|<caption\b|Month \d+/i);
 
   // Seller LeadOfferCard renders 3-column table and refi line with zero buyer numbers
@@ -265,7 +266,7 @@ test('UnitsRentedGuide and LeadOfferCard render cleanly without subtext, estimat
   const sellerHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, { deal: { id: 'd1', slug: 'demo' }, content: {}, summary }));
   assert.match(sellerHtml, /Units rented/);
   assert.match(sellerHtml, /Your costs covered/);
-  assert.match(sellerHtml, /Once all 10 are rented, I refinance and pay you \$180,000 \(or what you owe\), and your loan is paid off\./);
+  assert.match(sellerHtml, /Once all 10 are rented, I refinance and pay you \$180,000, and your loan is paid off\./);
   assert.doesNotMatch(sellerHtml, /You net|Left for you|Repair loan|contingency/i);
 });
 

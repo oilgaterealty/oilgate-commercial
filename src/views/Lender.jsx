@@ -99,7 +99,7 @@ export default function Lender({ deal, me, preview, tab }) {
                 {effectiveGuide ? (
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <div>
-                      <p className="text-xs text-white/60">Estimated value</p>
+                      <p className="text-xs text-white/60">Value</p>
                       <p className="font-display text-4xl font-semibold">
                         <OverlayTrigger lines={effectiveGuide.refi.estimatedValueOverlay} className="text-white">
                           {money(effectiveGuide.refi.estimatedValue)}
@@ -157,9 +157,9 @@ export default function Lender({ deal, me, preview, tab }) {
                       <Stat label="Rent per unit" value={`${money(o.b.rent)}/mo`} />
                       <Stat label="Yearly profit before payments" value={money(o.noi)} />
                       <Stat label="Monthly payment" value={money(debtOf(e))} />
-                      <Stat label="Estimated value by income" value={money(val?.income ?? o.b.value)} overlay={val?.incomeOverlay} />
+                      <Stat label="Value by income" value={money(val?.income ?? o.b.value)} overlay={val?.incomeOverlay} />
                       <Stat label="Repair budget" value={money(o.b.rehab)} />
-                      <Stat label="Total cost" value={money(e.allIn)} overlay={o.b.value ? [`${Math.round((e.allIn / o.b.value) * 100)}% of estimated value`] : []} />
+                      <Stat label="Total cost" value={money(e.allIn)} overlay={o.b.value ? [`${Math.round((e.allIn / o.b.value) * 100)}% of value`] : []} />
                       <Stat label="Rented units to break even" value={breakEvenCount(e)} />
                     </dl>
                     {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
@@ -202,7 +202,7 @@ export default function Lender({ deal, me, preview, tab }) {
                 )}
               </Card>
 
-              {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} />}
+              {isRentValue(effectiveGuide?.rentValue) && <RentValue data={effectiveGuide.rentValue} showMarket />}
             </>
           )}
           <LenderTerms deal={deal} me={me} preview={preview} />

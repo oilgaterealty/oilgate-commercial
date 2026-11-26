@@ -1,7 +1,7 @@
 // Plain-English summary of each offer type. Every number comes from the live math (evaluate), never typed in.
 import { money } from './dealmath.js';
 
-const months = (m) => (Number.isFinite(m) ? (m <= 0 ? 'right away' : m < 24 ? `about ${Math.ceil(m)} months in` : `about ${(m / 12).toFixed(1)} years in`) : 'never at this credit');
+const months = (m) => (Number.isFinite(m) ? (m <= 0 ? 'right away' : m < 24 ? `${Math.ceil(m)} months in` : `${(m / 12).toFixed(1)} years in`) : 'never at this credit');
 
 export function plain(structure, r) {
   const x = r.inputs;
@@ -38,12 +38,12 @@ export function plain(structure, r) {
     return {
       glance: 'We own it together for a short time, then we buy the seller out.',
       owns: 'Both of us in one company, then us',
-      payoff: `At the buyout, about ${x.monthsToBuyout} months in`,
+      payoff: `At the buyout, ${x.monthsToBuyout} months in`,
       cash: cashUp,
       risk: gap > 0 ? `The bank refinance comes up ${money(gap)} short of the buyout` : 'The bank refinance has to cover the buyout',
       lines: [
         'The seller and we own it together in one company for a short time while we fix it and fill it.',
-        `The seller gets ${money(x.stepUp)}/mo once it’s full, then ${money(x.buyout + x.sellerAdvances)} when we buy them out with a bank refinance, about ${x.monthsToBuyout} months in. If they owe more than that on their loan, they’d cover the difference.`,
+        `The seller gets ${money(x.stepUp)}/mo once it’s full, then ${money(x.buyout + x.sellerAdvances)} when we buy them out with a bank refinance, ${x.monthsToBuyout} months in. If they owe more than that on their loan, they’d cover the difference.`,
       ],
     };
   }

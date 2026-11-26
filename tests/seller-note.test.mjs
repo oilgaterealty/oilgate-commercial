@@ -34,24 +34,42 @@ test('seller financing: shortfall below the note and bills is the owner’s; mas
   assert.ok(note.noteCoveredAt <= note.sellerCoveredAt);
 });
 
-test('refi pays off the note and counts closing', () => {
+test('refi pays off the note; closing is rolled into the repair loan', () => {
   const r = refi(BASE, PLAN, NOTE);
   assert.equal(r.sellerPayoff, 180000);
   assert.equal(r.sellerPayoffLabel, 'Seller’s note paid off');
-  assert.equal(r.closing, 3000);
-  assert.ok(Math.abs(r.leftForYou - (r.inHand - 180000 - r.repairLoanPayoff - 3000)) < 1e-6);
+  assert.equal(r.closing, 0);
+  assert.equal(r.closingInLoan, 3000);
+  assert.ok(r.repairLoanOverlay.some((l) => /Closing costs: \$3,000 in the repair loan/.test(l)));
+  assert.ok(Math.abs(r.leftForYou - (r.inHand - 180000 - r.repairLoanPayoff)) < 1e-6);
+  const noClose = refi(BASE, PLAN, { ...NOTE, inputs: { ...NOTE.inputs, closing: 0 } });
+  assert.ok(r.repairLoanPayoff > noClose.repairLoanPayoff + 3000 - 1e-6);
+});
+
+test('rent pays the note first; any shortfall waits until the refinance', () => {
+  const t = unitsRentedTable(BASE, PLAN, NOTE);
+  const n = sellerNote(NOTE, PLAN).notePay;
+  assert.equal(t.rows[0].notePaid, 0);
+  assert.ok(Math.abs(t.rows[0].noteWaits - n) < 1e-6);
+  for (const r of t.rows) {
+    assert.ok(Math.abs(r.notePaid - Math.min(r.rentIn, n)) < 1e-6);
+    assert.ok(Math.abs(r.notePaid + r.noteWaits - n) < 1e-6);
+  }
 });
 
 test('seller summary: seller financing steps, no buyer numbers', () => {
   const s = offerSellerSummary(NOTE, BASE, PLAN, [], false);
   assert.equal(s.title, 'Seller financing');
-  assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Refinance']);
+  assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Your choice: fund the repairs', 'Refinance']);
+  assert.match(s.steps[3].detail, /You can also be my repair lender: \$[\d,]+ as a second note, paid off at the refinance/);
+  assert.ok(s.terms.some((t) => t.label === 'You can also fund the repairs'));
+  assert.match(s.steps[2].detail, /waits and is paid at the refinance/);
   const visible = JSON.stringify({ intro: s.intro, terms: s.terms, steps: s.steps, refiLine: s.refiLine, sellerTable: s.sellerTable });
   assert.doesNotMatch(visible, /net|cash flow|left for you|DSCR|interest|reserve|lease/i);
   assert.match(s.refiLine, /pay off your note/);
-  assert.ok(s.sellerTable.every((r) => Object.keys(r).sort().join() === 'bills,billsLines,covered,note,rentIn,units'));
+  assert.ok(s.sellerTable.every((r) => ['bills,billsLines,covered,note,rentIn,units', 'bills,billsLines,covered,note,noteWaits,rentIn,units'].includes(Object.keys(r).sort().join())));
   const n = sellerNote(NOTE, PLAN).notePay;
-  assert.ok(s.sellerTable.every((r) => Math.abs(r.note - n) < 1e-6));
+  assert.ok(s.sellerTable.every((r) => Math.abs(r.note + (r.noteWaits || 0) - n) < 1e-6 && r.note <= r.rentIn + 1e-6));
   // Bills: taxes, insurance, water and empty-unit utilities; fewer empty units, smaller bills.
   assert.ok(Math.abs(s.sellerTable[10].bills - (6000 / 12 + 3000 / 12 + 200)) < 1e-6);
   assert.ok(s.sellerTable[0].bills > s.sellerTable[10].bills);

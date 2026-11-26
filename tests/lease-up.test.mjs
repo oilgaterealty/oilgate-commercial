@@ -58,8 +58,8 @@ test('comps compute per-unit price, average price/unit x 10 units, NOI / cap, an
 
   const msg = compWhatIfMessage({ savedComps: [comps[0]], localComps: [comps[1]], units: 10, noi: 48000, cap: 8 });
   assert.match(msg, /200 Oak Ave: 8 units, \$480,000 \(\$60,000\/unit\)/);
-  assert.match(msg, /Estimated value by comps: \$550,000/);
-  assert.match(msg, /Estimated value by income: \$600,000/);
+  assert.match(msg, /Value by comps: \$550,000/);
+  assert.match(msg, /Value by income: \$600,000/);
 });
 
 test('0009 migration enables RLS on all 6 tables, includes nullable polished column, and enforces moved-in unit uniqueness', () => {

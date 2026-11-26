@@ -102,8 +102,8 @@ test('compsMedian and valueSummary compute income primary and median comps secon
   assert.equal(cm.total, 650000);
 
   const val = valueSummary({ base: TEST_BASE, noi: 81000, units: 10, comps: TEST_COMPS });
-  assert.equal(val.incomeLine, 'Estimated value by income: $750,000 ($75,000/unit)');
-  assert.equal(val.compsLine, 'Estimated value by comps: $650,000 ($65,000/unit)');
+  assert.equal(val.incomeLine, 'Value by income: $750,000 ($75,000/unit)');
+  assert.equal(val.compsLine, 'Value by comps: $650,000 ($65,000/unit)');
   assert.ok(val.incomeOverlay.some((l) => l.includes('81,000') && l.includes('9%')));
   assert.ok(val.incomeOverlay.some((l) => l.includes('Sample valuation note')));
   assert.ok(val.compsOverlay[0].includes('$65,000 median/unit × 10 units = $650,000'));
@@ -154,7 +154,7 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
 
   // Step 3: Holding cost marks estimates and explains negative cash flow without bare "You keep"
   const s3 = story.steps[2];
-  assert.ok(s3.lines[0].overlay.some((l) => l.includes('(estimate)')));
+  assert.ok(!s3.lines[0].overlay.some((l) => /\(estimate\)|estimates/.test(l)));
   assert.match(s3.lines[2].label, /Short \$.* a month while fixing up \(covered by /);
 
   // Step 4: Lease-up has ordinals
@@ -169,8 +169,8 @@ test('buildOfferStory computes all 7 steps, headline metrics, rehab sum, estimat
 
   // Step 6: Refinance shows income + comps + You take home in big type
   const s6 = story.steps[5];
-  assert.ok(s6.lines.some((l) => l.label.startsWith('Estimated value by income:')));
-  assert.ok(s6.lines.some((l) => l.label.startsWith('Estimated value by comps:')));
+  assert.ok(s6.lines.some((l) => l.label.startsWith('Value by income:')));
+  assert.ok(s6.lines.some((l) => l.label.startsWith('Value by comps:')));
   assert.ok(s6.lines.some((l) => l.big && l.label.startsWith('You take home ')));
 
   // Offer where buyer must bring cash at refinance

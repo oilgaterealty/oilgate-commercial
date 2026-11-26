@@ -96,7 +96,7 @@ export function Results({ r }) {
           overlay={['Target 1.20x or more.']} />
         <Metric label="Yearly return on cash in" value={r.cashOnCash === null ? 'No cash in' : pct(r.cashOnCash, 1)} tone={r.cashOnCash === null ? 'none' : grade('cashOnCash', r.cashOnCash)}
           overlay={[r.cashIn > 0 ? `${money(r.cashIn)} cash in. Target 8–12%.` : 'No cash in upfront.']} />
-        <Metric label="Total cost vs estimated value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)}
+        <Metric label="Total cost vs value" value={pct(r.allInPct)} tone={grade('allInPct', r.allInPct)}
           overlay={[`${money(r.allIn)} of ${money(r.operating.b.value)}. Target 75% or less.`]} />
         <Metric label="Rented units to break even" value={pct(r.breakEven)} tone={grade('breakEven', r.breakEven)}
           overlay={[`${breakEvenCount(r)}. Target 85% or less.`]} />
@@ -261,7 +261,7 @@ export function OptionTable({ offers, stories, planHrefOf }) {
         const ug = g(o);
         return ug ? (ug.breakEvenUnits !== null ? `${ug.breakEvenUnits} units` : 'Above 10') : '—';
       }],
-      ['Estimated value', (o) => {
+      ['Value', (o) => {
         const r = g(o)?.refi;
         return r ? <OverlayTrigger lines={r.estimatedValueOverlay} className="font-semibold">{money(r.estimatedValue)}</OverlayTrigger> : '—';
       }],
@@ -626,7 +626,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
               <div className="space-y-5">
                 <Results r={r} />
                 <div className="flex justify-end">
-                  <InfoTip label="Underwriting benchmarks" lines={['Targets: 1.20x+ DSCR, 85% or fewer units to break even, 8–12% cash-on-cash, 75% or less total cost vs estimated value after repairs. Seller loan terms are unconfirmed and nothing here is a lender quote.']} />
+                  <InfoTip label="Underwriting benchmarks" lines={['Targets: 1.20x+ DSCR, 85% or fewer units to break even, 8–12% cash-on-cash, 75% or less total cost vs value after repairs.']} />
                 </div>
               </div>
             </div>

@@ -24,7 +24,7 @@ test('round 4: seller summary is generated, plain and holds nothing the buyer ma
   const keep = s.terms.find((t) => t.label === 'You keep paying').value;
   assert.match(keep, /Your loan/);
   assert.doesNotMatch(keep, /insurance/i, 'a $0 cost item is skipped');
-  assert.match(s.refiLine, /\(or what you owe\)/);
+  assert.doesNotMatch(s.refiLine, /or what you owe|about|estimate/i);
 });
 
 test('round 4: owner view has no seller page tab or hand-typed seller text', () => {

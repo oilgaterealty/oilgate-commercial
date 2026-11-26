@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardTitle, Button, OverlayTrigger } from './Shell.jsx';
 import { money, moneyK } from '../lib/dealmath.js';
+import { rangeValue } from '../lib/rangeValue.js';
 
 export function isRentValue(rv) {
   return Boolean(rv && Array.isArray(rv.units) && rv.units.length && Array.isArray(rv.views) && Array.isArray(rv.grid));
@@ -13,7 +14,54 @@ const numOrNull = (v) => (v === '' || v === null || v === undefined || !Number.i
 
 // Unit by unit rent, three side-by-side views and a rent × cap rate value grid. Lender, reviewer and owner only.
 // Pure presentation of guide.rentValue; the owner can type rent today and market rent per unit.
-export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger }) {
+// Value range (floor to value by income) and, for the lender and owner, the market rent range with a what-if slider.
+// The slider is local only: it never saves and never changes anyone's numbers.
+function Ranges({ data, showMarket, sourceLines, Trigger }) {
+  const vr = data.valueRange;
+  const mr = showMarket ? data.marketRange : null;
+  const [rent, setRent] = useState(mr ? mr.low : 0);
+  useEffect(() => { if (mr) setRent(mr.low); }, [mr?.low, mr?.high]);
+  if (!vr && !mr) return null;
+  const v = mr ? rangeValue(mr, rent) : 0;
+  return (
+    <Card>
+      <CardTitle>Value and market rent</CardTitle>
+      <dl className="grid gap-2 sm:grid-cols-2">
+        {vr && (
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Value</dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+              <Trigger lines={vr.lowOverlay}>{money(vr.low)}</Trigger> to <Trigger lines={vr.highOverlay}>{money(vr.high)}</Trigger>
+            </dd>
+          </div>
+        )}
+        {mr && (
+          <div className="rounded-2xl bg-paper p-3">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Market rent per unit</dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">
+              {sourceLines && sourceLines.length ? <Trigger lines={sourceLines}>{`${money(mr.low)} to ${money(mr.high)}`}</Trigger> : `${money(mr.low)} to ${money(mr.high)}`}
+            </dd>
+          </div>
+        )}
+      </dl>
+      {mr && (
+        <div className="mt-3 rounded-2xl border border-line bg-white p-3">
+          <label htmlFor="market-rent-what-if" className="flex items-center justify-between text-sm font-medium">
+            <span>What if rent is</span>
+            <span className="tabular-nums">{money(rent)}</span>
+          </label>
+          <input id="market-rent-what-if" type="range" min={mr.low} max={mr.high} step={1} value={rent} onChange={(e) => setRent(+e.target.value)} className="mt-2 w-full accent-ink" />
+          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm tabular-nums">
+            <div><dt className="text-ink-soft">Rent in /mo</dt><dd className="font-semibold">{money(mr.units * rent)}</dd></div>
+            <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${mr.units} × ${money(rent)}/mo, less ${mr.vacancyPct}% vacancy`, `Less costs: ${money(mr.costsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
+          </dl>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
   useEffect(() => { setDraft({}); }, [data]);
@@ -54,6 +102,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
 
   return (
     <div className="space-y-5">
+      <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} />
       <Card>
         <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">

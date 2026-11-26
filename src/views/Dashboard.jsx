@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { evaluate, money, pct } from '../lib/dealmath.js';
+import { evaluate, money } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { Card, CardTitle, Empty, Button } from '../components/Shell.jsx';
 import { useUploads, FileList } from '../components/Files.jsx';
@@ -60,6 +60,7 @@ function PhotoTile({ photos, href }) {
 // Overview for the owner and (with fewer powers) the realtor.
 export default function Dashboard({ deal, me, role = 'owner', preview }) {
   const owner = role === 'owner' && !preview;
+  const realtor = role === 'realtor';
   const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
@@ -78,19 +79,29 @@ export default function Dashboard({ deal, me, role = 'owner', preview }) {
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <div className="space-y-5">
           <Card>
-            <CardTitle aside={<a className="text-sm underline" href={`${root}/offers`}>Compare the offers</a>}>Deal at a glance</CardTitle>
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
-              <Tile label="Best cash flow" strong sub={best ? `${best.x.name} · whole building` : ''}>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
-              <Tile label="Monthly rent / unit" sub="All long-term rentals">{money(o.b.rent)}</Tile>
-              <Tile label="Status">{cap(deal.status)}</Tile>
-              <Tile label="Units" sub={o.extraRepair ? `Includes ${money(o.extraRepair)} added unit` : undefined}>{o.b.units}</Tile>
-              <Tile label="Yearly profit before payments">{money(o.noi)}</Tile>
-              <Tile label="Estimated value after repairs">{money(o.b.value)}</Tile>
-              <Tile label="Repair budget" sub={`Yearly return on value ${pct(o.capRate, 1)}`}>{money(o.b.rehab)}</Tile>
-            </dl>
-            <div className="mt-4"><Switches base={base} setBase={setBase} owner={owner} /></div>
-            {!owner && <div className="mt-3"><SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} /></div>}
+            {realtor ? <CardTitle>Deal at a glance</CardTitle> : <CardTitle aside={<a className="text-sm underline" href={`${root}/offers`}>Compare the offers</a>}>Deal at a glance</CardTitle>}
+            {realtor ? (
+              // The realtor sees building facts only: no price, value, costs or returns.
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Tile label="Units">{o.b.units}</Tile>
+                <Tile label="Status">{cap(deal.status)}</Tile>
+              </dl>
+            ) : (
+              <>
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
+                  <Tile label="Best cash flow" strong>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
+                  <Tile label="Monthly rent / unit">{money(o.b.rent)}</Tile>
+                  <Tile label="Status">{cap(deal.status)}</Tile>
+                  <Tile label="Units">{o.b.units}</Tile>
+                  <Tile label="Yearly profit before payments">{money(o.noi)}</Tile>
+                  <Tile label="Value after repairs">{money(o.b.value)}</Tile>
+                  <Tile label="Repair budget">{money(o.b.rehab)}</Tile>
+                </dl>
+                <div className="mt-4"><Switches base={base} setBase={setBase} owner={owner} /></div>
+                {!owner && <div className="mt-3"><SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} /></div>}
+              </>
+            )}
             {owner && model.saved && <p className="mt-2 text-xs text-ink-soft">{model.saved}</p>}
           </Card>
           <WorkBoard deal={deal} me={me} role={role} preview={preview} />

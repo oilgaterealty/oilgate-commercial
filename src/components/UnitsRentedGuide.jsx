@@ -20,7 +20,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
     : null);
   const r = guide.refi;
   const refiLines = [
-    { label: r.estimatedValueLabel || 'Estimated value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
+    { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'In hand after fees and reserve', value: money(r.inHand), overlay: r.inHandOverlay },
     { label: r.sellerPayoffLabel || 'Seller paid off', value: r.sellerPayoffText, overlay: r.sellerPayoffOverlay },

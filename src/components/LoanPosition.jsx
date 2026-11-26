@@ -41,7 +41,7 @@ export default function LoanPosition({ deal, role, preview, me, sendTo = 'buyer'
     if (blank(value)) return 'Not entered yet';
     if (key === 'balance') {
       const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
-      return `${formatted} (or what you owe)`;
+      return `${formatted}`;
     }
     if (key === 'payment') return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
     return key === 'rate' ? `${value}%` : value;

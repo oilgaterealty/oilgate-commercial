@@ -169,7 +169,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                     <tr key={row.units} className={`border-t border-line ${isFirstYes ? 'bg-emerald-50 font-semibold' : 'bg-white'}`}>
                       <th scope="row" className="px-3 py-2 text-left">{row.units}</th>
                       <td className="px-3 py-2">{fmtDollars(row.rentIn)}</td>
-                      {hasCosts && <td className="px-3 py-2">{fmtDollars(row.note)}</td>}
+                      {hasCosts && <td className="px-3 py-2">{row.noteWaits > 0 && OverlayTrigger ? <OverlayTrigger lines={[`Paid from rent: ${fmtDollars(row.note)}`, `${fmtDollars(row.noteWaits)} waits and is paid at the refinance`]}>{fmtDollars(row.note)}</OverlayTrigger> : fmtDollars(row.note)}</td>}
                       {hasCosts && (
                         <td className="px-3 py-2">
                           {Array.isArray(row.billsLines) && row.billsLines.length > 0 && OverlayTrigger

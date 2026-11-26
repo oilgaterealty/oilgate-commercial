@@ -73,7 +73,7 @@ export default function LeadGuest({ deal, preview }) {
               </dd>
             </div>
             <div className="rounded-xl bg-paper p-3">
-              <dt className="text-xs text-ink-soft">Total cost vs estimated value</dt>
+              <dt className="text-xs text-ink-soft">Total cost vs value</dt>
               <dd className="mt-1 font-display text-xl font-semibold">{pct(evalResult.allInPct)}</dd>
             </div>
           </dl>

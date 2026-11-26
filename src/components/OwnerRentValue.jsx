@@ -62,5 +62,5 @@ export default function OwnerRentValue({ deal }) {
     return null;
   };
 
-  return <RentValue data={data} editable onSave={onSave} />;
+  return <RentValue data={data} editable onSave={onSave} showMarket sourceLines={ctx.plan.marketRent?.source ? [ctx.plan.marketRent.source] : null} />;
 }
