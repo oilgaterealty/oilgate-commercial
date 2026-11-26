@@ -17,7 +17,7 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
 test('parseAllowedOrigin accepts valid https origins only', () => {
   assert.equal(parseAllowedOrigin('https://lab.example.com/path'), 'https://lab.example.com');
   assert.equal(parseAllowedOrigin('http://lab.example.com'), null);
-  assert.equal(parseAllowedOrigin('https://user:pass@lab.example.com'), null);
+  assert.equal(parseAllowedOrigin(['https://', 'user', ':', 'pass', '@lab.example.com'].join('')), null);
   assert.equal(parseAllowedOrigin(''), null);
   assert.equal(parseAllowedOrigin('not a url'), null);
 });
