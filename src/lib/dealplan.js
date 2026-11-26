@@ -1605,10 +1605,10 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
     'A second seller note. Paid monthly, then paid back in full.',
   ].filter(Boolean);
   const rc = rf.renoCompare || null;
+  // Seller sees only their own note terms; the regular lender's rate and points are never on the seller page.
   const compareOverlay = rc
     ? [
-        `Seller note: ${rc.sellerRate}% interest only, no points. ${money(rc.sellerMo)}/mo.`,
-        `Regular repair lender: ${rc.regularRate}% interest only plus ${rc.regularPointsPct} points (${money(rc.regularPoints)}). ${money(rc.regularMo)}/mo.`,
+        `Interest only, no points. ${money(rc.sellerMo)}/mo.`,
       ]
     : [];
   const repairsTotal = Math.round(num(costSummary.total, 0));
@@ -1632,7 +1632,6 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       { label: 'Renovation note', value: money(renoAmt), overlay: repairLendOverlay },
       ...(rc ? [
         { label: 'Renovation note rate', value: `${rc.sellerRate}%, no points`, overlay: compareOverlay },
-        { label: 'Regular lender', value: `${rc.regularRate}% + ${rc.regularPointsPct} points`, overlay: compareOverlay },
       ] : []),
       { label: 'Note payments', value: `${money(notePay + renoPay)}/mo`, overlay: payLines },
       ...(billsFromRent ? [{ label: 'Holding bills', value: 'Paid from rent first', overlay: ['Rent pays property tax, insurance, water and trash first. Any part rent does not cover yet is added to your payoff.'] }] : []),

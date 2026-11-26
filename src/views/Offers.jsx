@@ -520,7 +520,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
         || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
         || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
       if (g) {
-        if (g.refi) Object.assign(baseStory, applyGuideRefi(baseStory, g.refi));
+        if (g.refi) Object.assign(baseStory, applyGuideRefi(baseStory, g.refi, g));
         baseStory.unitsGuide = g;
         if (g.costSummary) baseStory.costSummary = g.costSummary;
         else if (g.cost?.length) baseStory.costSummary = { heading: g.costHeading, headingOverlay: g.costHeadingOverlay || [], lines: g.cost };

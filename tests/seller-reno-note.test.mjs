@@ -86,13 +86,15 @@ test('units rented: rent pays bills, then purchase note, then renovation note; t
   assert.equal(outside.oneBudget, false);
 });
 
-test('seller page: two notes, rate vs regular lender, no buyer numbers, no carry wording', () => {
+test('seller page: two notes, no regular lender rate, no buyer numbers, no carry wording', () => {
   const s = offerSellerSummary({ name: 'A: Seller financing', ...LEAD }, BASE, PLAN, [], false);
   assert.equal(s.renoFromSeller, true);
   const labels = s.terms.map((x) => x.label);
-  for (const l of ['Purchase note', 'Renovation note', 'Renovation note rate', 'Regular lender', 'Note payments', 'Paid back in full when']) assert.ok(labels.includes(l), l);
+  for (const l of ['Purchase note', 'Renovation note', 'Renovation note rate', 'Note payments', 'Paid back in full when']) assert.ok(labels.includes(l), l);
   assert.equal(s.terms.find((x) => x.label === 'Renovation note rate').value, '8%, no points');
-  assert.equal(s.terms.find((x) => x.label === 'Regular lender').value, '11% + 2.5 points');
+  assert.ok(!labels.includes('Regular lender'));
+  const seen = ['title', 'intro', 'sellerTable', 'refiLine', 'terms', 'steps'].map((k) => JSON.stringify(s[k])).join(' ');
+  assert.doesNotMatch(seen, /11%|2\.5 points|regular|lender/i);
   assert.ok(!labels.includes('You can also fund the repairs'));
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Paid back in full']);
   assert.match(s.refiLine, /paid back in full/);
@@ -141,10 +143,28 @@ test('seller page function passes the on/off switches the offer card needs', () 
 test('non-owner snapshot uses the guide refi payoff (both notes + deferred costs)', () => {
   const ev = evaluate('wrap', LEAD.inputs, BASE);
   const g = buildLeadGuide(BASE, PLAN, LEAD);
-  const st = applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi);
+  const st = applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi, g);
   const left = g.refi.leftForYou;
   assert.equal(st.headline.cashOut.value, left >= 0 ? '$' + Math.round(left).toLocaleString('en-US') : 'Bring $' + Math.round(-left).toLocaleString('en-US'));
   assert.equal(st.headline.sellerTotal.value, '$' + Math.round(g.refi.sellerTotalPayoff).toLocaleString('en-US'));
   const pays = st.steps.find((s) => s.title === 'Refinance').lines.find((l) => l.label === 'Pays seller');
   assert.equal(pays.value, st.headline.sellerTotal.value);
+});
+
+test('shared offer story adds up: purchase note, repairs by seller note or a repair loan, lease-up, payoff breakdown', async () => {
+  const { sharedRefiStory } = await import('../src/lib/dealmath.js');
+  const ev = evaluate('wrap', LEAD.inputs, BASE);
+  const g = buildLeadGuide(BASE, PLAN, LEAD);
+  const st = sharedRefiStory(applyGuideRefi(buildLeadStory('wrap', ev, { base: BASE }), g.refi, g));
+  const titles = st.steps.map((s) => s.title);
+  assert.deepEqual(titles, ['Take over', 'Rehab', 'Lease-up', 'Full', 'Seller paid back', 'After']);
+  const rehab = st.steps.find((s) => s.title === 'Rehab').lines.map((l) => l.label);
+  assert.ok(rehab.includes('Seller renovation note') && rehab.includes('Or a repair loan'));
+  const pay = st.steps.find((s) => s.title === 'Seller paid back').lines;
+  const n = (v) => +String(v).replace(/[^0-9.]/g, '');
+  const parts = pay.filter((l) => l.label !== 'Paid back in full').reduce((s, l) => s + n(l.value), 0);
+  assert.ok(Math.abs(parts - n(pay.find((l) => l.label === 'Paid back in full').value)) <= 2);
+  assert.ok(!pay.some((l) => l.big));
+  const full = st.steps.find((s) => s.title === 'Full').lines.find((l) => l.label === 'Both note payments');
+  assert.ok(full);
 });

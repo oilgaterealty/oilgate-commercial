@@ -499,30 +499,79 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
 }
 
 // Snapshot story for non-owner roles: when the saved units-rented guide has refi numbers, use them so every
-// role shows the same payoff (both seller notes, deferred holding costs, closing, what is left).
-export function applyGuideRefi(story, rf) {
+// role shows the same payoff and the story adds up step by step (purchase note, repairs, lease-up, full, payoff).
+export function applyGuideRefi(story, rf, guide = null) {
   if (!story || !rf || !Number.isFinite(+rf.leftForYou)) return story;
   const left = +rf.leftForYou;
   const sellerTotal = +(rf.sellerTotalPayoff ?? rf.sellerPayoff ?? 0);
   const leftLines = Array.isArray(rf.leftForYouOverlay) ? rf.leftForYouOverlay : [];
-  const sellerLines = [
-    `Purchase note: ${money(+(rf.sellerNotePrincipal ?? 0))}`,
-    rf.renoFromSeller ? `Renovation note: ${money(+(rf.renoNotePrincipal ?? 0))}` : null,
-    +(rf.sellerCarriedBills ?? 0) > 0 ? `Deferred holding costs: ${money(+rf.sellerCarriedBills)}` : null,
-    `Total: ${money(sellerTotal)}.`,
-  ].filter(Boolean);
+  const purchase = +(rf.sellerNotePrincipal ?? 0);
+  const reno = rf.renoFromSeller ? +(rf.renoNotePrincipal ?? 0) : 0;
+  const deferred = +(rf.sellerCarriedBills ?? 0);
+  const payoffLines = [
+    { label: 'Purchase note', value: money(purchase), overlay: Array.isArray(rf.sellerPayoffOverlay) ? rf.sellerPayoffOverlay : [], payback: true },
+    ...(reno > 0 ? [{ label: 'Renovation note', value: money(reno), overlay: Array.isArray(rf.repairLoanOverlay) ? rf.repairLoanOverlay : [], payback: true }] : []),
+    ...(deferred > 0 ? [{ label: 'Bills and payments that waited', value: money(deferred), overlay: Array.isArray(rf.sellerCarriedBillsOverlay) ? rf.sellerCarriedBillsOverlay : [], payback: true }] : []),
+    { label: 'Pays seller', value: money(sellerTotal), overlay: [`${money(purchase)} + ${money(reno)} + ${money(deferred)} = ${money(sellerTotal)}.`], payback: true },
+  ];
   const next = { ...story, headline: { ...story.headline } };
   next.headline.cashOut = { ...story.headline.cashOut, value: left >= 0 ? money(left) : `Bring ${money(-left)}`, positive: left >= 0, overlay: leftLines };
-  next.headline.sellerTotal = { ...story.headline.sellerTotal, value: money(sellerTotal), overlay: sellerLines };
-  next.steps = (story.steps || []).map((s) => (s.title !== 'Refinance' ? s : {
-    ...s,
-    lines: s.lines.map((l) => {
-      if (l.label === 'Pays seller') return { ...l, value: money(sellerTotal), overlay: sellerLines };
-      if (l.label === 'Closing') return { ...l, value: money(+(rf.closing ?? 0)), overlay: [`Closing costs at refinance: ${money(+(rf.closing ?? 0))}.`] };
-      if (l.big) return { ...l, label: left >= 0 ? `You take home ${money(left)}` : `You bring ${money(-left)}`, tone: left >= 0 ? 'pass' : 'fail', overlay: leftLines };
-      return l;
-    }),
-  }));
+  next.headline.sellerTotal = { ...story.headline.sellerTotal, value: money(sellerTotal), overlay: payoffLines.map((l) => `${l.label}: ${l.value}`) };
+
+  const last = guide && Array.isArray(guide.rows) && guide.rows.length ? guide.rows[guide.rows.length - 1] : null;
+  const notePay = last ? +(last.notePaid ?? 0) : null;
+  const renoPay = last ? +(last.renoPaid ?? 0) : 0;
+  const rc = rf.renoCompare || null;
+  const budget = guide?.costSummary?.total ?? null;
+  let steps = (story.steps || []).map((s) => {
+    if (s.title === 'Refinance') {
+      return {
+        ...s,
+        lines: [
+          ...s.lines.filter((l) => !['Pays seller', 'Closing'].includes(l.label) && !l.big),
+          ...payoffLines,
+          { label: 'Closing', value: money(+(rf.closing ?? 0)), overlay: [`Closing costs at refinance: ${money(+(rf.closing ?? 0))}.`] },
+          { label: left >= 0 ? `You take home ${money(left)}` : `You bring ${money(-left)}`, value: '', big: true, tone: left >= 0 ? 'pass' : 'fail', overlay: leftLines },
+        ],
+      };
+    }
+    if (!rf.renoFromSeller) return s;
+    if (s.title === 'Take over' && notePay !== null) {
+      return { ...s, lines: [
+        { label: 'Seller financing: purchase note', value: money(purchase), overlay: [] },
+        { label: 'Purchase note payment', value: `${money(notePay)}/mo`, overlay: ['Paid from rent once units are rented.'] },
+      ] };
+    }
+    if (s.title === 'Rehab') {
+      return { ...s, lines: [
+        ...(budget !== null ? [{ label: 'Repair budget', value: money(budget), overlay: s.lines[0]?.overlay || [] }] : s.lines),
+        ...(+(rf.closingInLoan ?? 0) > 0 ? [{ label: 'Closing costs rolled in', value: money(+rf.closingInLoan), overlay: [] }] : []),
+        { label: 'Seller renovation note', value: rc ? `${money(reno)} at ${rc.sellerRate}%, no points` : money(reno), overlay: rc ? [`Interest only: ${money(rc.sellerMo)}/mo, paid from rent once units are rented.`] : [] },
+        ...(rc ? [{ label: 'Or a repair loan', value: `${rc.regularRate}% + ${rc.regularPointsPct} points`, overlay: [`Interest only: ${money(rc.regularMo)}/mo, plus ${money(rc.regularPoints)} in points upfront.`] }] : []),
+      ] };
+    }
+    if (s.title === 'Full' && notePay !== null) {
+      const payments = notePay + renoPay;
+      const fullLeft = +(rf.dscrNoiMo ?? 0) - payments;
+      return { ...s, lines: s.lines.map((l) => {
+        if (l.label === 'Seller payment') return { ...l, label: 'Both note payments', value: `${money(payments)}/mo`, overlay: [`Purchase note ${money(notePay)}/mo + renovation note ${money(renoPay)}/mo.`] };
+        if (l.tone) return { ...l, label: fullLeft >= 0 ? 'Left over each month after every bill' : `Short ${money(-fullLeft)} a month`, value: `${money(fullLeft)}/mo`, tone: fullLeft >= 0 ? 'pass' : 'fail', overlay: [] };
+        return l;
+      }) };
+    }
+    return s;
+  });
+  if (rf.renoFromSeller && guide && !steps.some((s) => s.title === 'Lease-up')) {
+    const at = guide.sellerCoveredAt;
+    const leaseUp = { num: 4, title: 'Lease-up', lines: [
+      { label: 'Rent pays', value: 'Bills, then both notes', overlay: [] },
+      ...(at !== null && at !== undefined ? [{ label: 'Everything covered at', value: `${at} units rented`, overlay: [] }] : []),
+      { label: 'Not covered yet', value: 'Added to the payoff', overlay: [] },
+    ] };
+    const i = steps.findIndex((s) => s.num > 4);
+    steps = i < 0 ? [...steps, leaseUp] : [...steps.slice(0, i), leaseUp, ...steps.slice(i)];
+  }
+  next.steps = steps.map((s, i) => ({ ...s, num: i + 1 }));
   return next;
 }
 
@@ -534,8 +583,9 @@ export function sharedRefiStory(story) {
   const next = { ...story, headline: { ...h, cashOut: null, maxSellerAtRefi: null } };
   next.steps = (story.steps || []).map((s) => {
     if (s.title !== 'Refinance') return s;
-    const pays = s.lines.find((l) => l.label === 'Pays seller');
-    return pays ? { ...s, title: 'Seller paid back', lines: [{ ...pays, label: 'Paid back in full' }] } : s;
+    const pays = s.lines.filter((l) => l.payback || l.label === 'Pays seller');
+    if (!pays.length) return s;
+    return { ...s, title: 'Seller paid back', lines: pays.map((l) => (l.label === 'Pays seller' ? { ...l, label: 'Paid back in full' } : l)) };
   });
   return next;
 }
