@@ -375,57 +375,6 @@ export function OptionTable({ offers, stories, planHrefOf }) {
   );
 }
 
-function SellerSummaryEditor({ offer, onPatch, onReset }) {
-  const s = offer?.seller_summary && typeof offer.seller_summary === 'object' ? offer.seller_summary : { version: 1, title: '', terms: [], steps: [] };
-  const terms = Array.isArray(s.terms) ? s.terms : [];
-  const steps = Array.isArray(s.steps) ? s.steps : [];
-  const locked = Boolean(s.locked);
-  const update = (next) => onPatch({ seller_summary: { version: 1, ...s, ...next } });
-  return (
-    <div className="mt-4 space-y-3 border-t border-line pt-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">Seller page text</span>
-        <div className="flex items-center gap-3">
-          <label className="inline-flex items-center gap-1.5 text-xs font-medium">
-            <input type="checkbox" checked={locked} onChange={(e) => update({ locked: e.target.checked })} />
-            Lock text
-          </label>
-          <Button type="button" kind="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onReset}>Reset from numbers</Button>
-        </div>
-      </div>
-      <label className="block text-xs text-ink-soft">
-        Title
-        <input value={s.title || ''} onChange={(e) => update({ title: e.target.value })}
-          className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-ink" />
-      </label>
-      <div className="space-y-1.5">
-        {terms.map((t, idx) => (
-          <div key={idx} className="grid gap-1.5 sm:grid-cols-[150px_1fr]">
-            <input aria-label={`Seller term ${idx + 1} label`} value={t.label || ''} onChange={(e) => update({ terms: terms.map((row, j) => (j === idx ? { ...row, label: e.target.value } : row)) })}
-              className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
-            <input aria-label={`Seller term ${idx + 1} value`} value={t.value || ''} onChange={(e) => update({ terms: terms.map((row, j) => (j === idx ? { ...row, value: e.target.value } : row)) })}
-              className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
-          </div>
-        ))}
-      </div>
-      <div className="space-y-1.5">
-        {steps.map((st, idx) => (
-          <div key={idx} className="space-y-1 rounded-xl border border-line bg-paper p-2">
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              <input aria-label={`Seller step ${idx + 1} title`} value={st.title || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, title: e.target.value } : row)) })}
-                className="rounded-lg border border-line bg-white px-2 py-1 text-xs font-medium text-ink outline-none focus:border-ink" />
-              <input aria-label={`Seller step ${idx + 1} when`} value={st.when || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, when: e.target.value } : row)) })}
-                className="rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
-            </div>
-            <textarea rows={2} aria-label={`Seller step ${idx + 1} detail`} value={st.detail || ''} onChange={(e) => update({ steps: steps.map((row, j) => (j === idx ? { ...row, detail: e.target.value } : row)) })}
-              className="w-full rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink outline-none focus:border-ink" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to the buyer.
 export default function Offers({ deal, canSave, onlyShared, me, role, preview, leadGuide: leadGuideProp }) {
   const owner = !!canSave;
@@ -664,14 +613,6 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
                         ? <span className="self-center text-sm font-medium text-good">Lenders see this as the plan</span>
                         : <Button kind="secondary" onClick={() => setBase({ ...base, planOffer: cur.id })}>Show lenders this as the plan</Button>}
                     </div>
-                    <SellerSummaryEditor
-                      offer={cur}
-                      onPatch={(p) => patch(cur.id, p)}
-                      onReset={() => {
-                        const fresh = computeSellerSummary(cur, cur.inputs, base, true);
-                        if (fresh) patch(cur.id, { seller_summary: fresh });
-                      }}
-                    />
                     <div className="mt-4 space-y-1 border-t border-line pt-3 text-sm">
                       <p className="font-medium">Who can see the lead offer</p>
                       {'share_realtor' in cur && <label className="flex items-center gap-2"><input type="checkbox" checked={cur.share_realtor} onChange={(e) => patch(cur.id, { share_realtor: e.target.checked })} /> Realtor</label>}

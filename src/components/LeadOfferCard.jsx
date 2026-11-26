@@ -82,7 +82,7 @@ export function validProofItems(content = {}) {
 const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
 
 // Single plain-English offer card shown to the seller (and lead_guest). Never renders multiple options.
-export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
+export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false }) {
   const lead = normalizeLeadOffer(content);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
@@ -131,22 +131,23 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
 
   return (
     <Card className="border-2 border-ink">
-      <CardTitle
-        aside={
-          preview && !hasSummary && !hasSellerTable && !lead.price ? (
-            <a href={`#/d/${deal.slug}/seller-page`} className="text-sm font-medium underline">
-              Pick lead terms in Seller page
-            </a>
-          ) : null
-        }
-      >
-        {cleanTitle ? `The offer — ${cleanTitle}` : 'The offer'}
-      </CardTitle>
+      <CardTitle>{cleanTitle ? `The offer: ${cleanTitle}` : 'The offer'}</CardTitle>
       {hasSellerTable ? (
         <div className="space-y-4">
-          <div className="text-sm leading-relaxed text-ink">
-            {summary.intro || 'I take over the leasing and the repairs. Rent pays your costs first. Once every unit is rented, I buy the building through a refinance.'}
-          </div>
+          {hasSummary && rows.length > 0 && (
+            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {rows.map((row) => (
+                <div key={row.label} className="rounded-2xl bg-paper p-3">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{row.label}</dt>
+                  <dd className="mt-1 text-sm font-semibold leading-snug text-ink">
+                    {row.overlay.length > 0 && OverlayTrigger
+                      ? <OverlayTrigger lines={row.overlay}>{row.value}</OverlayTrigger>
+                      : row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
           <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Units rented">
             <table className="w-full border-collapse text-right text-sm tabular-nums">
               <thead className="bg-ink text-xs text-white">
@@ -178,7 +179,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
             </div>
           )}
         </div>
-      ) : (
+      ) : sellerOnly && !hasSummary ? null : (
         <dl className="divide-y divide-line">
           {rows.map((row) => (
             <div key={row.label} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[220px_1fr] sm:gap-4">
@@ -223,41 +224,46 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk }) {
 }
 
 // "How I'll get this done" right below the offer; verified proof renders ONLY when owner-approved entries exist.
-export function ExecutionPlanCard({ content, summary }) {
+export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
+  if (sellerOnly && !hasSummarySteps) return null;
+  const toLines = (v) => (Array.isArray(v) ? v : v ? String(v).split('\n') : []).map((x) => String(x || '').trim()).filter(Boolean);
   const steps = hasSummarySteps
     ? summary.steps.map((s, i) => ({
         key: `sum-${i}`,
         title: String(s?.title || '').trim(),
-        when: String(s?.when || '').trim(),
         detail: String(s?.detail || '').trim(),
+        overlay: toLines(s?.overlay),
         items: [],
       })).filter((s) => s.title)
-    : normalizeExecutionSteps(content);
+    : normalizeExecutionSteps(content).map((s) => ({ ...s, overlay: [] }));
   const proof = validProofItems(content);
   return (
     <Card>
       <CardTitle>How I’ll get this done</CardTitle>
-      <ol className="grid gap-4 sm:grid-cols-2">
+      <ol className="space-y-3">
         {steps.map((s, i) => (
-          <li key={s.key} className="rounded-2xl bg-paper p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                  {i + 1}
-                </span>
-                <h3 className="font-display text-lg font-semibold leading-snug">{s.title}</h3>
-              </div>
-              {s.when && <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-ink-soft">{s.when}</span>}
+          <li key={s.key} className="flex gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
+              {s.detail && (
+                <p className="text-sm leading-relaxed text-ink">
+                  {s.overlay.length > 0 && OverlayTrigger
+                    ? <OverlayTrigger lines={s.overlay}>{s.detail}</OverlayTrigger>
+                    : s.detail}
+                </p>
+              )}
+              {s.items.length > 0 && (
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
+                  {s.items.map((item, j) => (
+                    <li key={j}>{item}</li>
+                  ))}
+                </ul>
+              )}
             </div>
-            {s.detail && <p className="mt-2 text-sm leading-relaxed text-ink">{s.detail}</p>}
-            {s.items.length > 0 && (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
-                {s.items.map((item, j) => (
-                  <li key={j}>{item}</li>
-                ))}
-              </ul>
-            )}
           </li>
         ))}
       </ol>

@@ -139,7 +139,7 @@ test('Task 1 & 6: buildCostSummary formats Whole job, Units top-2, Building, Set
   assert.doesNotMatch(html, /to inspect|\$0,|<p\b|<small\b|<caption\b/);
 });
 
-test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, refreshes guide when locked, and Seller.jsx renders it', () => {
+test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, regenerates even when locked, and Seller.jsx renders it', () => {
   const res = monthlyPlan('master_lease', { payment: 2500, optionPrice: 320000, sellerAdvances: 10000, creditPct: 100, exerciseClosing: 4000 }, SAMPLE_BASE, SAMPLE_PLAN);
   const offer = { id: 'o1', name: 'A: Lease now, buy later', structure: 'master_lease', inputs: {} };
   const summary = buildSellerSummary(offer, res, { base: SAMPLE_BASE });
@@ -148,17 +148,17 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
   assert.equal(summary.title, 'Lease now, buy later');
   assert.ok(!summary.title.includes('A:'));
   assert.equal(summary.sellerTable.length, 11);
-  assert.ok(summary.terms.some((t) => t.label === 'Your current loan' && t.value.includes('(or what you owe)')));
-  assert.deepEqual(summary.steps.map((s) => s.title), ['Take over', 'Repairs', 'Rent pays your costs first', 'Refinance']);
-  assert.ok(summary.steps[1].detail.includes('Whole job about $69K'));
+  assert.ok(summary.terms.some((t) => t.label === 'Buyout' && t.value.includes('(or what you owe)')));
+  assert.deepEqual(summary.steps.map((s) => s.title), ['Master lease', 'Repairs', 'Rent', 'Refinance']);
+  assert.ok(summary.steps[1].detail.includes('I pay for the repairs, about $69,000'));
   // Never exposes buyer returns, option letters, or months
   assert.doesNotMatch(JSON.stringify({ title: summary.title, intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR|Month \d+/i);
 
-  // Locked summary preserves locked terms/steps while refreshing guide
+  // Seller page is never typed by hand: a locked summary is still regenerated from the numbers
   const locked = { version: 1, locked: true, title: 'Custom locked title', terms: [{ label: 'Price', value: 'Custom' }], steps: [] };
   const refreshed = nextSellerSummary({ ...offer, seller_summary: locked }, res, { base: SAMPLE_BASE });
-  assert.equal(refreshed.title, 'Custom locked title');
-  assert.deepEqual(refreshed.terms, locked.terms);
+  assert.notEqual(refreshed.title, 'Custom locked title');
+  assert.notDeepEqual(refreshed.terms, locked.terms);
   assert.equal(refreshed.guide.rows.length, 11);
 
   // Seller.jsx calls commercial_get_seller_offer and LeadOfferCard renders sellerTable + refiLine + fallback
@@ -178,11 +178,11 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
     React.createElement(LeadOfferCard, { deal: { id: 'd1', slug: 'demo' }, content: {}, summary }),
     React.createElement(ExecutionPlanCard, { content: {}, summary })
   ));
-  assert.match(html, /The offer — Lease now, buy later/);
+  assert.match(html, /The offer: Lease now, buy later/);
   assert.match(html, /\(or what you owe\)/);
   assert.match(html, /Units rented/);
   assert.match(html, /Your costs covered/);
-  assert.match(html, /Whole job about \$69K/);
+  assert.match(html, /I pay for the repairs, about \$\d/);
   assert.doesNotMatch(html, /Month 12/);
 
   const fallbackHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, {

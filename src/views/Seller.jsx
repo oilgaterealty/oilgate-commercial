@@ -78,10 +78,11 @@ export default function Seller({ deal, me, preview }) {
         content={c}
         summary={summary}
         preview={preview}
+        sellerOnly
         onAsk={(q) => sendToOwner(deal, me, 'seller', q, 'Offer question')}
       />
 
-      <ExecutionPlanCard content={c} summary={summary} />
+      <ExecutionPlanCard content={c} summary={summary} sellerOnly />
 
       <LoanPosition deal={deal} role="seller" preview={preview} me={me} />
 

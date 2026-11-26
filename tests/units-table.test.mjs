@@ -201,7 +201,7 @@ test('buildCostSummary shows Contingency line and total with it, and never emits
   assert.ok(cs.headingOverlay.some((l) => l.includes('Total with contingency: $78,000')));
 });
 
-test('buildSellerSummary writes plain sellerTable + refiLine without months/buyer numbers, and locked refreshes guide only', () => {
+test('buildSellerSummary writes plain sellerTable + refiLine without months/buyer numbers, and regenerates even when locked', () => {
   const planRes = monthlyPlan('master_lease', SAMPLE_OFFER.inputs, SAMPLE_BASE, SAMPLE_PLAN);
   const summary = buildSellerSummary(SAMPLE_OFFER, planRes, { base: SAMPLE_BASE });
 
@@ -221,8 +221,9 @@ test('buildSellerSummary writes plain sellerTable + refiLine without months/buye
     guide: null,
   };
   const next = nextSellerSummary({ ...SAMPLE_OFFER, seller_summary: locked }, planRes, { base: SAMPLE_BASE });
-  assert.equal(next.title, 'Custom locked');
-  assert.deepEqual(next.terms, locked.terms);
+  assert.notEqual(next.title, 'Custom locked');
+  assert.notDeepEqual(next.terms, locked.terms);
+  assert.equal(next.steps.length, 4);
   assert.equal(next.guide.rows.length, 11);
   assert.ok(next.guide.refi);
 });

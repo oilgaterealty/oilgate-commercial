@@ -18,7 +18,6 @@ import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
-import { DEFAULT_EXECUTION_PLAN, DEFAULT_LEAD_OFFER } from '../components/LeadOfferCard.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./DealPlan.jsx'));
@@ -32,7 +31,6 @@ const BASE_TABS = [
   ['photos', 'Photos'],
   ['messages', 'Messages'],
   ['files', 'Files'],
-  ['seller-page', 'Seller page'],
   ['settings', 'Settings'],
 ];
 const TABS = siteRules(SITE_KIND).ownerAllowed
@@ -185,111 +183,6 @@ function RoleLinks({ deal, onJoined }) {
   );
 }
 
-function SellerEditor({ deal, onSaved }) {
-  const [c, setC] = useState(deal.seller_content || {});
-  const [saved, setSaved] = useState('');
-  const lead = c.lead || {};
-  const execution = c.execution || {};
-  const proof = Array.isArray(c.execution_proof) ? c.execution_proof : [];
-
-  const setLead = (patch) => setC({ ...c, lead: { ...lead, ...patch } });
-  const setExecution = (key, value) => setC({ ...c, execution: { ...execution, [key]: value } });
-  const setProofRow = (i, field, value) => setC({ ...c, execution_proof: proof.map((r, j) => (j === i ? { ...r, [field]: value } : r)) });
-  const addProof = () => setC({ ...c, execution_proof: [...proof, { title: '', detail: '' }] });
-  const delProof = (i) => setC({ ...c, execution_proof: proof.filter((_, j) => j !== i) });
-
-  const save = async () => {
-    const cleanProof = proof
-      .map((item) => ({ title: (item.title || '').trim(), detail: (item.detail || '').trim() }))
-      .filter((item) => item.title || item.detail);
-    const clean = {
-      ...c,
-      headline: (c.headline || '').trim(),
-      lead: Object.fromEntries(Object.entries(lead).map(([k, v]) => [k, String(v || '').trim()])),
-      execution: Object.fromEntries(Object.entries(execution).map(([k, v]) => [k, String(v || '').trim()])),
-      execution_proof: cleanProof,
-    };
-    const { data, error } = await supabase.from('commercial_deals').update({ seller_content: clean }).eq('id', deal.id).select().single();
-    setSaved(error ? error.message : 'Saved. The seller sees this now.');
-    if (data) onSaved(data);
-  };
-
-  return (
-    <Card>
-      <CardTitle aside={<a className="text-sm underline" href={`#/d/${deal.slug}/view/seller`}>See it full screen</a>}>
-        What the seller reads
-      </CardTitle>
-      <div className="space-y-5">
-        <label className="block text-sm font-medium">
-          Headline
-          <Field className="mt-1" value={c.headline || ''} placeholder="Headline" onChange={(e) => setC({ ...c, headline: e.target.value })} />
-        </label>
-
-        <div className="space-y-3 rounded-2xl border border-line p-4">
-          <p className="text-sm font-semibold">Single lead offer (parcels 6801234 and 6807893)</p>
-          <label className="block text-xs text-ink-soft">
-            Agreed purchase price (leave blank until picked)
-            <Field className="mt-1" value={lead.price || ''} placeholder="To be agreed upfront in writing" onChange={(e) => setLead({ price: e.target.value })} />
-          </label>
-          {[
-            ['buyer_takes_on', 'What I take on', DEFAULT_LEAD_OFFER.buyer_takes_on],
-            ['seller_contributes_receives', 'What seller contributes and receives', DEFAULT_LEAD_OFFER.seller_contributes_receives],
-            ['payment_source', 'Where payments come from', DEFAULT_LEAD_OFFER.payment_source],
-            ['closing_timing', 'When the purchase happens', DEFAULT_LEAD_OFFER.closing_timing],
-            ['timeline_slip', 'If the timeline slips', DEFAULT_LEAD_OFFER.timeline_slip],
-            ['lender_condition', 'Lender clearance condition', DEFAULT_LEAD_OFFER.lender_condition],
-          ].map(([key, label, placeholder]) => (
-            <label key={key} className="block text-xs text-ink-soft">
-              {label}
-              <DictatedField
-                as="textarea"
-                rows={2}
-                className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
-                value={lead[key] || ''}
-                placeholder={placeholder}
-                onChange={(e) => setLead({ [key]: e.target.value })}
-              />
-            </label>
-          ))}
-        </div>
-
-        <div className="space-y-3 rounded-2xl border border-line p-4">
-          <p className="text-sm font-semibold">How I’ll get this done</p>
-          {DEFAULT_EXECUTION_PLAN.map((step) => (
-            <label key={step.key} className="block text-xs text-ink-soft">
-              {step.title}
-              <DictatedField
-                as="textarea"
-                rows={2}
-                className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
-                value={execution[step.key] || ''}
-                placeholder={step.detail}
-                onChange={(e) => setExecution(step.key, e.target.value)}
-              />
-            </label>
-          ))}
-          <div className="space-y-2 border-t border-line pt-3">
-            <p className="text-xs font-semibold text-ink">Owner-approved proof items (hidden from seller until added)</p>
-            {proof.map((r, i) => (
-              <div key={i} className="flex flex-wrap gap-2">
-                <Field className="min-w-44 flex-1" value={r.title} placeholder="Project, reference, or financing item" onChange={(e) => setProofRow(i, 'title', e.target.value)} />
-                <Field className="min-w-56 flex-[2]" value={r.detail} placeholder="Verified detail" onChange={(e) => setProofRow(i, 'detail', e.target.value)} />
-                <Button kind="secondary" type="button" onClick={() => delProof(i)}>×</Button>
-              </div>
-            ))}
-            <Button kind="secondary" type="button" onClick={addProof}>Add approved proof</Button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button type="button" onClick={save}>Save</Button>
-          {saved && <span role="status" className="text-sm text-ink-soft">{saved}</span>}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function Settings({ deal, onSaved }) {
   const [folder, setFolder] = useState('');
   const [d, setD] = useState({ title: deal.title, address: deal.address, status: deal.status, buyer_name: deal.buyer_name || '', seller_name: deal.seller_name || '' });
@@ -358,6 +251,7 @@ export default function Owner({ deal: initial, me, tab }) {
       {active === 'overview' && (
         <div className="space-y-5">
           <Dashboard deal={deal} me={me} role="owner" />
+          <LoanPosition deal={deal} role="owner" />
           <LenderBoard deal={deal} me={me} role="owner" />
         </div>
       )}
@@ -378,7 +272,6 @@ export default function Owner({ deal: initial, me, tab }) {
           <CityRecords deal={deal} role="owner" />
         </Suspense>
       )}
-      {active === 'seller-page' && <div className="space-y-5"><LoanPosition deal={deal} role="owner" /><SellerEditor deal={deal} onSaved={setDeal} /></div>}
       {active === 'settings' && <div className="space-y-6"><People deal={deal} /><div className="grid gap-6 lg:grid-cols-[1fr_360px]"><Settings deal={deal} onSaved={setDeal} /><OwnerAlerts /></div><Notes deal={deal} me={me} /></div>}
     </div>
   );

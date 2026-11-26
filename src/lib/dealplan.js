@@ -1143,61 +1143,39 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
   const guide = buildLeadGuide(effectiveBase, plan, offer || { structure, inputs: x }, comps);
   const costSummary = guide.costSummary;
 
+  const unitsCount = table.rows.length ? table.rows[table.rows.length - 1].units : 10;
   const intro = 'I take over the leasing and the repairs. Rent pays your costs first. Once every unit is rented, I buy the building through a refinance.';
   const sellerTable = table.rows.map((r) => ({ units: r.units, rentIn: r.rentIn, covered: r.covered }));
-  const refiLine = `Once all 10 are rented, I refinance and pay you ${sellerLoanText(table.refi.sellerPayoff, true)}, and your loan is paid off.`;
+  const payoffText = sellerLoanText(table.refi.sellerPayoff, true);
+  const refiLine = `Once all ${unitsCount} are rented, I refinance and pay you ${payoffText}, and your loan is paid off.`;
 
+  const SELLER_COST_WORDS = { sellerLoan: 'your loan', taxes: 'taxes', insurance: 'insurance', water: 'water' };
+  const emptyRow = table.rows[0] || { sellerCostsBreakdown: [] };
+  const keepPaying = (emptyRow.sellerCostsBreakdown || []).filter((i) => SELLER_COST_WORDS[i.key] && i.amount > 0);
+  const keepWords = keepPaying.map((i) => SELLER_COST_WORDS[i.key]);
+  const joinWords = (w) => (w.length <= 1 ? (w[0] || '') : `${w.slice(0, -1).join(', ')} and ${w[w.length - 1]}`);
+  const keepValue = keepWords.length ? joinWords(keepWords).replace(/^./, (c) => c.toUpperCase()) : 'Your current holding costs';
+  const keepOverlay = (emptyRow.sellerCostsBreakdown || [])
+    .filter((i) => i.amount > 0)
+    .map((i) => (i.key === 'emptyUtils'
+      ? `Utilities on each empty unit: ${money(i.amount / Math.max(1, unitsCount))}/mo (estimate)`
+      : `${i.key === 'sellerLoan' ? 'Your loan' : i.label}: ${money(i.amount)}/mo${i.estimate ? ' (estimate)' : ''}`));
+
+  const coveredAt = table.sellerCoveredAt;
   const terms = [
-    {
-      label: 'How it works',
-      value: intro,
-      overlay: ['Rent pays your holding costs first. Anything above that goes to the buyer.'],
-    },
-    {
-      label: 'Payoff at refinance',
-      value: sellerLoanText(table.refi.sellerPayoff, true),
-      overlay: [
-        refiLine,
-        structure === 'seller_rehab' ? OPTION_E_OVERLAY : null,
-      ].filter(Boolean),
-    },
-    ...(plan.sellerLoanBalance > 0 ? [{
-      label: 'Your current loan',
-      value: sellerLoanText(plan.sellerLoanBalance, true),
-      overlay: result.sellerLoanPayment > 0
-        ? `Estimated ${money(result.sellerLoanPayment)}/mo at ${plan.sellerLoanRate}% (${plan.sellerLoanYears}-yr schedule).`
-        : 'Current loan payoff is confirmed by your lender payoff letter.',
-    }] : []),
-    {
-      label: 'What I take on',
-      value: 'Repairs, leasing, day-to-day operations, city approvals, and permanent bank financing.',
-      overlay: 'I coordinate contractors, fill vacant units, and arrange the refinance once all 10 units are rented.',
-    },
+    { label: 'Buyout', value: payoffText, overlay: ['Paid at the refinance. Your loan is paid off.', structure === 'seller_rehab' ? OPTION_E_OVERLAY : null].filter(Boolean) },
+    { label: 'You keep paying', value: keepValue, overlay: keepOverlay },
+    { label: 'Rent pays you first', value: coveredAt !== null ? `Covered at ${coveredAt} units rented` : 'Rent goes to your costs first', overlay: [] },
+    { label: 'I buy when', value: `All ${unitsCount} units are rented`, overlay: ['I refinance and pay you off then.'] },
   ];
 
+  const repairsTotal = Math.round(num(costSummary.total, 0) / 1000) * 1000;
+  const repairsOverlay = (costSummary.lines || []).map((l) => l.label.replace(/^Setup about /, 'Setup ')).filter(Boolean);
   const steps = [
-    {
-      title: 'Take over',
-      when: '',
-      detail: 'I take over the leasing and the repairs across all 10 units.',
-    },
-    {
-      title: 'Repairs',
-      when: '',
-      detail: costSummary.oneLine,
-    },
-    {
-      title: 'Rent pays your costs first',
-      when: '',
-      detail: table.sellerCoveredAt !== null
-        ? `Rent covers your costs starting at ${table.sellerCoveredAt} units rented.`
-        : 'Rent goes toward your holding costs first as units fill.',
-    },
-    {
-      title: 'Refinance',
-      when: '',
-      detail: refiLine,
-    },
+    { title: 'Master lease', detail: 'We sign a master lease. I take over the leasing and the repairs.', overlay: [] },
+    { title: 'Repairs', detail: repairsTotal > 0 ? `I pay for the repairs, about ${money(repairsTotal)}. You put in nothing.` : 'I pay for the repairs. You put in nothing.', overlay: repairsOverlay },
+    { title: 'Rent', detail: coveredAt !== null ? `Rent pays your costs first. You are covered at ${coveredAt} units rented.` : 'Rent pays your costs first.', overlay: [] },
+    { title: 'Refinance', detail: `Once all ${unitsCount} are rented, I refinance and pay you ${payoffText}.`, overlay: [] },
   ];
 
   return {
@@ -1215,11 +1193,8 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
 }
 
 export function nextSellerSummary(offer, result, opts = {}) {
-  const fresh = buildSellerSummary(offer, result, opts);
-  if (offer?.seller_summary?.locked) {
-    return { ...offer.seller_summary, guide: fresh.guide };
-  }
-  return fresh;
+  // Always regenerated from the numbers; the seller page is never typed by hand.
+  return buildSellerSummary(offer, result, opts);
 }
 
 // Convenience wrappers used by Offers.jsx so the owner-only dynamic module never exposes monthlyPlan/buildOfferStory identifiers in public/seller bundles.
