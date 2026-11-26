@@ -91,16 +91,18 @@ test('seller page: two notes, no regular lender rate, no buyer numbers, no carry
   const s = offerSellerSummary({ name: 'A: Seller financing', ...LEAD }, BASE, PLAN, [], false);
   assert.equal(s.renoFromSeller, true);
   const labels = s.terms.map((x) => x.label);
-  for (const l of ['Purchase note', 'Renovation note', 'Renovation note rate', 'Note payments', 'Paid back in full when']) assert.ok(labels.includes(l), l);
-  assert.equal(s.terms.find((x) => x.label === 'Renovation note rate').value, '8%, no points');
+  for (const l of ['Purchase note', 'Renovation note', 'Renovation note rate', 'Your monthly payments', 'Paid back in full']) assert.ok(labels.includes(l), l);
+  assert.equal(s.terms.find((x) => x.label === 'Renovation note rate').value, '8% a year');
   assert.ok(!labels.includes('Regular lender'));
   const seen = ['title', 'intro', 'sellerTable', 'refiLine', 'terms', 'steps'].map((k) => JSON.stringify(s[k])).join(' ');
   assert.doesNotMatch(seen, /11%|2\.5 points|regular|lender/i);
   assert.ok(!labels.includes('You can also fund the repairs'));
-  assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Paid back in full']);
+  assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Your monthly payments', 'Paid back in full']);
   assert.match(s.refiLine, /paid back in full/);
-  assert.match(s.steps[1].detail, /You earn 8% every month until you are paid back in full/);
-  assert.match(s.refiLine, /Purchase note \$250,000, renovation note \$85,000/);
+  assert.match(s.steps[1].detail, /at 8% a year, paid to you monthly/);
+  assert.doesNotMatch(seen, /no points|every month until|once all|units are rented|when all/i);
+  assert.match(s.steps[2].detail, /You get \$[0-9,]+ a month: \$[0-9,]+ on the purchase note and \$[0-9,]+ on the renovation note/);
+  assert.match(s.refiLine, /a month, then you are paid back in full: \$[0-9,]+\./);
   const visible = JSON.stringify([s.intro, s.terms, s.steps, s.refiLine, s.sellerTable]);
   assert.doesNotMatch(visible, /carr(y|ies|ied)|refi|net\b|cash flow|left for you|DSCR|reserve/i);
   const t = unitsRentedTable(BASE, PLAN, LEAD);
@@ -185,4 +187,13 @@ test('contingency counts in the seller renovation note only if used', () => {
   const st = applyGuideRefi(buildLeadStory('wrap', evaluate('wrap', LEAD.inputs, BASE), { base: BASE }), rf, g);
   const rehab = st.steps.find((x) => x.title === 'Rehab').lines.map((l) => l.label);
   assert.ok(rehab.includes('Contingency'));
+});
+
+test('seller page has an Offer tab and a Photos tab with a full gallery grid', () => {
+  const src = readFileSync(join(root, 'src/views/Seller.jsx'), 'utf8');
+  assert.match(src, /role="tablist"/);
+  assert.match(src, /Photos \(\$\{galleryPhotos\.length\}\)/);
+  assert.match(src, /<PhotoGrid photos=\{galleryPhotos\} \/>/);
+  const photos = readFileSync(join(root, 'src/components/Photos.jsx'), 'utf8');
+  assert.match(photos, /export function PhotoGrid/);
 });

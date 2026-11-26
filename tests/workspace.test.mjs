@@ -39,7 +39,7 @@ test('seller stays outside underwriting and shows single offer plus execution pl
   const card = readFileSync(new URL('../src/components/LeadOfferCard.jsx', import.meta.url), 'utf8');
   assert.match(src, /<LeadOfferCard/);
   assert.match(src, /<ExecutionPlanCard/);
-  assert.match(src, /PhotoStrip photos/);
+  assert.match(src, /PhotoGrid photos/);
   assert.match(card, /6801234 and 6807893/);
   assert.doesNotMatch(src, /comparison-table|Side by side|One at a time|carry_now|with_us/);
   assert.doesNotMatch(src, /commercial_offers|commercial_models|canSave|SellerEditor/);

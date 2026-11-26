@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Empty } from '../components/Shell.jsx';
 import Messages, { sendToOwner, useSellerMessagesTo } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
-import { Cover, PhotoStrip, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
+import { Cover, PhotoGrid, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
 import { coverOf } from '../lib/v63.js';
 import LoanPosition from '../components/LoanPosition.jsx';
 import { ExecutionPlanCard, LeadOfferCard } from '../components/LeadOfferCard.jsx';
@@ -33,6 +33,13 @@ export default function Seller({ deal, me, preview }) {
   const cover = coverOf(coverRows);
   const shownPhotos = [...coverRows.filter((r) => r !== cover), ...walk];
   const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
+  const galleryPhotos = [...(cover ? [cover] : []), ...shownPhotos];
+  const hasGallery = galleryPhotos.length > 0 || walkVideos.length > 0;
+  const [tab, setTab] = useState('offer');
+  const pick = (t) => {
+    setTab(t);
+    window.scrollTo(0, 0);
+  };
 
   useEffect(() => {
     let live = true;
@@ -71,13 +78,23 @@ export default function Seller({ deal, me, preview }) {
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>
       </div>
 
-      {(shownPhotos.length > 0 || walkVideos.length > 0) && (
-        <section className="space-y-3">
-          <h2 className="font-display text-2xl font-semibold">Photos</h2>
-          {shownPhotos.length > 0 && <PhotoStrip photos={shownPhotos} />}
+      {hasGallery && (
+        <div className="sticky top-0 z-20 -mx-1 flex gap-2 bg-paper/95 px-1 py-2 backdrop-blur" role="tablist" aria-label="Seller page">
+          {[['offer', 'Offer'], ['photos', `Photos (${galleryPhotos.length})`]].map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => pick(k)}
+              className={`min-h-[44px] flex-1 rounded-full border px-4 text-sm font-semibold sm:flex-none ${tab === k ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === 'photos' && hasGallery ? (
+        <section className="space-y-4" aria-label="Photos">
+          {galleryPhotos.length > 0 && <PhotoGrid photos={galleryPhotos} />}
           <WalkVideos videos={walkVideos} />
         </section>
-      )}
+      ) : (<>
 
       <LeadOfferCard
         deal={deal}
@@ -115,6 +132,7 @@ export default function Seller({ deal, me, preview }) {
           <div className="mt-4">{mine.length ? <FileList rows={mine} /> : <Empty>No files shared yet.</Empty>}</div>
         </Card>
       </div>
+      </>)}
     </div>
   );
 }

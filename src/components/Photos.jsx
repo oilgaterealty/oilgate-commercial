@@ -24,6 +24,24 @@ export function PhotoStrip({ photos }) {
   );
 }
 
+// Every photo at once in a grid. Tap one to open it full screen, then swipe or use the arrows.
+export function PhotoGrid({ photos }) {
+  const [view, setView] = useState(null);
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {photos.map((p, j) => (
+          <button key={p.id || p.url} type="button" onClick={() => setView(j)} aria-label={`Open photo ${j + 1} of ${photos.length}`}
+            className="block aspect-[4/3] w-full cursor-zoom-in overflow-hidden rounded-xl bg-ink/5">
+            <img src={p.url} alt={p.note || 'Property photo'} loading="lazy" className="h-full w-full object-cover" />
+          </button>
+        ))}
+      </div>
+      <PhotoViewer items={photos.map((p) => ({ url: p.url, alt: p.note || 'Property photo' }))} index={view} onIndex={setView} />
+    </div>
+  );
+}
+
 // One cover photo up top: the starred upload. No slideshow, no arrows, no thumbnail strip. Tap to open full screen.
 // compact: a short banner (the seller page), about a quarter of the full cover's height.
 export function Cover({ rows, empty, compact }) {

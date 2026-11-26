@@ -12,7 +12,7 @@ test('seller page: short cover, no intro line, plain "Photos" title', () => {
   assert.match(s, /<Cover rows=\{coverRows\} compact \/>/);
   assert.doesNotMatch(s, /c\.intro/);
   assert.doesNotMatch(s, /Photos from our visit/);
-  assert.match(s, />Photos</);
+  assert.match(s, /'Photos \(\$\{galleryPhotos\.length\}\)'|`Photos \(\$\{galleryPhotos\.length\}\)`/);
   const p = src('src/components/Photos.jsx');
   assert.match(p, /compact \? 'h-36 w-full object-cover sm:h-48'/);
 });
