@@ -161,7 +161,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
                 {offers === null ? <Empty>Loading…</Empty> : !leadOffer ? <Empty>No lead offer shared yet.</Empty> : (
                   <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-paper p-3">
-                      <dt className="text-xs text-ink-soft">{leadOffer.structure === 'wrap' ? 'Seller’s note' : 'Seller payoff'}</dt>
+                      <dt className="text-xs text-ink-soft">Seller payoff</dt>
                       <dd className="mt-1 font-display text-xl font-semibold">
                         {refiGuide ? refiGuide.sellerPayoffText : leadOffer.structure === 'wrap' ? money(leadEval?.inputs?.note) : leadPlain?.payoff || '—'}
                       </dd>
