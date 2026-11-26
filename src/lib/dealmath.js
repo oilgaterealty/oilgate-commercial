@@ -41,7 +41,7 @@ export const STRUCTURES = {
       ['sellerAdvances', 'Seller’s upfront money, added to the price', '$'],
       ['creditPct', 'Share of each payment that counts toward the price', '%'],
       ['exerciseClosing', 'Closing costs when we buy', '$'],
-      ['shortCarry', 'Short months carried by the repair loan ($)', '$'],
+      ['shortCarry', 'Short months paid by the repair loan ($)', '$'],
       ['buyerCash', 'Your cash in', '$'],
     ],
     defaults: { payment: 0, optionPrice: 0, sellerAdvances: 0, creditPct: 100, exerciseClosing: 0, shortCarry: 0, buyerCash: 0 },
@@ -55,9 +55,11 @@ export const STRUCTURES = {
       ['sellerLoanPayment', 'Seller’s own loan payment / mo (0 = unknown)', '$'],
       ['closing', 'Closing costs', '$'],
       ['buyerCash', 'Your cash in', '$'],
-      ['billsFromRent', 'Bills paid from rent; seller carries until then', 'bool'],
+      ['billsFromRent', 'Bills paid from rent first; the rest is paid at refi', 'bool'],
+      ['renoFromSeller', 'Seller funds the repairs as a second note', 'bool'],
+      ['renoRate', 'Seller repair note rate (interest only, no points)', '%'],
     ],
-    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, closing: 0, shortCarry: 0, buyerCash: 0, billsFromRent: false },
+    defaults: { note: 0, rate: 5, amortYears: 0, sellerLoanPayment: 0, closing: 0, shortCarry: 0, buyerCash: 0, billsFromRent: false, renoFromSeller: false, renoRate: 8 },
   },
   partnership: {
     label: 'Partner now, buy out later',
@@ -328,8 +330,11 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const fullLeft = evalResult.keepMonthly;
 
   const advances = structure === 'master_lease' || structure === 'partnership' ? x.sellerAdvances : structure === 'seller_rehab' ? x.sellerFund : 0;
-  const closingCost = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab' || structure === 'wrap') ? x.closing : 0;
-  const sellerPayoffEst = structure === 'master_lease'
+  const closingCostRaw = structure === 'master_lease' ? x.exerciseClosing : (structure === 'partnership' || structure === 'seller_rehab' || structure === 'wrap') ? x.closing : 0;
+  // Seller repair note (seller financing): the repair budget plus the closing costs rolled into it, paid off at the refi.
+  const renoNoteEst = structure === 'wrap' && x.renoFromSeller ? Math.max(0, num(b.rehab, 0)) + Math.max(0, num(x.closing, 0)) : 0;
+  const closingCost = renoNoteEst > 0 ? 0 : closingCostRaw;
+  const sellerPayoffBase = structure === 'master_lease'
     ? x.optionPrice + x.sellerAdvances
     : structure === 'wrap'
       ? x.note
@@ -338,6 +343,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
         : structure === 'seller_rehab'
           ? (x.addFundToBuyout ? x.sellerFund : 0)
           : x.price;
+  const sellerPayoffEst = sellerPayoffBase + renoNoteEst;
   const refiLeft = structure === 'cash' ? null : o.refiNet - sellerPayoffEst - closingCost;
   const maxSellerAtRefi = structure === 'cash' ? null : o.refiNet - closingCost;
   const afterLeft = structure === 'cash' ? fullLeft : o.cashFlow / 12 - o.refiPayment;

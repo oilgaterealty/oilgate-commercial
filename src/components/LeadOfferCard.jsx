@@ -93,9 +93,10 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
   const hasSellerTable = Boolean(summary && Array.isArray(summary.sellerTable) && summary.sellerTable.length > 0);
   const hasSummary = Boolean(summary && Array.isArray(summary.terms) && summary.terms.length > 0);
   const firstCoveredUnits = hasSellerTable ? (summary.sellerTable.find((r) => r.covered === 'yes')?.units ?? null) : null;
-  // Seller financing rows also carry the note payment and the holding bills.
+  // Seller financing rows also show the note payment and the holding bills.
   const hasCosts = hasSellerTable && summary.sellerTable.some((r) => Number.isFinite(+r.note) && r.note !== null && r.note !== undefined);
-  const billsFromRent = Boolean(summary?.billsFromRent || /you carry|seller carries/i.test(summary?.intro || ''));
+  const billsFromRent = Boolean(summary?.billsFromRent);
+  const twoNotes = Boolean(summary?.renoFromSeller);
   const rows = hasSummary
     ? summary.terms.map((t) => ({
         label: String(t?.label || '').trim(),
@@ -158,8 +159,8 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                 <tr>
                   <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
                   <th scope="col" className="px-3 py-2.5">Rent in</th>
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">Your note payment</th>}
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills (you carry)' : 'Taxes, insurance, utilities (I pay)'}</th>}
+                  {hasCosts && <th scope="col" className="px-3 py-2.5">{twoNotes ? 'Your note payments' : 'Your note payment'}</th>}
+                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills added to your payoff' : 'Taxes, insurance, utilities (I pay)'}</th>}
                   <th scope="col" className="px-3 py-2.5 text-center">{coveredLabel}</th>
                 </tr>
               </thead>
@@ -170,7 +171,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                     <tr key={row.units} className={`border-t border-line ${isFirstYes ? 'bg-emerald-50 font-semibold' : 'bg-white'}`}>
                       <th scope="row" className="px-3 py-2 text-left">{row.units}</th>
                       <td className="px-3 py-2">{fmtDollars(row.rentIn)}</td>
-                      {hasCosts && <td className="px-3 py-2">{row.noteWaits > 0 && OverlayTrigger ? <OverlayTrigger lines={[`Paid from rent: ${fmtDollars(row.note)}`, `${fmtDollars(row.noteWaits)} waits and is paid at the refinance`]}>{fmtDollars(row.note)}</OverlayTrigger> : fmtDollars(row.note)}</td>}
+                      {hasCosts && <td className="px-3 py-2">{row.noteWaits > 0 && OverlayTrigger ? <OverlayTrigger lines={[`Paid from rent: ${fmtDollars(row.note)}`, `${fmtDollars(row.noteWaits)} is added to your payoff`]}>{fmtDollars(row.note)}</OverlayTrigger> : fmtDollars(row.note)}</td>}
                       {hasCosts && (
                         <td className="px-3 py-2">
                           {Array.isArray(row.billsLines) && row.billsLines.length > 0 && OverlayTrigger

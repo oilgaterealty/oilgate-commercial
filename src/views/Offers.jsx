@@ -284,11 +284,13 @@ export function OptionTable({ offers, stories, planHrefOf }) {
       }],
       ['Repair loan paid off', (o) => {
         const r = g(o)?.refi;
+        if (r?.renoFromSeller) return <OverlayTrigger lines={r.repairLoanOverlay} className="font-semibold">{money(r.renoNotePrincipal)} seller note</OverlayTrigger>;
         return r ? <OverlayTrigger lines={r.repairLoanOverlay} className="font-semibold">{money(r.repairLoanPayoff)} unused · {money(r.repairLoanPayoffContUsed)} all used</OverlayTrigger> : '—';
       }],
       ['Left for you', (o) => {
         const r = g(o)?.refi;
         if (!r) return '—';
+        if (r.renoFromSeller) return <div className="font-display text-lg font-semibold"><OverlayTrigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>{money(r.leftForYou)}</OverlayTrigger></div>;
         return (
           <div className="space-y-1 font-display text-lg font-semibold">
             <div><OverlayTrigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>{money(r.leftForYou)} unused</OverlayTrigger></div>
@@ -600,7 +602,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
                     onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, [k]: nv } })} />;
                 })}
                 {owner && cur.structure !== 'cash' && !STRUCTURES[cur.structure].fields.some(([k]) => k === 'shortCarry') && (
-                  <NumberRow label="Short months carried by the repair loan ($)" unit="$"
+                  <NumberRow label="Short months paid by the repair loan ($)" unit="$"
                     value={cur.inputs?.shortCarry ?? 0} changed={Boolean(cur.inputs?.shortCarry)}
                     onChange={(nv) => patch(cur.id, { inputs: { ...cur.inputs, shortCarry: nv } })} />
                 )}

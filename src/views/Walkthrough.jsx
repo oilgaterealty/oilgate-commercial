@@ -895,7 +895,7 @@ export default function Walkthrough({ deal, me, role, preview }) {
       if (mountedRef.current) {
         setLocalMedia((prev) => prev.map((m) => (m.id === item.id ? uploading : m)));
       }
-      // Use the stored copy: it carries any move made after this item was queued.
+      // Use the stored copy: it includes any move made after this item was queued.
       item = uploading;
 
       const ext =

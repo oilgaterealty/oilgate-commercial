@@ -93,7 +93,7 @@ test('actual Plans markup renders units-rented table, collapses month-by-month, 
     assert.match(html, /Refinance/);
     assert.match(html, /Left for you/);
     assert.doesNotMatch(html, /Added unit \(Unit 10\) rehab/);
-    assert.match(html, /Short months carried by the repair loan/);
+    assert.match(html, /Short months paid by the repair loan/);
     assert.match(html, /Step by step/);
     assert.doesNotMatch(html, /example pace/);
     // Collapsed by default: step-by-step table and rentOptions are not shown

@@ -19,24 +19,34 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
     ? { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost }
     : null);
   const r = guide.refi;
-  const showCarriedBills = Boolean(r.billsFromRent || r.sellerCarriedBills > 0);
+  const reno = Boolean(r.renoFromSeller);
+  const oneBudget = Boolean(guide.oneBudget || reno);
+  const showDeferred = Boolean(r.billsFromRent || r.sellerCarriedBills > 0);
+  const rc = r.renoCompare || null;
+  const compareLines = rc
+    ? [
+        `Seller note: ${rc.sellerRate}% interest only, no points. ${money(rc.sellerMo)}/mo.`,
+        `Regular repair lender: ${rc.regularRate}% interest only plus ${rc.regularPointsPct} points (${money(rc.regularPoints)}). ${money(rc.regularMo)}/mo.`,
+      ]
+    : [];
   const refiLines = [
     { label: r.estimatedValueLabel || 'Value', value: money(r.estimatedValue), overlay: r.estimatedValueOverlay },
     { label: `Loan at ${r.ltvShownPct}%`, value: money(r.loan), overlay: r.loanOverlay },
     { label: 'In hand after fees and reserve', value: money(r.inHand), overlay: r.inHandOverlay },
     {
       label: r.sellerPayoffLabel || 'Seller paid off',
-      value: showCarriedBills ? money(r.sellerNotePrincipal ?? r.sellerPayoff) : r.sellerPayoffText,
+      value: showDeferred ? money(r.sellerNotePrincipal ?? r.sellerPayoff) : r.sellerPayoffText,
       overlay: r.sellerPayoffOverlay,
     },
-    ...(showCarriedBills
-      ? [{ label: r.sellerCarriedBillsLabel || 'Seller’s carried bills, paid at refinance', value: money(r.sellerCarriedBills || 0), overlay: r.sellerCarriedBillsOverlay }]
+    ...(reno ? [{ label: r.renoNoteLabel || 'Seller renovation note paid off', value: money(r.renoNotePrincipal), overlay: r.repairLoanOverlay }] : []),
+    ...(showDeferred
+      ? [{ label: r.sellerCarriedBillsLabel || 'Deferred holding costs, paid at refi', value: money(r.sellerCarriedBills || 0), overlay: r.sellerCarriedBillsOverlay }]
       : []),
-    {
+    ...(reno ? [] : [{
       label: 'Repair loan paid off',
       value: `${money(r.repairLoanPayoff)} unused · ${money(r.repairLoanPayoffContUsed)} all used`,
       overlay: r.repairLoanOverlay,
-    },
+    }]),
     ...(r.closing > 0 ? [{ label: 'Closing', value: money(r.closing), overlay: r.closingOverlay }] : []),
   ];
 
@@ -45,7 +55,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
       {showCostSummary && costSummary && <CostSummary summary={costSummary} Trigger={Trigger} />}
 
       <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Units rented table">
-        <table className="w-full min-w-[540px] border-collapse text-right text-sm tabular-nums">
+        <table className={`w-full ${oneBudget ? 'min-w-0' : 'min-w-[540px]'} border-collapse text-right text-sm tabular-nums`}>
           <thead className="bg-ink text-xs text-white">
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Units</th>
@@ -53,7 +63,7 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
               <th scope="col" className="px-3 py-2.5">{guide.costsLabel || 'Seller’s costs'}</th>
               <th scope="col" className="px-3 py-2.5 text-center">Covered</th>
               <th scope="col" className="px-3 py-2.5">You net</th>
-              <th scope="col" className="px-3 py-2.5">You net, contingency used</th>
+              {!oneBudget && <th scope="col" className="px-3 py-2.5">You net, contingency used</th>}
             </tr>
           </thead>
           <tbody>
@@ -75,11 +85,11 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
                       {money(row.buyerNet)}
                     </Trigger>
                   </td>
-                  <td className="px-3 py-2">
+                  {!oneBudget && <td className="px-3 py-2">
                     <Trigger lines={row.buyerNetContUsedOverlay} className={row.buyerNetContUsed >= 0 ? 'font-semibold text-good' : 'text-red-700'}>
                       {money(row.buyerNetContUsed)}
                     </Trigger>
-                  </td>
+                  </td>}
                 </tr>
               );
             })}
@@ -91,6 +101,18 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
         <div className="font-display text-lg font-semibold text-ink">
           <Trigger lines={['Refinance happens when all 10 units are rented.']}>Refinance</Trigger>
         </div>
+        {rc && (
+          <div className="mt-3 grid grid-cols-2 gap-2 text-sm" role="group" aria-label="Renovation note vs regular lender">
+            <div className="rounded-xl bg-paper p-2.5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Seller note</div>
+              <Trigger lines={compareLines} className="font-semibold text-good">{rc.sellerRate}%, no points</Trigger>
+            </div>
+            <div className="rounded-xl bg-paper p-2.5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Regular lender</div>
+              <Trigger lines={compareLines} className="font-semibold text-ink">{rc.regularRate}% + {rc.regularPointsPct} points</Trigger>
+            </div>
+          </div>
+        )}
         <ol className="mt-3 space-y-2 text-sm">
           {refiLines.map((line, idx) => (
             <li key={line.label} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -107,13 +129,21 @@ export default function UnitsRentedGuide({ guide, Trigger = OverlayTrigger, show
               <span>Left for you</span>
             </span>
             <span className="flex flex-wrap items-baseline justify-end gap-x-2 font-display text-2xl font-semibold leading-tight">
-              <Trigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>
-                {money(r.leftForYou)} unused
-              </Trigger>
-              <span className="text-sm font-normal text-ink-soft">·</span>
-              <Trigger lines={r.leftForYouContUsedOverlay} className={r.leftForYouContUsed >= 0 ? 'text-good' : 'text-red-700'}>
-                {money(r.leftForYouContUsed)} all used
-              </Trigger>
+              {oneBudget ? (
+                <Trigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>
+                  {money(r.leftForYou)}
+                </Trigger>
+              ) : (
+                <>
+                  <Trigger lines={r.leftForYouOverlay} className={r.leftForYou >= 0 ? 'text-good' : 'text-red-700'}>
+                    {money(r.leftForYou)} unused
+                  </Trigger>
+                  <span className="text-sm font-normal text-ink-soft">·</span>
+                  <Trigger lines={r.leftForYouContUsedOverlay} className={r.leftForYouContUsed >= 0 ? 'text-good' : 'text-red-700'}>
+                    {money(r.leftForYouContUsed)} all used
+                  </Trigger>
+                </>
+              )}
             </span>
           </li>
         </ol>

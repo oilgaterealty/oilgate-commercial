@@ -126,8 +126,8 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
-          <span>Short months carried by the repair loan ($)</span>
-          <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months carried by the repair loan ($)" value={shortCarry}
+          <span>Short months paid by the repair loan ($)</span>
+          <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months paid by the repair loan ($)" value={shortCarry}
             onChange={(e) => onChangeShortCarry?.(e.target.value === '' ? 0 : +e.target.value)}
             className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
         </label>

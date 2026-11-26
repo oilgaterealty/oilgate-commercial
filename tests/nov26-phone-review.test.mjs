@@ -87,7 +87,7 @@ const WRAP_PLAN = {
   ],
 };
 
-test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; buyer pays $0 for note/bills; carried bills added at refi', () => {
+test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; buyer pays $0 for note/bills; deferred costs added at refi', () => {
   assert.ok(STRUCTURES.wrap.fields.some(([k, l, u]) => k === 'billsFromRent' && u === 'bool' && /Bills paid from rent/.test(l)));
   assert.equal(STRUCTURES.wrap.defaults.billsFromRent, false);
 
@@ -100,13 +100,13 @@ test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; b
   assert.equal(tOff.billsFromRent, false);
   assert.equal(tOn.billsFromRent, true);
 
-  // 0 units rented: rent = 0, bills = 1000 + 500 + 500 + 10*100 = 3000. Seller carries all 3000; note waits; buyerNet excludes note and bills.
+  // 0 units rented: rent = 0, bills = 1000 + 500 + 500 + 10*100 = 3000. All 3000 and the note wait for the refi; buyerNet excludes note and bills.
   const r0 = tOn.rows[0];
   assert.equal(r0.rentIn, 0);
   near(r0.billsTotal, 3000);
   near(r0.billsPaidFromRent, 0);
   near(r0.billsSellerCarries, 3000);
-  near(r0.sellerCosts, 3000);
+  near(r0.sellerCosts, 3000 + notePay);
   near(r0.notePaid, 0);
   near(r0.noteWaits, notePay);
   assert.equal(r0.covered, 'no');
@@ -144,13 +144,15 @@ test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; b
   assert.equal(r10.covered, 'yes');
   near(r10.buyerNet, (10000 - 2000 - notePay) - tOn.repairLoan.interestUnused - (10 * 300) / 12);
 
-  // Refinance payoff adds running carried bills and UnitsRentedGuide displays "Seller's carried bills, paid at refinance"
+  // Refinance payoff adds deferred holding costs (bills and waited note payments) and UnitsRentedGuide shows them
   const refiOff = refi(WRAP_BASE, WRAP_PLAN, offerOff);
   const refiOn = refi(WRAP_BASE, WRAP_PLAN, offerOn);
-  assert.equal(refiOff.sellerCarriedBills, 0);
+  assert.equal(refiOff.deferred.bills, 0);
+  assert.ok(refiOn.deferred.bills > 0);
   assert.ok(refiOn.sellerCarriedBills > 0);
   near(refiOn.sellerPayoff, 360000 + refiOn.sellerCarriedBills);
-  near(refiOff.leftForYou - refiOn.leftForYou, refiOn.sellerCarriedBills);
+  near(refiOff.sellerPayoff, 360000 + refiOff.sellerCarriedBills);
+  near(refiOff.leftForYou - refiOn.leftForYou, refiOn.sellerCarriedBills - refiOff.sellerCarriedBills);
 
   const planRes = monthlyPlan('wrap', offerOn.inputs, WRAP_BASE, WRAP_PLAN);
   assert.ok(planRes.exit.sellerCarriedBills > 0);
@@ -158,7 +160,7 @@ test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; b
   const summary = offerSellerSummary({ name: 'B: Seller financing', ...offerOn }, WRAP_BASE, WRAP_PLAN, [], false);
   assert.equal(summary.billsFromRent, true);
   assert.match(summary.intro, /holding bills.*first, then your note/i);
-  assert.match(summary.refiLine, /carried bills/);
+  assert.match(summary.refiLine, /deferred holding costs/);
   assert.doesNotMatch(JSON.stringify({ intro: summary.intro, terms: summary.terms, steps: summary.steps, refiLine: summary.refiLine }), /interest|reserve|DSCR|left for you/i);
 
   // UnitsRentedGuide renders the refi carried bills row
@@ -171,7 +173,7 @@ test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; b
     '../lib/dealmath.js': { money },
   }).default;
   const guideHtml = renderToStaticMarkup(React.createElement(UnitsRentedGuide, { guide }));
-  assert.match(guideHtml, /Seller’s carried bills, paid at refinance/);
+  assert.match(guideHtml, /Deferred holding costs, paid at refi/);
 });
 
 test('sortComps and nextCompSort support two-column sorting with nulls last', () => {

@@ -36,12 +36,13 @@ test('seller financing: shortfall below the note and bills is the owner’s; mas
 
 test('refi pays off the note; closing is rolled into the repair loan', () => {
   const r = refi(BASE, PLAN, NOTE);
-  assert.equal(r.sellerPayoff, 180000);
-  assert.equal(r.sellerPayoffLabel, 'Seller’s note paid off');
+  assert.equal(r.sellerNotePrincipal, 180000);
+  assert.ok(Math.abs(r.sellerPayoff - (180000 + r.sellerCarriedBills)) < 1e-6);
+  assert.equal(r.sellerPayoffLabel, 'Seller purchase note paid off');
   assert.equal(r.closing, 0);
   assert.equal(r.closingInLoan, 3000);
   assert.ok(r.repairLoanOverlay.some((l) => /Closing costs: \$3,000 in the repair loan/.test(l)));
-  assert.ok(Math.abs(r.leftForYou - (r.inHand - 180000 - r.repairLoanPayoff)) < 1e-6);
+  assert.ok(Math.abs(r.leftForYou - (r.inHand - r.sellerPayoff - r.repairLoanPayoff)) < 1e-6);
   const noClose = refi(BASE, PLAN, { ...NOTE, inputs: { ...NOTE.inputs, closing: 0 } });
   assert.ok(r.repairLoanPayoff > noClose.repairLoanPayoff + 3000 - 1e-6);
 });
@@ -63,7 +64,7 @@ test('seller summary: seller financing steps, no buyer numbers', () => {
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Rent', 'Your choice: fund the repairs', 'Refinance']);
   assert.match(s.steps[3].detail, /You can also be my repair lender: \$[\d,]+ as a second note, paid off at the refinance/);
   assert.ok(s.terms.some((t) => t.label === 'You can also fund the repairs'));
-  assert.match(s.steps[2].detail, /waits and is paid at the refinance/);
+  assert.match(s.steps[2].detail, /added to your payoff/);
   const visible = JSON.stringify({ intro: s.intro, terms: s.terms, steps: s.steps, refiLine: s.refiLine, sellerTable: s.sellerTable });
   assert.doesNotMatch(visible, /net|cash flow|left for you|DSCR|interest|reserve|lease/i);
   assert.match(s.refiLine, /pay off your note/);
