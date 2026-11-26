@@ -387,7 +387,8 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   const model = useDealModel(deal, { owner, onlyShared });
   const { offers, setOffers, base, setBase: saveBase, later, saved } = model;
   const [active, setActive] = useState(null);
-  const [view, setView] = useState('cards');
+  // Owner opens on the short comparison table; everyone else opens on the lead offer.
+  const [view, setView] = useState(owner ? 'table' : 'cards');
   const [leadErr, setLeadErr] = useState('');
   const [planState, setPlanState] = useState({ lib: null, plan: null });
   const [comps, setComps] = useState([]);

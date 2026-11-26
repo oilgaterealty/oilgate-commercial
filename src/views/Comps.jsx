@@ -25,6 +25,8 @@ function CompFacts({ c }) {
   );
 }
 
+const PHONE_COMPS = 5;
+
 export default function Comps({ deal, me, role, preview }) {
   const access = v5Access(role);
   const owner = access.saveComps && !preview;
@@ -39,6 +41,7 @@ export default function Comps({ deal, me, role, preview }) {
   const [picks, setPicks] = useState([]);
   const [previewPicks, setPreviewPicks] = useState([]);
   const [view, setView] = useState('all'); // 'all' or a picker's uid; only changes what this screen shows
+  const [phoneAll, setPhoneAll] = useState(false); // phone list shows the first few comps until asked for all
   const [loadErr, setLoadErr] = useState('');
   const [status, setStatus] = useState('');
   const [pending, setPending] = useState(false);
@@ -381,7 +384,7 @@ export default function Comps({ deal, me, role, preview }) {
               )}
             </div>
             <ul className="space-y-3 md:hidden">
-              {shownComps.map((c) => (
+              {(phoneAll ? shownComps : shownComps.slice(0, PHONE_COMPS)).map((c) => (
                 <li key={c.id} className={`space-y-3 rounded-2xl border border-line bg-white p-4 ${inView(c) ? '' : 'opacity-50'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2.5">
@@ -399,6 +402,11 @@ export default function Comps({ deal, me, role, preview }) {
                 </li>
               ))}
             </ul>
+            {shownComps.length > PHONE_COMPS && (
+              <button type="button" onClick={() => setPhoneAll((v) => !v)} className="mt-3 min-h-[44px] w-full rounded-full border border-line bg-white px-4 text-sm font-medium hover:border-ink md:hidden">
+                {phoneAll ? 'Show fewer' : `Show all ${shownComps.length} comps`}
+              </button>
+            )}
             {/* Desktop: a roomy table. */}
             <div className="hidden md:block">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-soft">

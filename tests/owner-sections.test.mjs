@@ -24,3 +24,10 @@ test('plans offer switch does not change the hash', () => {
   assert.doesNotMatch(src, /window\.location\.hash\s*=/);
   assert.match(src, /history\.replaceState/);
 });
+test('owner Offers opens on the table; phone comps show the first few with Show all', () => {
+  assert.match(read('src/views/Offers.jsx'), /useState\(owner \? 'table' : 'cards'\)/);
+  const comps = read('src/views/Comps.jsx');
+  assert.match(comps, /const PHONE_COMPS = 5;/);
+  assert.match(comps, /phoneAll \? shownComps : shownComps\.slice\(0, PHONE_COMPS\)/);
+  assert.match(comps, /Show all \$\{shownComps\.length\} comps/);
+});
