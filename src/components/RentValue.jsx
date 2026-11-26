@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Card, CardTitle, Button, OverlayTrigger } from './Shell.jsx';
 import { money, moneyK } from '../lib/dealmath.js';
-import { rangeValue } from '../lib/rangeValue.js';
+import { rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
+
+export { whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
 
 export function isRentValue(rv) {
   return Boolean(rv && Array.isArray(rv.units) && rv.units.length && Array.isArray(rv.views) && Array.isArray(rv.grid));
@@ -16,13 +18,13 @@ const numOrNull = (v) => (v === '' || v === null || v === undefined || !Number.i
 // Pure presentation of guide.rentValue; the owner can type rent today and market rent per unit.
 // Value range (floor to value by income) and, for the lender and owner, the market rent range with a what-if slider.
 // The slider is local only: it never saves and never changes anyone's numbers.
-function Ranges({ data, showMarket, sourceLines, Trigger }) {
+function Ranges({ data, showMarket, sourceLines, Trigger, rent, setRent }) {
   const vr = data.valueRange;
   const mr = showMarket ? data.marketRange : null;
-  const [rent, setRent] = useState(mr ? mr.low : 0);
-  useEffect(() => { if (mr) setRent(mr.low); }, [mr?.low, mr?.high]);
   if (!vr && !mr) return null;
   const v = mr ? rangeValue(mr, rent) : 0;
+  const grossMo = mr ? mr.units * rent : 0;
+  const rentMo = mr ? grossMo * (1 - mr.vacancyPct / 100) : 0;
   return (
     <Card>
       <CardTitle>Value and market rent</CardTitle>
@@ -52,7 +54,14 @@ function Ranges({ data, showMarket, sourceLines, Trigger }) {
           </label>
           <input id="market-rent-what-if" type="range" min={mr.low} max={mr.high} step={1} value={rent} onChange={(e) => setRent(+e.target.value)} className="mt-2 w-full accent-ink" />
           <dl className="mt-2 grid grid-cols-2 gap-2 text-sm tabular-nums">
-            <div><dt className="text-ink-soft">Rent in /mo</dt><dd className="font-semibold">{money(mr.units * rent)}</dd></div>
+            <div>
+              <dt className="text-ink-soft">Rent in /mo</dt>
+              <dd className="font-semibold">
+                <Trigger lines={[`${mr.units} × ${money(rent)}/mo = ${money(grossMo)}/mo`, `Less ${mr.vacancyPct}% vacancy: ${money(rentMo)}/mo`]}>
+                  {money(rentMo)}
+                </Trigger>
+              </dd>
+            </div>
             <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${mr.units} × ${money(rent)}/mo, less ${mr.vacancyPct}% vacancy`, `Less costs: ${money(mr.costsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
           </dl>
         </div>
@@ -76,7 +85,10 @@ export function mergeViews(views) {
 export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
+  const mr = showMarket && data?.marketRange ? data.marketRange : null;
+  const [rent, setRent] = useState(mr ? mr.low : 0);
   useEffect(() => { setDraft({}); }, [data]);
+  useEffect(() => { if (mr) setRent(mr.low); }, [mr?.low, mr?.high]);
   if (!isRentValue(data)) return null;
 
   const val = (u, k) => (draft[u.id] && k in draft[u.id] ? draft[u.id][k] : u[k] ?? '');
@@ -102,7 +114,10 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
     />
   );
 
-  const views = mergeViews(data.views);
+  const useSlider = Boolean(mr);
+  const views = mergeViews(useSlider ? whatIfViews(data, rent) : data.views);
+  const grid = useSlider ? whatIfGrid(data, rent) : data.grid;
+  const activeRent = useSlider ? rent : data.ourRent;
   const rows = [
     ['Units rented', (v) => `${v.rented} of ${v.total}`, (v) => v.rentOverlay],
     ['Rent in /mo', (v) => money(v.rentMo), (v) => v.rentOverlay],
@@ -114,7 +129,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
 
   return (
     <div className="space-y-5">
-      <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} />
+      <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} rent={rent} setRent={setRent} />
       {!hideUnits && <Card>
         <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">
@@ -149,7 +164,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
       <Card>
         <CardTitle>{views.map((v) => v.label).join(', ')}</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Three views side by side">
-          <table className="w-full min-w-[480px] border-collapse text-right text-sm tabular-nums">
+          <table className={`w-full ${views.length >= 3 ? 'min-w-[480px] ' : ''}border-collapse text-right text-sm tabular-nums`}>
             <thead className="bg-ink text-xs text-white">
               <tr>
                 <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left"><span className="sr-only">Line</span></th>
@@ -183,9 +198,9 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
               </tr>
             </thead>
             <tbody>
-              {data.grid.map((row) => (
+              {grid.map((row) => (
                 <tr key={row.rent} className="border-t border-line">
-                  <th scope="row" className={`sticky left-0 z-10 bg-white px-3 py-2 text-left ${row.rent === data.ourRent ? 'font-semibold' : 'font-normal'}`}>{money(row.rent)}</th>
+                  <th scope="row" className={`sticky left-0 z-10 bg-white px-3 py-2 text-left ${row.rent === activeRent ? 'font-semibold' : 'font-normal'}`}>{money(row.rent)}</th>
                   {row.cells.map((c) => (
                     <td key={c.cap} className="p-1">
                       <Trigger

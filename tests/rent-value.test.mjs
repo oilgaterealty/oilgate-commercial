@@ -10,6 +10,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
 import { rentValue, buildLeadGuide } from '../src/lib/dealplan.js';
+import { whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
 
 const require = createRequire(import.meta.url);
 const jsxRuntime = require('react/jsx-runtime');
@@ -76,7 +77,7 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
     OverlayTrigger: ({ children }) => React.createElement('span', null, children),
   };
   const dealmath = { money: (v) => `$${Math.round(v)}`, moneyK: (v) => `$${Math.round(v / 1000)}K` };
-  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, '../lib/dealmath.js': dealmath, '../lib/rangeValue.js': { rangeValue: () => 123456 } });
+  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, '../lib/dealmath.js': dealmath, '../lib/rangeValue.js': { rangeValue: () => 123456, whatIfViews, whatIfGrid } });
   const rv = rentValue(BASE, PLAN, {});
   const ro = renderToStaticMarkup(React.createElement(mod.default, { data: rv }));
   assert.match(ro, /Unit by unit/);
