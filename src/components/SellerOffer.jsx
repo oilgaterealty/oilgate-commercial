@@ -20,7 +20,7 @@ export function useSellerOffer(deal) {
 }
 
 // The realtor gives the seller access to the seller page that already exists. The seller signs in there with this email.
-export function InviteSeller({ deal, preview }) {
+export function InviteSeller({ deal, preview, inline = false, onInvited }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,6 +41,7 @@ export function InviteSeller({ deal, preview }) {
         : `${name.trim()} can now sign in at the seller page with ${email.trim().toLowerCase()}.`);
       setName('');
       setEmail('');
+      onInvited?.();
     } catch {
       setError('Invite did not go through. Try again.');
     } finally {
@@ -50,16 +51,29 @@ export function InviteSeller({ deal, preview }) {
   const copy = async () => {
     try { await navigator.clipboard.writeText(PUBLIC_SITE); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { setCopied(false); }
   };
-  return (
-    <Card>
-      <CardTitle aside={<Button type="button" kind="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy seller page link'}</Button>}>Invite the seller</CardTitle>
+  const content = (
+    <>
       <form onSubmit={send} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="text-sm">Seller’s name<Field required maxLength={120} disabled={preview || busy} value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" /></label>
         <label className="text-sm">Seller’s email<Field required type="email" maxLength={254} disabled={preview || busy} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" /></label>
         <Button type="submit" disabled={preview || busy || !name.trim() || !email.trim()}>{busy ? 'Inviting…' : 'Invite'}</Button>
       </form>
+      {inline && (
+        <div className="mt-3">
+          <Button type="button" kind="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy seller page link'}</Button>
+        </div>
+      )}
       {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
       {status && <p role="status" className="mt-3 text-sm">{status}</p>}
+    </>
+  );
+  if (inline) {
+    return <div className="mt-4 border-t border-line pt-4">{content}</div>;
+  }
+  return (
+    <Card>
+      <CardTitle aside={<Button type="button" kind="secondary" onClick={copy}>{copied ? 'Copied' : 'Copy seller page link'}</Button>}>Invite the seller</CardTitle>
+      {content}
     </Card>
   );
 }

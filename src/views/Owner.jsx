@@ -12,11 +12,11 @@ import {
   annotateSignins,
   formatPhoenixDate,
   formatPhoenixDateTime,
-  latestSigninByEmail,
+  resolveMemberSigninStatus,
   signinActionLabel,
   signinRoleLabel,
 } from '../lib/signinActivity.js';
-import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, roleLinkUrl, siteRules } from '../lib/site.js';
+import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, siteRules } from '../lib/site.js';
 import { summarizeOpenViews } from '../lib/openViewer.js';
 import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
@@ -57,12 +57,14 @@ const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller'];
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
 
 export function SignInsCard({ rows }) {
-  const items = annotateSignins(rows || []);
+  const items = annotateSignins(Array.isArray(rows) ? rows : []);
   return (
     <Card className="lg:col-span-2">
       <CardTitle>Sign-ins</CardTitle>
       {rows === null ? (
         <Empty>Loading…</Empty>
+      ) : rows === false ? (
+        <Empty>Sign-in data unavailable.</Empty>
       ) : items.length === 0 ? (
         <Empty>No sign-ins yet.</Empty>
       ) : (
@@ -105,7 +107,10 @@ export function People({ deal }) {
   const [signins, setSignins] = useState(null);
   const loadSignins = () => supabase
     .rpc('commercial_signin_activity', { p_deal: deal.id, p_limit: 200 })
-    .then(({ data, error }) => setSignins(error ? [] : data || []));
+    .then(
+      ({ data, error }) => setSignins(error || !Array.isArray(data) ? false : data),
+      () => setSignins(false),
+    );
   const load = () => {
     supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
     loadSignins();
@@ -125,22 +130,24 @@ export function People({ deal }) {
         setSeen(m);
       });
   }, [deal.id]);
-  const latestByEmail = latestSigninByEmail(signins || []);
   const signinChip = (r) => {
-    const s = latestByEmail[(r.email || '').toLowerCase()];
-    return s
-      ? (
+    const status = resolveMemberSigninStatus(r, signins, seen);
+    if (status.kind === 'unavailable') return null;
+    if (status.kind === 'signed_in') {
+      const s = status.row;
+      return (
         <OverlayTrigger lines={[`${signinActionLabel(s.action)} ${formatPhoenixDateTime(s.at)}`]}>
           <span className="whitespace-nowrap rounded-full bg-good/10 px-2 py-0.5 text-xs font-medium text-good">
             Signed in {formatPhoenixDate(s.at)}
           </span>
         </OverlayTrigger>
-      )
-      : (
-        <span className="whitespace-nowrap rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
-          Never signed in
-        </span>
       );
+    }
+    return (
+      <span className="whitespace-nowrap rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+        Never signed in
+      </span>
+    );
   };
   const seenChip = (r) => {
     const s = seen[(r.email || '').toLowerCase()];
@@ -222,7 +229,6 @@ export function People({ deal }) {
       </Card>
       <SignInsCard rows={signins} />
       <OpenViewerLink deal={deal} />
-      <RoleLinks deal={deal} onJoined={load} />
     </div>
   );
 }
@@ -303,80 +309,6 @@ function OpenViewerLink({ deal }) {
             <Button type="button" kind={activeLink ? 'secondary' : 'primary'} disabled={busy} onClick={createLink}>New link</Button>
           </div>
         </div>
-      )}
-    </Card>
-  );
-}
-
-const LINK_ROLES = [['viewer', 'Viewer'], ['lender', 'Lender'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['seller', 'Seller']];
-
-// One private link per verified recipient email. Turning a link off or letting it expire removes access.
-function RoleLinks({ deal, onJoined }) {
-  const [links, setLinks] = useState(null);
-  const [f, setF] = useState({ role: 'viewer', label: '', recipient_email: '', expires_days: 14 });
-  const [fresh, setFresh] = useState(null);
-  const [msg, setMsg] = useState('');
-  const load = () => supabase.from('commercial_role_links').select('id,role,label,recipient_email,created_at,expires_at,revoked_at,uses').eq('deal_id', deal.id).order('created_at', { ascending: false }).then(({ data }) => setLinks(data || []));
-  useEffect(() => { load(); }, [deal.id]);
-
-  const make = async (e) => {
-    e.preventDefault();
-    setMsg('');
-    const recipient = f.recipient_email.trim().toLowerCase();
-    const expiresDays = Math.min(90, Math.max(1, Math.round(+f.expires_days || 14)));
-    if (!recipient) return setMsg('Recipient email is required.');
-    const { data: token, error } = await supabase.rpc('commercial_create_role_link', {
-      p_deal: deal.id,
-      p_role: f.role,
-      p_label: f.label.trim(),
-      p_recipient_email: recipient,
-      p_expires_days: expiresDays,
-    });
-    if (error || !token) return setMsg('That link couldn’t be made. Try again.');
-    setFresh({ url: roleLinkUrl(token, f.role), label: f.label.trim() || roleLabel[f.role], recipient });
-    setF({ ...f, label: '', recipient_email: '' });
-    load();
-  };
-  const turnOff = async (l) => {
-    if (!window.confirm(`Turn off the link for ${l.recipient_email || l.label || roleLabel[l.role]}? Anyone who joined with it loses access now.`)) return;
-    const { error } = await supabase.rpc('commercial_revoke_role_link', { p_link: l.id });
-    setMsg(error ? 'That link couldn’t be turned off. Try again.' : 'Link turned off.');
-    load(); onJoined?.();
-  };
-  const state = (l) => (l.revoked_at ? 'Off' : new Date(l.expires_at) < new Date() ? 'Expired' : 'On');
-
-  return (
-    <Card className="lg:col-span-2">
-      <CardTitle>Private links</CardTitle>
-      <form onSubmit={make} className="grid gap-2 sm:grid-cols-[160px_1fr_1fr_96px_auto]">
-        <select aria-label="Link role" className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-          {LINK_ROLES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <Field type="email" required aria-label="Recipient email" placeholder="Recipient email" value={f.recipient_email} onChange={(e) => setF({ ...f, recipient_email: e.target.value })} />
-        <Field aria-label="Recipient label" placeholder="Name or note (e.g. Evan)" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} />
-        <Field type="number" inputMode="numeric" min={1} max={90} aria-label="Expires in days" title="Expires in days" value={f.expires_days} onChange={(e) => setF({ ...f, expires_days: e.target.value })} />
-        <Button type="submit">Make link</Button>
-      </form>
-      {fresh && (
-        <div className="mt-3 rounded-xl border border-good/40 bg-good/5 p-3 text-sm">
-          <p className="font-medium">Link for {fresh.label} ({fresh.recipient}). Shown once.</p>
-          <p className="mt-1 break-all font-mono text-xs select-all">{fresh.url}</p>
-          <button type="button" className="mt-2 min-h-[40px] rounded-xl border border-line bg-white px-3 py-1.5 text-sm hover:border-ink" onClick={() => { navigator.clipboard?.writeText(fresh.url); setMsg('Link copied.'); }}>Copy link</button>
-        </div>
-      )}
-      {msg && <p role="status" className="mt-2 text-sm text-ink">{msg}</p>}
-      {links === null ? <Empty>Loading…</Empty> : links.length === 0 ? <div className="mt-3"><Empty>No links yet.</Empty></div> : (
-        <ul className="mt-3 divide-y divide-line">
-          {links.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{l.label || roleLabel[l.role]} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[l.role]}</span></p>
-                <InfoTip label={`Details for the ${l.label || roleLabel[l.role]} link`} lines={[`${l.recipient_email ? `${l.recipient_email} · ` : ''}${state(l)} · expires ${when(l.expires_at)} · used ${l.uses} ${l.uses === 1 ? 'time' : 'times'}`]} />
-              </div>
-              {!l.revoked_at && <Button kind="secondary" onClick={() => turnOff(l)}>Turn off</Button>}
-            </li>
-          ))}
-        </ul>
       )}
     </Card>
   );

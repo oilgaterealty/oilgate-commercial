@@ -70,3 +70,16 @@ export function latestSigninByEmail(rows) {
   }
   return map;
 }
+
+/**
+ * Resolves a member's sign-in chip state.
+ * Returns unavailable (show nothing) when sign-in RPC data is missing/loading or a page view contradicts "Never signed in".
+ */
+export function resolveMemberSigninStatus(member, signins, seen) {
+  if (!Array.isArray(signins)) return { kind: 'unavailable', row: null };
+  const email = String(member?.email || '').trim().toLowerCase();
+  const row = email ? latestSigninByEmail(signins)[email] || null : null;
+  if (row) return { kind: 'signed_in', row };
+  if (email && seen && seen[email]) return { kind: 'unavailable', row: null };
+  return { kind: 'never', row: null };
+}

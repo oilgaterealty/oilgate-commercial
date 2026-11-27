@@ -20,7 +20,7 @@ const LENDER_BOARD_LABELS = {
   traditional: { label: 'Traditional' },
 };
 
-// All 13 lender criteria fields; each displayed question is required and supports "Not applicable".
+// All 13 lender criteria fields; each displayed question is required.
 export const LENDER_QUESTIONS = [
   { key: 'purchase_advances', label: 'Purchase advances and LTV/LTC caps', programs: ['bridge', 'dscr', 'both'], placeholder: 'e.g. Max 75% LTV / 85% LTC' },
   { key: 'rehab_draws', label: 'Rehab holdbacks and draw process', programs: ['bridge', 'both'], placeholder: 'e.g. 100% rehab funded in arrears after inspection' },
@@ -121,18 +121,157 @@ export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
   );
 }
 
+export function initialLenderName(me, preview) {
+  return preview || me?.email === '__preview__' ? '' : (me?.name || '');
+}
+
+export function resolveTermValues(asks, progDraft) {
+  return { ...(asks || {}), ...(progDraft || {}) };
+}
+
+export function isTermCountering(question, ask, progDraft, progEditing) {
+  if (!ask) return false;
+  if (progEditing?.[question.key]) return true;
+  return Boolean(
+    progDraft &&
+    Object.prototype.hasOwnProperty.call(progDraft, question.label) &&
+    progDraft[question.label] !== ask,
+  );
+}
+
+export function openTermCounter(drafts, editing, program, question) {
+  return {
+    drafts: {
+      ...(drafts || {}),
+      [program]: { ...(drafts?.[program] || {}), [question.label]: '' },
+    },
+    editing: {
+      ...(editing || {}),
+      [program]: { ...(editing?.[program] || {}), [question.key]: true },
+    },
+  };
+}
+
+export function restoreTermAsk(drafts, editing, program, question) {
+  const nextProgDraft = { ...(drafts?.[program] || {}) };
+  delete nextProgDraft[question.label];
+  const nextProgEditing = { ...(editing?.[program] || {}) };
+  delete nextProgEditing[question.key];
+  return {
+    drafts: { ...(drafts || {}), [program]: nextProgDraft },
+    editing: { ...(editing || {}), [program]: nextProgEditing },
+  };
+}
+
+export function setTermAnswer(drafts, editing, program, label, value, questionKey) {
+  const nextDrafts = {
+    ...(drafts || {}),
+    [program]: { ...(drafts?.[program] || {}), [label]: value },
+  };
+  const nextEditing = questionKey
+    ? { ...(editing || {}), [program]: { ...(editing?.[program] || {}), [questionKey]: true } }
+    : editing;
+  return { drafts: nextDrafts, editing: nextEditing };
+}
+
+export function isTermsFormComplete({ company, name, questions, values }) {
+  return (
+    Boolean(String(company || '').trim()) &&
+    Boolean(String(name || '').trim()) &&
+    questions.every((q) => String(values?.[q.label] || '').trim().length > 0)
+  );
+}
+
+export function buildTermsSubmission({ dealId, lenderUid, company, name, program, questions, values, existingTerms, nowIso = new Date().toISOString() }) {
+  const cleanCompany = String(company || '').trim();
+  const cleanName = String(name || '').trim();
+  const answered = Object.fromEntries(questions.map((q) => [q.label, String(values?.[q.label] || '').trim()]));
+  const extraNotes = String(values?.Questions || '').trim();
+  const terms = { ...(existingTerms || {}), [program]: answered, _contact: cleanName };
+  const upsertRow = {
+    deal_id: dealId,
+    lender_uid: lenderUid,
+    company_name: cleanCompany,
+    lender_type: program,
+    terms,
+    updated_at: nowIso,
+  };
+  const bodyLines = [...Object.entries(answered), ...(extraNotes ? [['Questions', extraNotes]] : [])]
+    .map(([k, v]) => `${k}: ${v}`);
+  const body = `${cleanCompany}, ${cleanName} · ${LENDER_PROGRAMS[program].label}\n${bodyLines.join('\n')}`;
+  return { answered, terms, upsertRow, body };
+}
+
+export function LenderTermField({ question, ask, value, countering, preview, onOpenCounter, onRestoreAsk, onChange }) {
+  if (ask && !countering) {
+    return (
+      <div data-ask-card={question.key} className="rounded-xl border border-line bg-paper p-3 space-y-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <span className="min-w-0 text-sm font-medium text-ink">
+            {question.label} <span aria-hidden="true" className="text-red-700">*</span>
+          </span>
+          <button
+            type="button"
+            aria-label={`Change ${question.label}`}
+            onClick={() => onOpenCounter(question)}
+            className="min-h-[36px] shrink-0 rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:border-ink"
+          >
+            Change
+          </button>
+        </div>
+        <p className="text-base leading-snug text-ink break-words whitespace-normal">{ask}</p>
+      </div>
+    );
+  }
+
+  const val = value || '';
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label htmlFor={`lt-${question.key}`} className="min-w-[160px] flex-1 text-sm font-medium">
+          {question.label} <span aria-hidden="true" className="text-red-700">*</span>
+        </label>
+        {ask && (
+          <button
+            type="button"
+            onClick={() => onRestoreAsk(question)}
+            className="min-h-[40px] shrink-0 px-1 text-xs font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+          >
+            Use ours
+          </button>
+        )}
+      </div>
+      <DictatedField
+        id={`lt-${question.key}`}
+        required
+        aria-label={question.label}
+        disabled={preview}
+        maxLength={300}
+        placeholder={ask || question.placeholder}
+        value={val}
+        onChange={(e) => onChange(question.label, e.target.value, ask ? question.key : undefined)}
+        className="w-full rounded-xl border border-line bg-white px-3 py-2"
+      />
+    </div>
+  );
+}
+
 export default function LenderTerms({ deal, me, preview, guide = null, base = null }) {
   const [program, setProgram] = useState('bridge');
   const [drafts, setDrafts] = useState({});
+  const [editing, setEditing] = useState({});
   const [company, setCompany] = useState('');
-  const [name, setName] = useState(me?.name || '');
+  const [name, setName] = useState(() => initialLenderName(me, preview));
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
 
   const questions = questionsForProgram(program);
-  const values = { ...wantedTerms(program, guide, base), ...(drafts[program] || {}) };
+  const asks = wantedTerms(program, guide, base);
+  const progDraft = drafts[program] || {};
+  const progEditing = editing[program] || {};
+  const values = resolveTermValues(asks, progDraft);
 
   useEffect(() => {
     if (preview || !me?.uid) return;
@@ -146,31 +285,53 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
     });
   }, [deal.id, me?.uid, preview]);
 
-  const setAnswer = (label, value) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [program]: { ...(prev[program] || {}), [label]: value },
-    }));
+  const setAnswer = (label, value, questionKey) => {
+    setDrafts((prev) => setTermAnswer(prev, null, program, label, value).drafts);
+    if (questionKey) {
+      setEditing((prev) => ({
+        ...prev,
+        [program]: { ...(prev[program] || {}), [questionKey]: true },
+      }));
+    }
   };
 
-  const allAnswered = Boolean(company.trim()) && Boolean(name.trim()) && questions.every((q) => String(values[q.label] || '').trim().length > 0);
+  const openCounter = (question) => {
+    const next = openTermCounter(drafts, editing, program, question);
+    setDrafts(next.drafts);
+    setEditing(next.editing);
+    if (!preview && typeof document !== 'undefined') {
+      requestAnimationFrame(() => document.getElementById(`lt-${question.key}`)?.focus());
+    }
+  };
+
+  const restoreAsk = (question) => {
+    const next = restoreTermAsk(drafts, editing, program, question);
+    setDrafts(next.drafts);
+    setEditing(next.editing);
+  };
+
+  const allAnswered = isTermsFormComplete({ company, name, questions, values });
 
   const send = async (e) => {
     e.preventDefault();
     if (preview || busy || !allAnswered) return;
     setBusy(true);
     try {
-      const answered = Object.fromEntries(questions.map((q) => [q.label, String(values[q.label] || '').trim()]));
-      const extraNotes = String(values.Questions || '').trim();
-      const terms = { ...(mine?.terms || {}), [program]: answered, _contact: name.trim() };
+      const { upsertRow, body } = buildTermsSubmission({
+        dealId: deal.id,
+        lenderUid: me.uid,
+        company,
+        name,
+        program,
+        questions,
+        values,
+        existingTerms: mine?.terms,
+      });
       const saved = await supabase.from('commercial_lender_terms').upsert(
-        { deal_id: deal.id, lender_uid: me.uid, company_name: company.trim(), lender_type: program, terms, updated_at: new Date().toISOString() },
+        upsertRow,
         { onConflict: 'deal_id,lender_uid' },
       ).select().maybeSingle();
       if (saved.data) setMine(saved.data);
-      const bodyLines = [...Object.entries(answered), ...(extraNotes ? [['Questions', extraNotes]] : [])]
-        .map(([k, v]) => `${k}: ${v}`);
-      const body = `${company.trim()}, ${name.trim()} · ${LENDER_PROGRAMS[program].label}\n${bodyLines.join('\n')}`;
       const error = await sendToOwner(deal, me, 'lender', body, LENDER_PROGRAMS[program].label);
       setStatus(saved.error && error ? 'Not sent. Try again.'
         : saved.error ? 'Message sent, but terms did not save. Try again.'
@@ -232,36 +393,20 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
           <form onSubmit={send} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               {questions.map((q) => {
-                const val = values[q.label] || '';
-                const isNa = val.trim().toLowerCase() === 'not applicable';
+                const ask = asks[q.label] || '';
+                const countering = isTermCountering(q, ask, progDraft, progEditing);
                 return (
-                  <div key={q.key} className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <label htmlFor={`lt-${q.key}`} className="text-sm font-medium">
-                        {q.label} <span aria-hidden="true" className="text-red-700">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        disabled={preview}
-                        aria-pressed={isNa}
-                        onClick={() => setAnswer(q.label, isNa ? '' : 'Not applicable')}
-                        className={`min-h-[40px] shrink-0 rounded-full px-3 py-1 text-xs font-medium ${isNa ? 'bg-ink text-white' : 'border border-line bg-paper text-ink-soft hover:border-ink'}`}
-                      >
-                        Not applicable
-                      </button>
-                    </div>
-                    <DictatedField
-                      id={`lt-${q.key}`}
-                      required
-                      aria-label={q.label}
-                      disabled={preview}
-                      maxLength={300}
-                      placeholder={q.placeholder}
-                      value={val}
-                      onChange={(e) => setAnswer(q.label, e.target.value)}
-                      className="w-full rounded-xl border border-line px-3 py-2"
-                    />
-                  </div>
+                  <LenderTermField
+                    key={q.key}
+                    question={q}
+                    ask={ask}
+                    value={values[q.label] || ''}
+                    countering={countering}
+                    preview={preview}
+                    onOpenCounter={openCounter}
+                    onRestoreAsk={restoreAsk}
+                    onChange={setAnswer}
+                  />
                 );
               })}
             </div>

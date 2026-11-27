@@ -166,10 +166,13 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
   assert.match(ltHtml, /Bridge \/ Hard money/);
   assert.match(ltHtml, /Commercial DSCR/);
   assert.match(ltHtml, /Both/);
-  // One "Not applicable" button per question, plus the prefilled short-term rental answer.
-  assert.equal((ltHtml.match(/>Not applicable</g) || []).length, ltMod.questionsForProgram('bridge').length);
-  assert.match(ltHtml, /value="Not applicable"/);
-  assert.match(ltHtml, /value="10 units"/);
+  // Default bridge asks ("Not applicable" for str_income and "10 units" for legal_units_code) render as read-only ask cards with Change;
+  // the remaining 10 no-ask questions render empty inputs with no "Not applicable" buttons.
+  assert.equal((ltHtml.match(/>Change<\/button>/g) || []).length, 2);
+  assert.doesNotMatch(ltHtml, />Not applicable<\/button>/);
+  assert.match(ltHtml, /data-ask-card="str_income"[\s\S]*?>Not applicable<\/p>/);
+  assert.match(ltHtml, /data-ask-card="legal_units_code"[\s\S]*?>10 units<\/p>/);
+  assert.doesNotMatch(ltHtml, /value="10 units"/);
 });
 
 test('0018 grants private own-row strategy ideas to both realtor and reviewer', async () => {

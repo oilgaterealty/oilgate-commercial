@@ -88,13 +88,13 @@ test('5. owner shows as Buyer; the seller never sees the buyer name; "not named 
   assert.match(src('src/views/DealRoom.jsx'), /setDealNames\(state\.deal, viewing && state\.role === 'owner' && PREVIEWABLE\.includes\(sub\) \? sub : state\.role\)/);
 });
 
-test('6. reviewer/viewer documents are read only; realtor activity shows the buyer side too', () => {
+test('6. reviewer/viewer documents are read only; realtor activity shows only seller activity', () => {
   const r = src('src/views/Reviewer.jsx');
   assert.match(r, /<FileList rows=\{docs\} canShare=\{false\} owner=\{false\} \/>/);
   const re = src('src/views/Realtor.jsx');
-  assert.match(re, /actors=\{\['seller'\]\}/);
-  assert.match(re, /actors=\{\['owner'\]\}/);
-  assert.match(src('src/components/Activity.jsx'), /q\.in\('actor_role', actors\)/);
+  assert.match(re, /mode="realtor-seller"/);
+  assert.doesNotMatch(re, /actors=\{\['owner'\]\}|What the buyer has done/);
+  assert.match(src('src/components/Activity.jsx'), /mode === 'realtor-seller'/);
 });
 
 test('7. realtor adds her own tenant leads', () => {

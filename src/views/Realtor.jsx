@@ -150,9 +150,8 @@ export default function Realtor({ deal, me, member, preview, tab }) {
         <Messages deal={deal} me={me} role="realtor" preview={preview} />
       </section>
 
-      <section id="sec-activity" data-section="activity" className="scroll-mt-20 grid gap-6 lg:grid-cols-[1fr_1fr_340px]">
-        <Activity deal={deal} title="What the seller has done" actors={['seller']} empty="The seller hasn’t opened or done anything yet." />
-        <Activity deal={deal} title="What the buyer has done" actors={['owner']} empty="Nothing from the buyer’s side yet." />
+      <section id="sec-activity" data-section="activity" className="scroll-mt-20 grid gap-6 lg:grid-cols-[1fr_340px]">
+        <Activity deal={deal} mode="realtor-seller" preview={preview} title="Recent activity" empty="The seller hasn’t signed in or done anything yet." />
         <div className="space-y-6">
           <SellerPulse deal={deal} />
           {!preview && <AlertsCard topic={member?.ntfy_topic} who="You get a push when someone messages you or the seller does something here." />}

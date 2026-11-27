@@ -13,6 +13,7 @@ import {
   formatPhoenixDate,
   formatPhoenixDateTime,
   latestSigninByEmail,
+  resolveMemberSigninStatus,
   signinActionLabel,
   signinRoleLabel,
 } from '../src/lib/signinActivity.js';
@@ -114,6 +115,13 @@ test('signinActivity helpers format Phoenix timestamps, labels, and newest-first
   const byEmail = latestSigninByEmail(annotated);
   assert.equal(byEmail['seller@example.com'].action, 'login');
   assert.equal(byEmail['realtor@example.com'].display_name, 'Dana Agent');
+
+  // resolveMemberSigninStatus hides "Never signed in" when data is unavailable or contradicted by page view
+  assert.equal(resolveMemberSigninStatus({ email: 'realtor@example.com' }, null, {}).kind, 'unavailable');
+  assert.equal(resolveMemberSigninStatus({ email: 'realtor@example.com' }, false, {}).kind, 'unavailable');
+  assert.equal(resolveMemberSigninStatus({ email: 'realtor@example.com' }, [], { 'realtor@example.com': { last: '2026-11-26T20:00:00Z', count: 1 } }).kind, 'unavailable');
+  assert.equal(resolveMemberSigninStatus({ email: 'lender@example.com' }, [], {}).kind, 'never');
+  assert.equal(resolveMemberSigninStatus({ email: 'seller@example.com' }, annotated, {}).kind, 'signed_in');
 });
 
 test('Owner People renders Sign-ins card (name/email, role, Signed up/Signed in, Phoenix time, latest highlighted, email only in overlay) and member sign-in chips including seller with zero subtext', async () => {
@@ -204,15 +212,79 @@ test('Owner People renders Sign-ins card (name/email, role, Signed up/Signed in,
   assert.equal(visibleCardText.includes('seller@example.com'), false);
   assert.match(cardHtml, /data-overlay="seller@example\.com"/);
 
-  // Render People to verify Sign-ins card presence + member row summary chips (seller included)
+  // Render People to verify Sign-ins card presence + member row summary chips (seller signed in, realtor with page view hides Never signed in, lender shows Never signed in)
   reactWithState._nullIdx = 0;
   const peopleHtml = renderToStaticMarkup(React.createElement(ownerMod.People, { deal: { id: 'd1', slug: 'charlotte' } }));
   assert.match(peopleHtml, /<h2>Sign-ins<\/h2>/);
   assert.match(peopleHtml, /Signed in Nov 27/);
-  assert.equal((peopleHtml.match(/Never signed in/g) || []).length, 2);
-  // Seller row has Signed in chip; realtor & lender have Never signed in
+  assert.equal((peopleHtml.match(/Never signed in/g) || []).length, 1);
+  // Seller row has Signed in chip; realtor has seen page view so no Never signed in chip; lender has Never signed in
   const sellerLi = peopleHtml.match(/<li[^>]*>[\s\S]*?Pat Seller[\s\S]*?<\/li>/)?.[0] || '';
   assert.match(sellerLi, /Signed in Nov 27/);
+  const realtorLi = peopleHtml.match(/<li[^>]*>[\s\S]*?Dana Agent[\s\S]*?<\/li>/)?.[0] || '';
+  assert.doesNotMatch(realtorLi, /Never signed in/);
+
+  // When signins RPC is unavailable (false), SignInsCard says unavailable and People never shows "Never signed in"
+  const unavailCardHtml = renderToStaticMarkup(React.createElement(ownerMod.SignInsCard, { rows: false }));
+  assert.match(unavailCardHtml, /Sign-in data unavailable\./);
+
+  const reactUnavailable = {
+    ...React,
+    useState(init) {
+      if (init === null) {
+        reactUnavailable._nullIdx = (reactUnavailable._nullIdx || 0) + 1;
+        return [reactUnavailable._nullIdx === 1 ? members : false, () => {}];
+      }
+      if (init && typeof init === 'object' && !('email' in init)) {
+        return [{}, () => {}];
+      }
+      return React.useState(init);
+    },
+  };
+  const ownerUnavailMod = loadJsx(
+    'src/views/Owner.jsx',
+    {
+      '../components/Dictation.jsx': { DictatedField: () => null },
+      '../lib/people.js': { setDealNames: () => {} },
+      './Walkthrough.jsx': { __esModule: true, default: noop },
+      './Tenants.jsx': { __esModule: true, default: noop },
+      './Comps.jsx': { __esModule: true, default: noop },
+      '../components/UnitGallery.jsx': { __esModule: true, default: noop },
+      './LenderTerms.jsx': { LenderBoard: noop },
+      '../lib/supabase.js': { supabase: {} },
+      '../lib/format.js': await import('../src/lib/format.js'),
+      '../lib/signinActivity.js': await import('../src/lib/signinActivity.js'),
+      '../lib/site.js': await import('../src/lib/site.js'),
+      '../lib/openViewer.js': { summarizeOpenViews: () => ({ activeLink: null, totalViews: 0, uniqueVisitors: 0, lastViewed: null }) },
+      '../components/Shell.jsx': {
+        Card: ({ children, className }) => React.createElement('section', { className }, children),
+        CardTitle: ({ children }) => React.createElement('h2', null, children),
+        Button: ({ children, ...p }) => React.createElement('button', p, children),
+        Field: (p) => React.createElement('input', p),
+        Empty: ({ children }) => React.createElement('p', null, children),
+        InfoTip: ({ label, lines }) => React.createElement('span', { 'data-infotip': label, 'data-lines': (lines || []).filter(Boolean).join(' | ') }),
+        JumpNav: noop,
+        OverlayTrigger: ({ children, lines, label }) => React.createElement('span', { 'data-overlay-label': label || '', 'data-overlay': (lines || []).join(' | ') }, children),
+        useSectionScroll: () => ({ activeSection: 'settings', jumpTo: () => {} }),
+      },
+      '../components/Messages.jsx': { __esModule: true, default: noop },
+      '../components/Files.jsx': { __esModule: true, default: noop },
+      '../components/Photos.jsx': { __esModule: true, default: noop },
+      './Offers.jsx': { __esModule: true, default: noop },
+      '../components/Pulse.jsx': { AlertsCard: noop },
+      './Dashboard.jsx': { __esModule: true, default: noop },
+      '../components/LoanPosition.jsx': { __esModule: true, default: noop },
+      '../components/OwnerRentValue.jsx': { __esModule: true, default: noop },
+      '../components/AccessRequests.jsx': { __esModule: true, default: noop },
+      '../components/Activity.jsx': { __esModule: true, default: noop },
+      './CityRecords.jsx': { __esModule: true, default: noop },
+      './DealPlan.jsx': { __esModule: true, default: noop },
+    },
+    reactUnavailable,
+  );
+  const unavailPeopleHtml = renderToStaticMarkup(React.createElement(ownerUnavailMod.People, { deal: { id: 'd1', slug: 'charlotte' } }));
+  assert.doesNotMatch(unavailPeopleHtml, /Never signed in/);
+  assert.match(unavailPeopleHtml, /Sign-in data unavailable\./);
 });
 
 test('Supabase rpc builder is lazy (unawaited calls make 0 requests; awaited calls send POST)', async () => {
