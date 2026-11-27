@@ -29,14 +29,21 @@ export function Account({ session, role }) {
   );
 }
 
+const HEADER_PARTIES_ROLES = new Set(['owner', 'realtor', 'seller', 'lender', 'reviewer']);
+export const showHeaderParties = (role = viewingRole()) => HEADER_PARTIES_ROLES.has(role);
+
 // Property name with the city beside it, wrapping cleanly on narrow screens.
-export function PropertyHead({ deal }) {
+export function PropertyHead({ deal, role }) {
   const city = (deal.address || '').split(',').slice(1).join(',').trim();
+  const activeRole = role ?? viewingRole();
+  const showParties = showHeaderParties(activeRole);
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
       <a href={`#/d/${deal.slug}`} className="font-display text-2xl font-semibold tracking-tight break-words sm:text-4xl">{deal.title}</a>
       {city && <span className="text-xs uppercase tracking-[0.16em] text-warm sm:text-sm sm:tracking-[0.18em]">{city}</span>}
-      <span className="self-center"><InfoTip label="Buyer and seller" lines={viewingRole() === 'seller' ? [sellerTag(deal)] : [buyerTag(deal), sellerTag(deal)]} /></span>
+      {showParties && (
+        <span className="self-center"><InfoTip label="Buyer and seller" lines={activeRole === 'seller' ? [sellerTag(deal)] : [buyerTag(deal), sellerTag(deal)]} /></span>
+      )}
     </div>
   );
 }

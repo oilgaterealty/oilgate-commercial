@@ -69,7 +69,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
           {PREVIEWABLE.filter((r) => r !== sub).map((r) => <a key={r} href={`#/d/${slug}/view/${r}`} className="shrink-0 underline-offset-2 opacity-70 hover:underline hover:opacity-100">{roleLabel[r]}</a>)}
           <a href={`#/d/${slug}`} className="shrink-0 rounded-full bg-white px-3 py-0.5 font-medium text-ink">Exit</a>
         </div>
-        <Shell head={<PropertyHead deal={state.deal} />} wide={sub === 'seller'}>
+        <Shell head={<PropertyHead deal={state.deal} role={sub} />} wide={sub === 'seller'}>
           <Suspense fallback={<Empty>Loading…</Empty>}>
             <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview' }} preview tab={innerTab} />
           </Suspense>
@@ -79,7 +79,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
   }
 
   return (
-    <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} />} wide={state.role === 'seller' || state.role === 'owner'}>
+    <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} role={state.role} />} wide={state.role === 'seller' || state.role === 'owner'}>
       <Suspense fallback={<Empty>Loading…</Empty>}>
         <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} />
       </Suspense>
