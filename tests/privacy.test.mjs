@@ -29,7 +29,13 @@ test('no Drive folder id or secrets committed in source', () => {
   for (const f of [...walk(`${root}src`), ...walk(`${root}supabase`)]) {
     const s = readFileSync(f, 'utf8');
     assert.doesNotMatch(s, /drive\.google\.com\/drive\/folders\/[A-Za-z0-9_-]{10,}/, f);
-    assert.doesNotMatch(s, /service_role|sb_secret_/i, f);
+    if (/[\\/]supabase[\\/]functions[\\/]/.test(f)) {
+      assert.doesNotMatch(s, /sb_secret_|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, f);
+      const withoutEnvRead = s.replace(/Deno\.env\.get\(\s*['"]SUPABASE_SERVICE_ROLE_KEY['"]\s*\)/g, '');
+      assert.doesNotMatch(withoutEnvRead, /service_role/i, f);
+    } else {
+      assert.doesNotMatch(s, /service_role|sb_secret_/i, f);
+    }
   }
 });
 

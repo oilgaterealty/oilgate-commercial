@@ -177,9 +177,9 @@ export function UnitSummary({ unit, summary }) {
 }
 
 // Walkthrough photos and videos, one unit or space at a time. The owner shares each one here the same way as in the Walkthrough.
-export default function UnitGallery({ deal, me, role, preview, unitSummaries = null }) {
-  const [photos, setPhotos] = useState(null);
-  const [videos, setVideos] = useState(null);
+export default function UnitGallery({ deal, me, role, preview, unitSummaries = null, snapshotPhotos = null }) {
+  const [photos, setPhotos] = useState(snapshotPhotos);
+  const [videos, setVideos] = useState(snapshotPhotos !== null ? [] : null);
   const [unit, setUnit] = useState(1);
   const [view, setView] = useState(null);
   const [err, setErr] = useState('');
@@ -189,6 +189,12 @@ export default function UnitGallery({ deal, me, role, preview, unitSummaries = n
   const canReadiness = Boolean(loadReadinessLib && role === 'owner' && !preview && canAccessDealPlan(SITE_KIND, role, preview));
 
   useEffect(() => {
+    if (snapshotPhotos !== null) {
+      setPhotos(snapshotPhotos);
+      setVideos([]);
+      setErr('');
+      return undefined;
+    }
     let live = true;
     Promise.all([
       supabase.from('commercial_walkthrough_photos').select(`id,unit_number,room,storage_path,author_role,author_name,created_at${role === 'owner' ? ',share_seller,share_lender' : ''}`).eq('deal_id', deal.id).order('created_at'),
@@ -200,7 +206,7 @@ export default function UnitGallery({ deal, me, role, preview, unitSummaries = n
       setErr(p.error || v.error ? 'Photos could not load. Refresh to try again.' : '');
     });
     return () => { live = false; };
-  }, [deal.id]);
+  }, [deal.id, snapshotPhotos]);
 
   useEffect(() => {
     let live = true;
@@ -255,7 +261,13 @@ export default function UnitGallery({ deal, me, role, preview, unitSummaries = n
   }, [photos, videos]);
   const unitPhotos = (photos || []).filter((p) => p.unit_number === unit);
   const unitVideos = (videos || []).filter((v) => v.unit_number === unit);
-  const urls = useSigned([...unitPhotos.map((p) => p.storage_path), ...unitVideos.map((v) => v.storage_path)]);
+  const signedUrls = useSigned(snapshotPhotos === null ? [...unitPhotos.map((p) => p.storage_path), ...unitVideos.map((v) => v.storage_path)] : []);
+  const urls = useMemo(() => {
+    if (snapshotPhotos === null) return signedUrls;
+    const map = {};
+    for (const p of unitPhotos) if (p.url && p.storage_path) map[p.storage_path] = p.url;
+    return map;
+  }, [snapshotPhotos, signedUrls, unitPhotos]);
   const loaded = unitPhotos.filter((p) => urls[p.storage_path]);
   const rooms = [...new Set(loaded.map((p) => p.room))];
   // Viewer order matches the screen: room by room.
@@ -343,7 +355,7 @@ export default function UnitGallery({ deal, me, role, preview, unitSummaries = n
           actions={canShare ? (_, j) => (ready[j] ? walkShareButtons(ready[j], toggleShare, shareBusy) : []) : undefined} />
         <UnitSummary unit={unit} summary={unitSummary} />
       </Card>
-      <UnitNotes deal={deal} me={me} role={role} unit={unit} preview={preview} />
+      {snapshotPhotos === null && <UnitNotes deal={deal} me={me} role={role} unit={unit} preview={preview} />}
     </div>
   );
 }

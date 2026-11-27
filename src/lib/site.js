@@ -25,6 +25,11 @@ export const isLinkToken = (t) => /^[a-f0-9]{64}$/.test(t || '');
 export const roleLinkUrl = (token, role) => `${role === 'seller' ? PUBLIC_SITE : GUEST_SITE}#/join/${token}`;
 export const memberPageUrl = (role, slug) => role === 'seller' ? PUBLIC_SITE : `${GUEST_SITE}#/d/${slug}${role === 'realtor' ? '/offers' : ''}`;
 
+// Open viewer links: #/d/<slug>/view/<token>. 32+ URL-safe chars made server-side.
+export const isOpenViewerToken = (t) => /^[A-Za-z0-9_-]{32,128}$/.test(t || '');
+export const openViewerUrl = (slug, token) => `${GUEST_SITE}#/d/${slug}/view/${token}`;
+export const openViewerAllowed = (kind) => kind !== 'seller' && kind !== 'owner';
+
 // Which roles may open their page on this build.
 export const roleAllowedHere = (kind, role) => {
   if (kind === 'seller') return role === 'seller';

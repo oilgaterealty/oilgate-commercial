@@ -8,7 +8,8 @@ import { LenderBoard } from './LenderTerms.jsx';
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
-import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, roleLinkUrl, siteRules } from '../lib/site.js';
+import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, roleLinkUrl, siteRules } from '../lib/site.js';
+import { summarizeOpenViews } from '../lib/openViewer.js';
 import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
@@ -146,8 +147,90 @@ function People({ deal }) {
             className="min-h-[40px] w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
         </form>
       </Card>
+      <OpenViewerLink deal={deal} />
       <RoleLinks deal={deal} onJoined={load} />
     </div>
+  );
+}
+
+function OpenViewerLink({ deal }) {
+  const [links, setLinks] = useState(null);
+  const [views, setViews] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    const { data: linkRows } = await supabase
+      .from('commercial_open_links')
+      .select('id,token,created_at,revoked_at')
+      .eq('deal_id', deal.id)
+      .order('created_at', { ascending: false });
+    const list = linkRows || [];
+    setLinks(list);
+    if (!list.length) { setViews([]); return; }
+    const { data: viewRows } = await supabase
+      .from('commercial_open_views')
+      .select('link_id,visitor,viewed_at')
+      .in('link_id', list.map((l) => l.id))
+      .order('viewed_at', { ascending: false })
+      .limit(5000);
+    setViews(viewRows || []);
+  };
+
+  useEffect(() => { load(); }, [deal.id]);
+
+  const { activeLink, totalViews, uniqueVisitors, lastViewed } = summarizeOpenViews(links, views);
+
+  const createLink = async () => {
+    if (busy) return;
+    setBusy(true);
+    setCopied(false);
+    await supabase.rpc('commercial_open_link_create', { p_deal: deal.id });
+    await load();
+    setBusy(false);
+  };
+
+  const revokeLink = async () => {
+    if (!activeLink || busy || !window.confirm('Turn off the open viewer link? Anyone holding it loses access now.')) return;
+    setBusy(true);
+    setCopied(false);
+    await supabase.rpc('commercial_open_link_revoke', { p_id: activeLink.id });
+    await load();
+    setBusy(false);
+  };
+
+  const copyLink = () => {
+    if (!activeLink) return;
+    navigator.clipboard?.writeText(openViewerUrl(deal.slug, activeLink.token));
+    setCopied(true);
+  };
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardTitle>Open viewer link</CardTitle>
+      {links === null ? (
+        <Empty>Loading…</Empty>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <OverlayTrigger lines={[lastViewed ? `Last viewed ${when(lastViewed)}` : 'No views yet']}>
+              <span className="rounded-full bg-warm-soft px-3 py-1 text-xs font-medium text-ink">
+                {totalViews} {totalViews === 1 ? 'view' : 'views'} · {uniqueVisitors} unique
+              </span>
+            </OverlayTrigger>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeLink && (
+              <>
+                <Button type="button" disabled={busy} onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</Button>
+                <Button type="button" kind="secondary" disabled={busy} onClick={revokeLink}>Revoke</Button>
+              </>
+            )}
+            <Button type="button" kind={activeLink ? 'secondary' : 'primary'} disabled={busy} onClick={createLink}>New link</Button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

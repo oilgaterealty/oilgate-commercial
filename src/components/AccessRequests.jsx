@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { roleLabel, when } from '../lib/format.js';
-import { Button, Card, CardTitle, Empty } from './Shell.jsx';
+import { Button, Card, CardTitle, Empty, InfoTip } from './Shell.jsx';
 
 const roles = ['reviewer', 'lender', 'viewer', 'realtor', 'seller'];
 
@@ -13,7 +13,10 @@ export default function AccessRequests({ dealId, onApproved }) {
 
   async function load() {
     const { data, error } = await supabase.from('commercial_access_requests')
-      .select('id,email,requested_role,created_at').eq('deal_id', dealId).eq('status', 'pending').order('created_at');
+      .select('id,email,requested_role,requester_name,requester_company,requester_note,source,created_at')
+      .eq('deal_id', dealId)
+      .eq('status', 'pending')
+      .order('created_at');
     setRows(data || []);
     setSelected((cur) => { const next = { ...cur }; for (const r of data || []) if (!next[r.id] && roles.includes(r.requested_role)) next[r.id] = r.requested_role; return next; });
     if (error) setStatus('Couldn’t load access requests.');
@@ -48,9 +51,19 @@ export default function AccessRequests({ dealId, onApproved }) {
         <ul className="divide-y divide-line">
           {rows.map((row) => (
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-              <div title={when(row.created_at)}>
-                <p className="break-all font-medium">{row.email}</p>
-                {row.requested_role && <p className="text-sm text-ink">Requested: {roleLabel[row.requested_role] || row.requested_role}</p>}
+              <div className="flex items-center gap-2">
+                <div>
+                  <p className="break-all font-medium">{row.requester_name ? `${row.requester_name} · ${row.email}` : row.email}</p>
+                  {row.requested_role && <p className="text-sm text-ink">Requested: {roleLabel[row.requested_role] || row.requested_role}</p>}
+                </div>
+                <InfoTip
+                  label={`Details for ${row.email}`}
+                  lines={[
+                    row.requester_company ? `Company: ${row.requester_company}` : null,
+                    row.requester_note ? `Note: ${row.requester_note}` : null,
+                    `Requested ${when(row.created_at)}`,
+                  ]}
+                />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <select aria-label={`Role for ${row.email}`} className="rounded-xl border border-line bg-white px-3 py-2 text-sm"

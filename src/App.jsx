@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { supabase, configured } from './lib/supabase.js';
 import { useHashRoute } from './lib/useHashRoute.js';
-import { SITE_KIND, siteRules, requestAccessAllowed } from './lib/site.js';
+import { SITE_KIND, siteRules, requestAccessAllowed, openViewerAllowed } from './lib/site.js';
 import {
   POPUP_QUERY_PARAM,
   clearPopupSignInFlow,
@@ -16,6 +16,11 @@ import DealRoom from './views/DealRoom.jsx';
 import Join from './views/Join.jsx';
 import RequestAccess from './views/RequestAccess.jsx';
 import Shell, { Button, Card, Empty } from './components/Shell.jsx';
+
+const OpenViewer =
+  import.meta.env.VITE_SITE_KIND === 'seller' || import.meta.env.VITE_SITE_KIND === 'owner'
+    ? null
+    : lazy(() => import('./views/OpenViewer.jsx'));
 
 const rules = siteRules(SITE_KIND);
 
@@ -65,6 +70,14 @@ export default function App({ framedOwner = false }) {
   }, [session?.user?.id]);
 
   if (!configured) return <Shell><p className="text-ink-soft">This site isn't connected to its database yet.</p></Shell>;
+  if (route.name === 'open-viewer') {
+    if (!openViewerAllowed(SITE_KIND) || !OpenViewer) return <Closed text="Open the link you were sent." />;
+    return (
+      <Suspense fallback={<Shell><p className="text-ink-soft">Loading…</p></Shell>}>
+        <OpenViewer slug={route.slug} token={route.token} tab={route.tab} />
+      </Suspense>
+    );
+  }
   if (session === undefined) return <Shell><p className="text-ink-soft">Loading…</p></Shell>;
   if (!session) {
     if (framedOwner) {
