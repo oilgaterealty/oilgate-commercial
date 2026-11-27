@@ -5,6 +5,7 @@ begin;
 create or replace function commercial_access_private.request_viewer_access(
   p_deal uuid,
   p_requested_role text,
+  p_name text,
   p_company text default '',
   p_note text default ''
 )
@@ -16,9 +17,9 @@ declare
   target uuid;
   v_role text;
   v_req_role text := lower(btrim(coalesce(p_requested_role, '')));
-  v_company text := nullif(left(btrim(coalesce(p_company, '')), 120), '');
+  v_name text := left(btrim(coalesce(p_name, '')), 120);
+  v_company text;
   v_note text := nullif(left(btrim(coalesce(p_note, '')), 1000), '');
-  v_name text;
   req public.commercial_access_requests;
 begin
   if me is null or my_email is null then
@@ -44,9 +45,14 @@ begin
     raise exception 'invalid requested role' using errcode = '22023';
   end if;
 
-  select nullif(left(btrim(coalesce(m.display_name, '')), 120), '') into v_name
-    from public.commercial_members m
-    where m.deal_id = target and m.email = my_email and m.status = 'active';
+  if v_name = '' then
+    raise exception 'name required' using errcode = '22023';
+  end if;
+
+  v_company := case
+    when v_req_role = 'lender' then nullif(left(btrim(coalesce(p_company, '')), 120), '')
+    else null
+  end;
 
   select * into req
     from public.commercial_access_requests a
@@ -88,7 +94,7 @@ begin
     set requester_id = me,
         status = 'pending',
         requested_role = v_req_role,
-        requester_name = coalesce(v_name, requester_name),
+        requester_name = v_name,
         requester_company = v_company,
         requester_note = v_note,
         source = 'signed_in',
@@ -186,18 +192,112 @@ $$;
 create or replace function public.commercial_request_viewer_access(
   p_deal uuid,
   p_requested_role text,
+  p_name text,
   p_company text default '',
   p_note text default ''
 )
 returns text language sql security invoker set search_path = ''
-as $$ select commercial_access_private.request_viewer_access(p_deal, p_requested_role, p_company, p_note) $$;
+as $$ select commercial_access_private.request_viewer_access(p_deal, p_requested_role, p_name, p_company, p_note) $$;
 
-revoke all on function commercial_access_private.request_viewer_access(uuid, text, text, text) from public, anon, authenticated;
+create or replace function public.commercial_open_request_access(
+  p_token text,
+  p_name text,
+  p_company text,
+  p_email text,
+  p_role text,
+  p_note text default ''
+)
+returns text language plpgsql volatile security definer set search_path = public
+as $$
+declare
+  v_deal_id uuid;
+  v_role text := lower(btrim(coalesce(p_role, '')));
+  v_email text := lower(btrim(coalesce(p_email, '')));
+  v_name text := left(btrim(coalesce(p_name, '')), 120);
+  v_company text;
+  v_note text := nullif(left(btrim(coalesce(p_note, '')), 1000), '');
+  v_attempts integer;
+begin
+  if p_token is null or p_token !~ '^[A-Za-z0-9_-]{32,128}$' then
+    return 'invalid';
+  end if;
+
+  select l.deal_id into v_deal_id
+    from public.commercial_open_links l
+    join public.commercial_deals d on d.id = l.deal_id
+    where l.token = p_token
+      and l.revoked_at is null
+      and d.status = 'active'
+    limit 1;
+
+  if v_deal_id is null then
+    return 'invalid';
+  end if;
+
+  if v_role not in ('lender', 'reviewer') then
+    return 'invalid_role';
+  end if;
+
+  if char_length(v_email) < 3 or char_length(v_email) > 254 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    return 'invalid_email';
+  end if;
+
+  if v_name = '' then
+    return 'invalid_name';
+  end if;
+
+  v_company := case
+    when v_role = 'lender' then nullif(left(btrim(coalesce(p_company, '')), 120), '')
+    else null
+  end;
+
+  select count(*)::int into v_attempts
+    from public.commercial_open_request_attempts a
+    where a.email = v_email
+      and a.created_at > now() - interval '24 hours';
+
+  if v_attempts >= 3 then
+    return 'rate_limited';
+  end if;
+
+  insert into public.commercial_open_request_attempts (deal_id, email)
+    values (v_deal_id, v_email);
+
+  if not exists (select 1 from public.commercial_owners o where o.email = v_email)
+     and not exists (select 1 from public.commercial_members m where m.deal_id = v_deal_id and m.email = v_email) then
+    insert into public.commercial_access_requests (
+      deal_id,
+      requester_id,
+      email,
+      requested_role,
+      requester_name,
+      requester_company,
+      requester_note,
+      source
+    )
+    values (
+      v_deal_id,
+      null,
+      v_email,
+      v_role,
+      v_name,
+      v_company,
+      v_note,
+      'open_link'
+    )
+    on conflict (deal_id, email) do nothing;
+  end if;
+
+  return 'received';
+end
+$$;
+
+revoke all on function commercial_access_private.request_viewer_access(uuid, text, text, text, text) from public, anon, authenticated;
 revoke all on function commercial_access_private.decide_request(uuid, boolean, text) from public, anon, authenticated;
-revoke all on function public.commercial_request_viewer_access(uuid, text, text, text) from public, anon, authenticated;
-grant execute on function commercial_access_private.request_viewer_access(uuid, text, text, text) to authenticated;
+revoke all on function public.commercial_request_viewer_access(uuid, text, text, text, text) from public, anon, authenticated;
+grant execute on function commercial_access_private.request_viewer_access(uuid, text, text, text, text) to authenticated;
 grant execute on function commercial_access_private.decide_request(uuid, boolean, text) to authenticated;
-grant execute on function public.commercial_request_viewer_access(uuid, text, text, text) to authenticated;
+grant execute on function public.commercial_request_viewer_access(uuid, text, text, text, text) to authenticated;
 
 notify pgrst, 'reload schema';
 commit;

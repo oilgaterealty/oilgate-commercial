@@ -117,7 +117,7 @@ export default function OpenViewer({ slug, token, tab }) {
     const { data, error } = await supabase.rpc('commercial_open_request_access', {
       p_token: token,
       p_name: check.values.name,
-      p_company: check.values.company,
+      p_company: check.values.role === 'lender' ? check.values.company : '',
       p_email: check.values.email,
       p_role: check.values.role,
       p_note: check.values.note,
@@ -226,48 +226,68 @@ export default function OpenViewer({ slug, token, tab }) {
                   aria-hidden="true"
                   className="hidden"
                 />
-                <Field
-                  required
-                  maxLength={120}
-                  aria-label="Name"
-                  placeholder="Name"
-                  value={form.name}
-                  onChange={(e) => { setForm({ ...form, name: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                />
-                <Field
-                  maxLength={120}
-                  aria-label="Company"
-                  placeholder="Company"
-                  value={form.company}
-                  onChange={(e) => { setForm({ ...form, company: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                />
-                <Field
-                  type="email"
-                  required
-                  maxLength={254}
-                  aria-label="Email"
-                  placeholder="Email"
-                  value={form.email}
-                  onChange={(e) => { setForm({ ...form, email: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                />
-                <select
-                  aria-label="Role"
-                  value={form.role}
-                  onChange={(e) => { setForm({ ...form, role: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                  className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ink"
-                >
-                  {OPEN_REQUEST_ROLES.map(([k, label]) => (
-                    <option key={k} value={k}>{label}</option>
-                  ))}
-                </select>
-                <Field
-                  maxLength={1000}
-                  aria-label="Note"
-                  placeholder="Note (optional)"
-                  className="sm:col-span-2"
-                  value={form.note}
-                  onChange={(e) => { setForm({ ...form, note: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                />
+                <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                  Name
+                  <Field
+                    required
+                    maxLength={120}
+                    aria-label="Name"
+                    placeholder="Name"
+                    value={form.name}
+                    onChange={(e) => { setForm({ ...form, name: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                  Email
+                  <Field
+                    type="email"
+                    required
+                    maxLength={254}
+                    aria-label="Email"
+                    placeholder="Email"
+                    value={form.email}
+                    onChange={(e) => { setForm({ ...form, email: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                  />
+                </label>
+                <label className={`grid gap-1 text-xs font-medium text-ink-soft ${form.role === 'lender' ? '' : 'sm:col-span-2'}`}>
+                  Role
+                  <select
+                    aria-label="Role"
+                    value={form.role}
+                    onChange={(e) => {
+                      const role = e.target.value;
+                      setForm((prev) => ({ ...prev, role, company: role === 'lender' ? prev.company : '' }));
+                      if (submitState !== 'idle') setSubmitState('idle');
+                    }}
+                    className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+                  >
+                    {OPEN_REQUEST_ROLES.map(([k, label]) => (
+                      <option key={k} value={k}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+                {form.role === 'lender' && (
+                  <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                    Company
+                    <Field
+                      maxLength={120}
+                      aria-label="Company"
+                      placeholder="Company"
+                      value={form.company}
+                      onChange={(e) => { setForm({ ...form, company: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                    />
+                  </label>
+                )}
+                <label className="grid gap-1 text-xs font-medium text-ink-soft sm:col-span-2">
+                  Note
+                  <Field
+                    maxLength={1000}
+                    aria-label="Note"
+                    placeholder="Note"
+                    value={form.note}
+                    onChange={(e) => { setForm({ ...form, note: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                  />
+                </label>
                 <div className="sm:col-span-2">
                   <Button type="submit" disabled={submitState === 'sending' || submitState === 'sent'}>
                     {BUTTON_LABEL[submitState] || 'Request access'}

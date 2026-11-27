@@ -26,24 +26,32 @@ const VIEWER_REQUEST_LABEL = {
   error: 'Try again',
 };
 
-function ViewerAccessRequest({ deal, preview }) {
+function ViewerAccessRequest({ deal, me, member, preview }) {
+  const initialName = preview ? '' : String(member?.display_name || me?.name || '').trim().slice(0, 120);
+  const viewerEmail = preview || !me?.email || me.email === '__preview__' ? '' : String(me.email).trim().toLowerCase();
   const [requestedRole, setRequestedRole] = useState('lender');
+  const [name, setName] = useState(initialName);
   const [company, setCompany] = useState('');
   const [note, setNote] = useState('');
   const [submitState, setSubmitState] = useState('idle');
 
+  const cleanName = name.trim().slice(0, 120);
+  const locked = submitState === 'sending' || submitState === 'sent' || submitState === 'denied';
+
   const submit = async (e) => {
     e.preventDefault();
-    if (preview || submitState === 'sending' || submitState === 'sent' || submitState === 'denied') return;
+    if (preview || locked || !cleanName || !viewerEmail) return;
     if (!VIEWER_REQUEST_ROLES.some(([k]) => k === requestedRole)) return;
     setSubmitState('sending');
     try {
-      const { data, error } = await supabase.rpc('commercial_request_viewer_access', {
+      const payload = {
         p_deal: deal.id,
         p_requested_role: requestedRole,
-        p_company: company.trim().slice(0, 120),
+        p_name: cleanName,
         p_note: note.trim().slice(0, 1000),
-      });
+        ...(requestedRole === 'lender' ? { p_company: company.trim().slice(0, 120) } : {}),
+      };
+      const { data, error } = await supabase.rpc('commercial_request_viewer_access', payload);
       if (error) {
         setSubmitState('error');
       } else if (data === 'pending') {
@@ -57,8 +65,6 @@ function ViewerAccessRequest({ deal, preview }) {
       setSubmitState('error');
     }
   };
-
-  const locked = submitState === 'sending' || submitState === 'sent' || submitState === 'denied';
 
   return (
     <Card>
@@ -76,6 +82,7 @@ function ViewerAccessRequest({ deal, preview }) {
                 disabled={locked}
                 onClick={() => {
                   setRequestedRole(k);
+                  if (k !== 'lender') setCompany('');
                   if (submitState === 'error') setSubmitState('idle');
                 }}
                 className={`min-h-[44px] rounded-xl border px-3 py-2 text-sm font-medium transition ${on ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink hover:border-ink'}`}
@@ -85,30 +92,65 @@ function ViewerAccessRequest({ deal, preview }) {
             );
           })}
         </div>
-        <Field
-          maxLength={120}
-          aria-label="Company"
-          placeholder="Company (optional)"
-          disabled={locked}
-          value={company}
-          onChange={(e) => {
-            setCompany(e.target.value);
-            if (submitState === 'error') setSubmitState('idle');
-          }}
-        />
-        <Field
-          maxLength={1000}
-          aria-label="Note"
-          placeholder="Note (optional)"
-          disabled={locked}
-          value={note}
-          onChange={(e) => {
-            setNote(e.target.value);
-            if (submitState === 'error') setSubmitState('idle');
-          }}
-        />
+        <label className="grid gap-1 text-xs font-medium text-ink-soft">
+          Name
+          <Field
+            required
+            maxLength={120}
+            aria-label="Name"
+            placeholder="Name"
+            disabled={locked}
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (submitState === 'error') setSubmitState('idle');
+            }}
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-medium text-ink-soft">
+          Email
+          <Field
+            type="email"
+            required
+            readOnly
+            aria-label="Email"
+            placeholder="Email"
+            value={viewerEmail}
+            className="bg-warm-soft/40 text-ink-soft"
+          />
+        </label>
+        {requestedRole === 'lender' && (
+          <label className="grid gap-1 text-xs font-medium text-ink-soft">
+            Company
+            <Field
+              maxLength={120}
+              aria-label="Company"
+              placeholder="Company"
+              disabled={locked}
+              value={company}
+              onChange={(e) => {
+                setCompany(e.target.value);
+                if (submitState === 'error') setSubmitState('idle');
+              }}
+            />
+          </label>
+        )}
+        <label className={`grid gap-1 text-xs font-medium text-ink-soft ${requestedRole === 'lender' ? '' : 'sm:col-span-2'}`}>
+          Note
+          <Field
+            maxLength={1000}
+            aria-label="Note"
+            placeholder="Note"
+            disabled={locked}
+            value={note}
+            onChange={(e) => {
+              setNote(e.target.value);
+              if (submitState === 'error') setSubmitState('idle');
+            }}
+          />
+        </label>
         <div className="sm:col-span-2">
-          <Button type="submit" disabled={preview || locked || !requestedRole}>
+          <Button type="submit" disabled={preview || locked || !requestedRole || !cleanName}>
             {VIEWER_REQUEST_LABEL[submitState] || 'Request access'}
           </Button>
         </div>
@@ -164,7 +206,7 @@ function QuickOpinion({ deal, me, role, preview }) {
 }
 
 // Reviewer and viewer: one scrollable page per role. Each sees only what the owner shared with that role.
-export default function Reviewer({ deal, me, role, preview, tab }) {
+export default function Reviewer({ deal, me, member, role, preview, tab }) {
   const [rows, load] = useUploads(deal);
   const [leadGuide, setLeadGuide] = useState(null);
   const viewer = role !== 'reviewer';
@@ -217,7 +259,7 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
         {viewer ? (
           <>
             <PropertyFacts slug={deal.slug} />
-            <ViewerAccessRequest deal={deal} preview={preview} />
+            <ViewerAccessRequest deal={deal} me={me} member={member} preview={preview} />
           </>
         ) : (
           <>

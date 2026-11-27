@@ -92,9 +92,9 @@ export function validateAccessRequest({ name = '', company = '', email = '', rol
     return { ok: true, honeypot: true, values: null };
   }
   const cleanName = String(name || '').trim().slice(0, 120);
-  const cleanCompany = String(company || '').trim().slice(0, 120);
   const cleanEmail = String(email || '').trim().toLowerCase();
   const cleanRole = String(role || '').trim().toLowerCase();
+  const cleanCompany = cleanRole === 'lender' ? String(company || '').trim().slice(0, 120) : '';
   const cleanNote = String(note || '').trim().slice(0, 1000);
 
   if (!cleanName) return { ok: false, error: 'Name required' };

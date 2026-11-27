@@ -19,6 +19,7 @@ import {
   validateAccessRequest,
 } from '../src/lib/openViewer.js';
 import { ALLOWED_FACT_KEYS, OPEN_VIEWER_FACTS } from '../src/lib/openViewerFacts.js';
+import { VIEWER_REQUEST_ROLES } from '../src/lib/requestRoles.js';
 import { parseHash } from '../src/lib/useHashRoute.js';
 import {
   GUEST_SITE,
@@ -32,11 +33,11 @@ const jsxRuntime = require('react/jsx-runtime');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
-function loadJsx(file, mocks) {
+function loadJsx(file, mocks, reactImpl = React) {
   const code = transformSync(read(file), { loader: 'jsx', format: 'cjs', jsx: 'automatic' }).code;
   const mod = { exports: {} };
   const localRequire = (spec) => {
-    if (spec === 'react') return React;
+    if (spec === 'react') return reactImpl;
     if (spec === 'react/jsx-runtime') return jsxRuntime;
     if (spec in mocks) return mocks[spec];
     return require(spec);
@@ -160,6 +161,23 @@ test('validateAccessRequest accepts only lender/reviewer, checks fields, and det
     note: 'Interested in financing',
   });
 
+  const okReviewer = validateAccessRequest({
+    name: '  Jordan Lee ',
+    company: ' Should Be Ignored ',
+    email: ' Jordan@Example.COM ',
+    role: 'reviewer',
+    note: ' Reviewing photos ',
+    honeypot: '',
+  });
+  assert.equal(okReviewer.ok, true);
+  assert.deepEqual(okReviewer.values, {
+    name: 'Jordan Lee',
+    company: '',
+    email: 'jordan@example.com',
+    role: 'reviewer',
+    note: 'Reviewing photos',
+  });
+
   const hp = validateAccessRequest({
     name: 'Bot',
     email: 'bot@example.com',
@@ -174,6 +192,9 @@ test('validateAccessRequest accepts only lender/reviewer, checks fields, and det
     assert.equal(res.ok, false, `role ${badRole} rejected`);
   }
   assert.equal(validateAccessRequest({ name: '', email: 'sam@example.com', role: 'reviewer' }).ok, false);
+  assert.equal(validateAccessRequest({ name: '   ', email: 'sam@example.com', role: 'lender' }).ok, false);
+  assert.equal(validateAccessRequest({ name: 'Sam', email: '', role: 'lender' }).ok, false);
+  assert.equal(validateAccessRequest({ name: 'Sam', email: '   ', role: 'reviewer' }).ok, false);
   assert.equal(validateAccessRequest({ name: 'Sam', email: 'not-an-email', role: 'reviewer' }).ok, false);
 });
 
@@ -543,7 +564,7 @@ test('PropertyFacts renders sources only in OverlayTrigger and shares exact layo
   assert.equal(renderToStaticMarkup(React.createElement(pfMod.default, { slug: 'unknown' })), '');
 });
 
-test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and supports Lender/Reviewer request form disabled in preview', () => {
+test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and enforces Name/Email/role-gated Company in ViewerAccessRequest', () => {
   const revSrc = read('src/views/Reviewer.jsx');
   const viewerReqBlock = revSrc.slice(
     revSrc.indexOf('function ViewerAccessRequest'),
@@ -551,24 +572,202 @@ test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and 
   );
   assert.match(revSrc, /import\s+PropertyFacts\s+from\s+'\.\.\/components\/PropertyFacts\.jsx'/);
   assert.match(revSrc, /import\s+\{\s*VIEWER_REQUEST_ROLES\s*\}\s+from\s+'\.\.\/lib\/requestRoles\.js'/);
-  assert.match(revSrc, /\{viewer\s*\?\s*\(\s*<>\s*<PropertyFacts\s+slug=\{deal\.slug\}\s*\/>\s*<ViewerAccessRequest\s+deal=\{deal\}\s+preview=\{preview\}\s*\/>\s*<\/>\s*\)/);
+  assert.match(revSrc, /\{viewer\s*\?\s*\(\s*<>\s*<PropertyFacts\s+slug=\{deal\.slug\}\s*\/>\s*<ViewerAccessRequest\s+deal=\{deal\}\s+me=\{me\}\s+member=\{member\}\s+preview=\{preview\}\s*\/>\s*<\/>\s*\)/);
   assert.match(viewerReqBlock, /commercial_request_viewer_access/);
+  assert.match(viewerReqBlock, /p_name:\s*cleanName/);
+  assert.match(viewerReqBlock, /requestedRole === 'lender' \? \{ p_company:/);
   assert.doesNotMatch(viewerReqBlock, /role="status"/);
+  assert.doesNotMatch(viewerReqBlock, /\(optional\)/i);
   assert.doesNotMatch(revSrc, /10-unit residential property/);
 
   const rolesSrc = read('src/lib/requestRoles.js');
   assert.match(rolesSrc, /VIEWER_REQUEST_ROLES\s*=\s*\[\s*\['lender',\s*'Lender'\],\s*\['reviewer',\s*'Reviewer'\]/);
+
+  const makeViewerReact = (roleOverride) => ({
+    ...React,
+    useState(init) {
+      if (init === 'lender') return [roleOverride, () => {}];
+      return React.useState(init);
+    },
+  });
+  const reviewerMocks = {
+    '../lib/people.js': { buyerName: () => 'Buyer' },
+    './Comps.jsx': { __esModule: true, default: () => null },
+    './Offers.jsx': { __esModule: true, default: () => null },
+    '../lib/supabase.js': { supabase: { rpc: async () => ({ data: null, error: null }) } },
+    '../lib/dealmath.js': { evaluate: () => ({}), operating: () => ({ b: { rent: 0, value: 0, rehab: 0, refiRate: 0, refiYears: 0 }, noi: 0, capRate: 0 }), money: (v) => String(v), pct: (v) => String(v), valueSummary: () => ({}) },
+    '../lib/useDealModel.js': { useDealModel: () => ({ base: {} }) },
+    '../components/Shell.jsx': {
+      Button: ({ children, ...p }) => React.createElement('button', p, children),
+      Card: ({ children }) => React.createElement('section', null, children),
+      CardTitle: ({ children }) => React.createElement('h2', null, children),
+      Empty: ({ children }) => React.createElement('p', null, children),
+      Field: ({ as: Tag = 'input', ...p }) => React.createElement(Tag, p),
+      JumpNav: () => null,
+      OverlayTrigger: ({ children }) => React.createElement('span', null, children),
+      useSectionScroll: () => ({ activeSection: 'overview', jumpTo: () => {} }),
+    },
+    '../components/Dictation.jsx': { DictatedField: ({ as: Tag = 'input', ...p }) => React.createElement(Tag, p) },
+    '../components/Messages.jsx': { __esModule: true, default: () => null, sendToOwner: async () => null },
+    '../components/Files.jsx': { useUploads: () => [[], () => {}], Uploader: () => null, FileList: () => null },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/PropertyFacts.jsx': { __esModule: true, default: () => null },
+    '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
+    '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
+    '../components/UnitsRentedGuide.jsx': { isUnitsGuide: () => false },
+    '../components/RentValue.jsx': { __esModule: true, default: () => null, isRentValue: () => false },
+    '../lib/requestRoles.js': { VIEWER_REQUEST_ROLES },
+  };
+
+  const inputWithLabel = (html, label) => {
+    const m = html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`));
+    assert.ok(m, `expected input with aria-label="${label}"`);
+    return m[0];
+  };
+
+  const revLenderMod = loadJsx('src/views/Reviewer.jsx', reviewerMocks, makeViewerReact('lender'));
+  const filledLenderHtml = renderToStaticMarkup(
+    React.createElement(revLenderMod.default, {
+      deal: { id: 'd1', slug: 'charlotte' },
+      me: { email: 'Viewer@Example.com', name: 'Member Name' },
+      member: { display_name: 'Alice Viewer' },
+      role: 'viewer',
+      preview: false,
+    }),
+  );
+  assert.match(inputWithLabel(filledLenderHtml, 'Name'), /\brequired=""/);
+  assert.match(inputWithLabel(filledLenderHtml, 'Name'), /\bvalue="Alice Viewer"/);
+  const lenderEmailInput = inputWithLabel(filledLenderHtml, 'Email');
+  assert.match(lenderEmailInput, /\btype="email"/);
+  assert.match(lenderEmailInput, /\brequired=""/);
+  assert.match(lenderEmailInput, /\breadonly=""/i);
+  assert.match(lenderEmailInput, /\bvalue="viewer@example\.com"/);
+  inputWithLabel(filledLenderHtml, 'Company');
+  inputWithLabel(filledLenderHtml, 'Note');
+  assert.doesNotMatch(filledLenderHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
+
+  const blankNameHtml = renderToStaticMarkup(
+    React.createElement(revLenderMod.default, {
+      deal: { id: 'd1', slug: 'charlotte' },
+      me: { email: 'viewer@example.com', name: '' },
+      member: { display_name: '' },
+      role: 'viewer',
+      preview: false,
+    }),
+  );
+  assert.match(blankNameHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
+
+  const previewHtml = renderToStaticMarkup(
+    React.createElement(revLenderMod.default, {
+      deal: { id: 'd1', slug: 'charlotte' },
+      me: { email: '__preview__', name: 'Preview' },
+      role: 'viewer',
+      preview: true,
+    }),
+  );
+  assert.match(previewHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
+  assert.doesNotMatch(previewHtml, /__preview__/);
+
+  const revReviewerMod = loadJsx('src/views/Reviewer.jsx', reviewerMocks, makeViewerReact('reviewer'));
+  const reviewerRoleHtml = renderToStaticMarkup(
+    React.createElement(revReviewerMod.default, {
+      deal: { id: 'd1', slug: 'charlotte' },
+      me: { email: 'viewer@example.com', name: 'Bob Reviewer' },
+      role: 'viewer',
+      preview: false,
+    }),
+  );
+  assert.match(inputWithLabel(reviewerRoleHtml, 'Name'), /\brequired=""/);
+  assert.match(inputWithLabel(reviewerRoleHtml, 'Name'), /\bvalue="Bob Reviewer"/);
+  assert.match(inputWithLabel(reviewerRoleHtml, 'Email'), /\breadonly=""/i);
+  assert.doesNotMatch(reviewerRoleHtml, /aria-label="Company"/);
+  inputWithLabel(reviewerRoleHtml, 'Note');
 });
 
-test('0028 migration adds authenticated viewer upgrade RPC without anon grants or non-viewer overwrites', () => {
+test('OpenViewer request access form requires Name/Email, shows Company only for Lender, and omits subtext', () => {
+  const ovSrc = read('src/views/OpenViewer.jsx');
+  assert.doesNotMatch(ovSrc, /\(optional\)/i);
+  assert.match(ovSrc, /p_company:\s*check\.values\.role === 'lender' \? check\.values\.company : ''/);
+
+  const snapshot = {
+    deal: { id: 'd1', slug: 'charlotte', title: '23-27 Charlotte St', address: '23-27 Charlotte St, Akron, OH', units: 10, summary: 'Property' },
+    photos: [],
+    walkthroughPhotos: [],
+  };
+  const makeOpenReact = (roleOverride) => ({
+    ...React,
+    useState(init) {
+      if (init && typeof init === 'object' && 'snapshot' in init) return [{ loading: false, snapshot }, () => {}];
+      if (init === false) return [true, () => {}];
+      if (init && typeof init === 'object' && 'role' in init) return [{ ...init, role: roleOverride }, () => {}];
+      return React.useState(init);
+    },
+  });
+  const openMocks = {
+    '../lib/supabase.js': { supabase: { rpc: async () => ({ data: null, error: null }), functions: { invoke: async () => ({ data: null, error: null }) } } },
+    '../lib/site.js': { isOpenViewerToken: () => true },
+    '../lib/openViewer.js': {
+      OPEN_REQUEST_ROLES,
+      filterOpenViewerSnapshot,
+      getOpenViewerFacts,
+      getOrCreateVisitorId,
+      mergeOpenViewerPhotoUrls,
+      selectFeaturedPhoto,
+      validateAccessRequest,
+    },
+    '../components/Shell.jsx': Object.assign(
+      ({ children }) => React.createElement('div', null, children),
+      {
+        Button: ({ children, ...p }) => React.createElement('button', p, children),
+        Card: ({ children }) => React.createElement('section', null, children),
+        CardTitle: ({ children }) => React.createElement('h2', null, children),
+        Empty: ({ children }) => React.createElement('p', null, children),
+        Field: ({ as: Tag = 'input', ...p }) => React.createElement(Tag, p),
+      },
+    ),
+    '../components/Photos.jsx': { PhotoGrid: () => null, photosOf: () => [] },
+    '../components/PhotoViewer.jsx': { __esModule: true, default: () => null },
+    '../components/PropertyFacts.jsx': { __esModule: true, default: () => null },
+    '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
+  };
+
+  const inputTag = (html, label) => {
+    const m = html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`));
+    assert.ok(m, `expected input with aria-label="${label}"`);
+    return m[0];
+  };
+
+  const lenderHtml = renderToStaticMarkup(
+    React.createElement(loadJsx('src/views/OpenViewer.jsx', openMocks, makeOpenReact('lender')).default, { slug: 'charlotte', token: 'a'.repeat(32), tab: '' }),
+  );
+  assert.match(inputTag(lenderHtml, 'Name'), /\brequired=""/);
+  assert.match(inputTag(lenderHtml, 'Email'), /\btype="email"/);
+  assert.match(inputTag(lenderHtml, 'Email'), /\brequired=""/);
+  assert.doesNotMatch(inputTag(lenderHtml, 'Company'), /\brequired=""/);
+  inputTag(lenderHtml, 'Note');
+
+  const reviewerHtml = renderToStaticMarkup(
+    React.createElement(loadJsx('src/views/OpenViewer.jsx', openMocks, makeOpenReact('reviewer')).default, { slug: 'charlotte', token: 'a'.repeat(32), tab: '' }),
+  );
+  assert.match(inputTag(reviewerHtml, 'Name'), /\brequired=""/);
+  assert.match(inputTag(reviewerHtml, 'Email'), /\btype="email"/);
+  assert.match(inputTag(reviewerHtml, 'Email'), /\brequired=""/);
+  assert.doesNotMatch(reviewerHtml, /aria-label="Company"/);
+  inputTag(reviewerHtml, 'Note');
+});
+
+test('0028 migration requires p_name, nulls company for reviewer on both RPCs, and preserves anon grants', () => {
   const sql = read('supabase/migrations/0028_viewer_access_upgrade.sql');
   assert.match(sql, /^[\s\S]*begin;/i);
   assert.match(sql, /notify pgrst,\s*'reload schema';/);
   assert.match(sql, /commit;\s*$/i);
   assert.doesNotMatch(sql, /\b(drop table|drop column|truncate|delete from|net\.http_post|ntfy)\b/i);
   assert.doesNotMatch(sql, /grant\s+[^;]*\bto\s+[^;]*\b(public|anon)\b/i);
-  assert.match(sql, /grant execute on function public\.commercial_request_viewer_access\(uuid, text, text, text\) to authenticated/i);
-  assert.match(sql, /request_viewer_access[\s\S]*security definer set search_path = ''/i);
+  assert.match(sql, /grant execute on function public\.commercial_request_viewer_access\(uuid, text, text, text, text\) to authenticated/i);
+  assert.match(sql, /request_viewer_access\(\s*p_deal uuid,\s*p_requested_role text,\s*p_name text,\s*p_company text default '',\s*p_note text default ''\s*\)[\s\S]*security definer set search_path = ''/i);
+  assert.match(sql, /if v_name = '' then\s*raise exception 'name required' using errcode = '22023';/i);
+  assert.match(sql, /request_viewer_access[\s\S]*when v_req_role = 'lender' then nullif\(left\(btrim\(coalesce\(p_company, ''\)\), 120\), ''\)\s*else null/i);
+  assert.match(sql, /commercial_open_request_access[\s\S]*when v_role = 'lender' then nullif\(left\(btrim\(coalesce\(p_company, ''\)\), 120\), ''\)\s*else null/i);
   assert.match(sql, /v_role not in \('viewer', 'guest'\)/i);
   assert.match(sql, /v_req_role not in \('lender', 'reviewer'\)/i);
   assert.match(sql, /decide_request[\s\S]*and role in \('viewer', 'guest'\)/i);
