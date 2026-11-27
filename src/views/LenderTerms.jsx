@@ -23,11 +23,13 @@ const LENDER_BOARD_LABELS = {
 
 export const LENDER_FIELDS = [
   { key: 'ltc', label: 'LTC (% of cost)', programs: ['bridge'], inputType: 'number', unit: '%', step: 5, min: 0, max: 100, placeholder: 'e.g. 90' },
-  { key: 'ltv', label: 'Max LTV (% of value)', programs: ['bridge', 'dscr'], inputType: 'number', unit: '%', step: 5, min: 0, max: 100, placeholder: 'e.g. 75' },
+  { key: 'ltv', label: 'Max LTV (% of value)', programs: ['dscr'], inputType: 'number', unit: '%', step: 5, min: 0, max: 100, presets: [75, 80], placeholder: 'e.g. 75' },
   { key: 'participation', label: 'Your participation', programs: ['private'], inputType: 'number', unit: '$', step: 5000, min: 0, placeholder: 'e.g. 50000' },
-  { key: 'rate', label: 'Interest rate', programs: ['bridge', 'private', 'dscr'], inputType: 'number', unit: '%', step: 0.25, min: 0, max: 30, placeholder: 'e.g. 11.5' },
-  { key: 'points', label: 'Origination points', programs: ['bridge', 'private', 'dscr'], inputType: 'number', unit: 'pts', step: 0.25, min: 0, max: 10, placeholder: 'e.g. 1' },
+  { key: 'dscr', label: 'Minimum DSCR', programs: ['dscr'], inputType: 'choice', choices: ['1.00x', '1.10x', '1.15x', '1.20x', '1.25x'] },
+  { key: 'rate', label: 'Interest rate', programs: ['bridge', 'private', 'dscr'], inputType: 'number', unit: '%', step: 0.25, min: 0, max: 30, placeholder: 'e.g. 10' },
+  { key: 'points', label: 'Origination points', programs: ['bridge'], inputType: 'number', unit: 'pts', step: 0.25, min: 0, max: 10, placeholder: 'e.g. 1' },
   { key: 'processing', label: 'Processing fee', programs: ['bridge'], inputType: 'number', unit: '$', step: 100, min: 0, placeholder: 'e.g. 1295' },
+  { key: 'amortization', label: 'Amortization', programs: ['dscr'], inputType: 'choice', choices: ['20 years', '25 years', '30 years'] },
   {
     key: 'term',
     label: 'Loan term',
@@ -42,7 +44,7 @@ export const LENDER_FIELDS = [
   {
     key: 'deferred_interest',
     label: 'Deferred interest',
-    programs: ['bridge', 'private'],
+    programs: ['bridge'],
     inputType: 'choice',
     choices: ['None', '1 month', '2 months', '3 months', '6 months'],
   },
@@ -51,14 +53,28 @@ export const LENDER_FIELDS = [
     label: 'Rehab draws',
     programs: ['bridge'],
     inputType: 'choice',
-    choices: ['In draws', 'At closing', 'No rehab funding'],
+    choices: ['In draws (non-Dutch)', 'In draws (Dutch)', 'At closing', 'No rehab funding'],
   },
   {
-    key: 'dscr',
-    label: 'Minimum DSCR',
+    key: 'lien_position',
+    label: 'Lien position',
+    programs: ['private'],
+    inputType: 'choice',
+    choices: ['First-lien pooled', 'First-lien sole', 'Second-lien'],
+  },
+  {
+    key: 'prepayment',
+    label: 'Prepayment penalty',
     programs: ['dscr'],
     inputType: 'choice',
-    choices: ['1.00x', '1.10x', '1.15x', '1.20x', '1.25x'],
+    choices: ['None', '3-2-1', '5-4-3-2-1', 'Yield maintenance'],
+  },
+  {
+    key: 'refi_fees',
+    label: 'Refi fees',
+    programs: ['dscr'],
+    inputType: 'text',
+    placeholder: 'e.g. $5,000 flat + 2%',
   },
   {
     key: 'seasoning',
@@ -114,7 +130,7 @@ function formatFieldOutput(field, raw) {
   return s;
 }
 
-// Single-source asks derived from the Plan 1A / DSCR model. Every default can be countered with one tap.
+// Single-source asks derived per program tab. Each tab shows only its own lender's ask.
 export function wantedTerms(program, guide, base, offer = null) {
   const pkg = buildLenderPackage({ base, offer, guide, lens: program });
   const pointsWord = pkg.pointsPct === 1 ? 'point' : 'points';
@@ -126,34 +142,36 @@ export function wantedTerms(program, guide, base, offer = null) {
   let byKey = {};
   if (program === 'bridge') {
     byKey = {
-      ...(hasBridge ? { ltc: `100% LTC ($0 down · ${money(pkg.totalLoan)})` } : {}),
-      ...(pkg.value > 0 && pkg.ltvPct > 0 ? { ltv: `${Math.round(pkg.ltvPct)}% LTV (${money(pkg.value)})` } : {}),
-      rate: `${pkg.ratePct}% IO (${money(pkg.monthlyInterest)}/mo)`,
-      points: `${pkg.pointsPct} ${pointsWord} (${money(pkg.points)})`,
+      ...(hasBridge ? { ltc: `100% LTC · Loan ${money(pkg.totalLoan)} · $0 down` } : { ltc: '100% LTC · $0 down' }),
+      rate: `${pkg.ratePct}% IO · non-Dutch · ${money(pkg.initialMonthlyInterest)}/mo at close`,
+      points: `${pkg.pointsPct} ${pointsWord} · Fee ${money(pkg.points)}`,
       processing: money(pkg.processing),
       term: `${pkg.termMonths} months`,
-      deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months (${money(pkg.deferredInterest)})` : 'None',
-      ...(pkg.repairs > 0 ? { rehab_draws: `${money(pkg.repairs)} in draws` } : {}),
+      deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months (due at payoff)` : 'None',
+      rehab_draws: pkg.repairs > 0 ? `Repairs ${money(pkg.repairs)} in draws (non-Dutch)` : 'In draws (non-Dutch)',
     };
   } else if (program === 'private') {
     byKey = {
-      participation: hasBridge
-        ? `${money(pkg.minParticipation)} min (of ${money(pkg.totalLoan)} pool)`
-        : `${money(pkg.minParticipation)} min`,
-      rate: `${pkg.ratePct}% IO`,
-      points: `${pkg.pointsPct} ${pointsWord} (${money(pkg.points)})`,
-      term: `${pkg.termMonths} months`,
-      deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months (${money(pkg.deferredInterest)})` : 'None',
+      participation: pkg.privatePool.totalFunds > 0
+        ? `Min ${money(pkg.minParticipation)} · Pool ${money(pkg.privatePool.totalFunds)}`
+        : `Min ${money(pkg.minParticipation)}`,
+      rate: `${pkg.privatePool.ratePct}% · no points`,
+      term: `${pkg.privatePool.termMonths} months`,
+      lien_position: 'First-lien pooled',
     };
   } else if (program === 'dscr') {
     byKey = {
-      ltv: pkg.refiCheck.newLoan > 0
-        ? `${pkg.refiCheck.refiLtv}% LTV (${money(pkg.refiCheck.newLoan)})`
+      ltv: pkg.value > 0 && pkg.refiCheck.newLoan > 0
+        ? `${pkg.refiCheck.refiLtv}% LTV · Value ${money(pkg.value)} · Loan ${money(pkg.refiCheck.newLoan)}`
         : `${pkg.refiCheck.refiLtv}% LTV`,
-      rate: `${refiRate}%`,
-      points: `${pkg.refiCheck.refiFeesPct}%`,
-      term: `${refiYears} years`,
       dscr: `${refiDscr}x`,
+      rate: `${refiRate}%`,
+      amortization: `${refiYears} years`,
+      term: `${refiYears} years`,
+      prepayment: 'None',
+      refi_fees: pkg.refiCheck.newLoan > 0
+        ? `${money(pkg.refiCheck.refiFeesFlat)} flat + ${pkg.refiCheck.refiFeesPct}% · Fee ${money(pkg.refiCheck.refiFeesTotal)}`
+        : `${money(pkg.refiCheck.refiFeesFlat)} flat + ${pkg.refiCheck.refiFeesPct}%`,
       seasoning: `Once all ${pkg.units} units are rented`,
     };
   }
@@ -292,11 +310,12 @@ export function buildTermsSubmission({
     const formatted = formatFieldOutput(f, values?.[f.label]);
     if (formatted) answered[f.label] = formatted;
   }
-  const extSummary = program === 'dscr' ? '' : formatExtensionSummary(extensions);
+  const extSummary = program === 'bridge' ? formatExtensionSummary(extensions) : '';
   if (extSummary) answered.Extensions = extSummary;
   const bothParcels = String(values?.[COLLATERAL_QUESTION.label] || '').trim();
   if (bothParcels) answered[COLLATERAL_QUESTION.label] = bothParcels;
   for (const opt of OPTIONAL_FIELDS) {
+    if (program === 'dscr' && opt.key === 'prepayment') continue;
     const val = String(values?.[opt.label] || '').trim();
     if (val) answered[opt.label] = val;
   }
@@ -392,41 +411,91 @@ export function LenderTermField({ field, program, ask, value, countering, previe
             onSelect={(next) => onChange(field.label, next, ask ? field.key : undefined)}
           />
         </div>
+      ) : field.inputType === 'text' ? (
+        <input
+          id={`lt-${field.key}`}
+          type="text"
+          required
+          aria-label={field.label}
+          disabled={preview}
+          placeholder={field.placeholder || ''}
+          value={val}
+          onChange={(e) => onChange(field.label, e.target.value, ask ? field.key : undefined)}
+          className="min-h-[42px] w-full rounded-xl border border-line bg-white px-3 text-sm outline-none focus:border-ink"
+        />
       ) : (
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            {field.unit === '$' && (
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-soft">$</span>
-            )}
-            <input
-              id={`lt-${field.key}`}
-              type="number"
-              inputMode="decimal"
-              required
-              min={field.min ?? 0}
-              max={field.max}
-              step={field.step ?? 'any'}
-              aria-label={field.label}
-              disabled={preview}
-              placeholder={field.placeholder || ''}
-              value={val}
-              onChange={(e) => onChange(field.label, e.target.value, ask ? field.key : undefined)}
-              className={`min-h-[42px] w-full rounded-xl border border-line bg-white text-sm outline-none focus:border-ink ${
-                field.unit === '$' ? 'pl-7 pr-3' : 'px-3'
-              }`}
-            />
-          </div>
-          {field.unit && field.unit !== '$' && (
-            <span className="shrink-0 text-sm font-medium text-ink-soft">{field.unit}</span>
+        <div className="space-y-2">
+          {Array.isArray(field.presets) && field.presets.length > 0 && (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${field.label} quick options`}>
+              {field.presets.map((preset) => {
+                const presetStr = String(preset);
+                const active = String(val).trim() === presetStr;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    disabled={preview}
+                    onClick={() => onChange(field.label, presetStr, ask ? field.key : undefined)}
+                    className={`min-h-[36px] rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      active
+                        ? 'border-ink bg-ink text-white'
+                        : 'border-line bg-white text-ink hover:border-ink'
+                    } disabled:opacity-60`}
+                  >
+                    {preset}{field.unit || ''}
+                  </button>
+                );
+              })}
+            </div>
           )}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              {field.unit === '$' && (
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-soft">$</span>
+              )}
+              <input
+                id={`lt-${field.key}`}
+                type="number"
+                inputMode="decimal"
+                required
+                min={field.min ?? 0}
+                max={field.max}
+                step={field.step ?? 'any'}
+                aria-label={field.label}
+                disabled={preview}
+                placeholder={field.placeholder || ''}
+                value={val}
+                onChange={(e) => onChange(field.label, e.target.value, ask ? field.key : undefined)}
+                className={`min-h-[42px] w-full rounded-xl border border-line bg-white text-sm outline-none focus:border-ink ${
+                  field.unit === '$' ? 'pl-7 pr-3' : 'px-3'
+                }`}
+              />
+            </div>
+            {field.unit && field.unit !== '$' && (
+              <span className="shrink-0 text-sm font-medium text-ink-soft">{field.unit}</span>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export default function LenderTerms({ deal, me, preview, guide = null, base = null, offer = null, lenderLens = null }) {
-  const [program, setProgram] = useState(() => (lenderLens && LENDER_PROGRAMS[LENDER_LENSES[lenderLens]?.program] ? LENDER_LENSES[lenderLens].program : 'bridge'));
+export default function LenderTerms({
+  deal,
+  me,
+  preview,
+  guide = null,
+  base = null,
+  offer = null,
+  lenderLens = null,
+  onLensChange = null,
+  hideProgramTabs = false,
+}) {
+  const controlledProgram = lenderLens && LENDER_PROGRAMS[LENDER_LENSES[lenderLens]?.program]
+    ? LENDER_LENSES[lenderLens].program
+    : null;
+  const [internalProgram, setInternalProgram] = useState(() => controlledProgram || 'bridge');
   const [savedType, setSavedType] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [editing, setEditing] = useState({});
@@ -438,11 +507,20 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
 
+  const isControlled = typeof onLensChange === 'function' && Boolean(controlledProgram);
+  const program = isControlled ? controlledProgram : internalProgram;
+
+  const selectProgram = (nextProg) => {
+    setStatus('');
+    if (isControlled) onLensChange(nextProg);
+    else setInternalProgram(nextProg);
+  };
+
   useEffect(() => {
-    if (!savedType && lenderLens && LENDER_LENSES[lenderLens]?.program && LENDER_PROGRAMS[LENDER_LENSES[lenderLens].program]) {
-      setProgram(LENDER_LENSES[lenderLens].program);
+    if (!isControlled && !savedType && controlledProgram) {
+      setInternalProgram(controlledProgram);
     }
-  }, [lenderLens, savedType]);
+  }, [isControlled, controlledProgram, savedType]);
 
   const pkg = buildLenderPackage({ base, offer, guide, lens: program });
   const fields = fieldsForProgram(program);
@@ -460,11 +538,11 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
       if (data.terms?._contact) setName(data.terms._contact);
       if (LENDER_PROGRAMS[data.lender_type]) {
         setSavedType(data.lender_type);
-        setProgram(data.lender_type);
+        if (!isControlled) setInternalProgram(data.lender_type);
       }
       setDrafts(data.terms || {});
     });
-  }, [deal.id, me?.uid, preview]);
+  }, [deal.id, me?.uid, preview, isControlled]);
 
   const setAnswer = (label, value, fieldKey) => {
     setDrafts((prev) => setTermAnswer(prev, null, program, label, value).drafts);
@@ -528,35 +606,39 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
   };
 
   const summaryBadge = program === 'private'
-    ? `${money(pkg.totalLoan)} pool · ${money(pkg.minParticipation)} min`
+    ? `${money(pkg.privatePool.totalFunds)} pool · ${money(pkg.minParticipation)} min`
     : program === 'dscr'
-      ? `${money(pkg.refiCheck.newLoan)} takeout`
-      : `${money(pkg.totalLoan)} ask`;
+      ? `${pkg.refiCheck.refiLtv}% LTV · Value ${money(pkg.value)} · Loan ${money(pkg.refiCheck.newLoan)}`
+      : `${money(pkg.totalLoan)} · 100% LTC`;
+
+  const visibleOptionalFields = OPTIONAL_FIELDS.filter((opt) => !(program === 'dscr' && opt.key === 'prepayment'));
 
   return (
     <div className="space-y-5">
       <Card>
-        <CardTitle>Your terms</CardTitle>
+        <CardTitle>{LENDER_PROGRAMS[program].label} terms</CardTitle>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div role="tablist" aria-label="Loan program" className="inline-flex rounded-xl border border-line bg-paper p-1">
-            {Object.entries(LENDER_PROGRAMS).map(([k, x]) => {
-              const active = k === program;
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => { setProgram(k); setStatus(''); }}
-                  className={`min-h-[40px] rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-                    active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
-                  }`}
-                >
-                  {x.label}
-                </button>
-              );
-            })}
-          </div>
+          {!hideProgramTabs && (
+            <div role="tablist" aria-label="Loan program" className="inline-flex rounded-xl border border-line bg-paper p-1">
+              {Object.entries(LENDER_PROGRAMS).map(([k, x]) => {
+                const active = k === program;
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => selectProgram(k)}
+                    className={`min-h-[40px] rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                      active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
+                    }`}
+                  >
+                    {x.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <span className="rounded-full bg-paper px-3 py-1 text-xs font-medium text-ink">
             23 &amp; 27 Charlotte · {pkg.units} units · {summaryBadge}
           </span>
@@ -594,7 +676,7 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
               </label>
             </div>
 
-            {/* Group 2: Loan terms (our asks by default, 1-tap Change) */}
+            {/* Group 2: Loan terms (program-specific asks, 1-tap Change) */}
             <div className="space-y-2.5">
               <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Loan terms</div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -603,7 +685,7 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
                   const countering = isTermCountering(f, ask, progDraft, progEditing);
                   return (
                     <LenderTermField
-                      key={f.key}
+                      key={`${program}:${f.key}`}
                       field={f}
                       program={program}
                       ask={ask}
@@ -619,8 +701,8 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
               </div>
             </div>
 
-            {/* Group 3: Extensions (Bridge & Private only) */}
-            {program !== 'dscr' && (
+            {/* Group 3: Extensions (Bridge only) */}
+            {program === 'bridge' && (
               <div className="rounded-xl border border-line bg-paper p-3.5 space-y-3">
                 <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Extension options (optional)</div>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -675,8 +757,8 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
                   onSelect={(next) => setAnswer(COLLATERAL_QUESTION.label, next)}
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {OPTIONAL_FIELDS.map((opt) => (
+              <div className={`grid gap-3 ${visibleOptionalFields.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+                {visibleOptionalFields.map((opt) => (
                   <div key={opt.key} className="space-y-1.5">
                     <div className="text-sm font-medium text-ink">{opt.label}</div>
                     <ChoicePills

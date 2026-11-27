@@ -1,14 +1,21 @@
-import { BASE_DEFAULTS, money, moneyK } from './dealmath.js';
+import { BASE_DEFAULTS, money, pmt } from './dealmath.js';
 
-// Pure Plan 1A lender package derivation. Imported only by Lender views and tests; never by Seller or Realtor.
+// Pure lender package derivation for three separate tabs: Bridge, Private, DSCR.
+// Imported only by Lender views and tests; never by Seller or Realtor.
 export const LENDER_DEFAULTS = {
-  bridgeRate: 13,
+  bridgeRate: 10,
   bridgePointsPct: 1,
   bridgeProcessing: 1295,
   bridgeDeferredMonths: 2,
   bridgeTermMonths: 12,
+  privateRate: 8,
+  privatePointsPct: 0,
   privateMinParticipation: 20000,
+  privateTermMonths: 12,
   refiLtv: 75,
+  refiRate: 7.5,
+  refiYears: 30,
+  refiDscr: 1.25,
   refiFeesPct: 2.1,
   refiFeesFlat: 5000,
 };
@@ -19,7 +26,7 @@ export const LENDER_LENSES = {
     label: 'Bridge',
     program: 'bridge',
     title: 'Bridge loan',
-    lead: 'Purchase + repairs + fees in one loan, $0 down',
+    lead: 'Purchase + repairs + fees rolled in, $0 down · 10% non-Dutch',
     heroLabel: 'Total bridge loan',
     ctaLabel: 'Send bridge terms',
   },
@@ -28,7 +35,7 @@ export const LENDER_LENSES = {
     label: 'Private',
     program: 'private',
     title: 'Private pooled loan',
-    lead: 'Pooled first-position funding for purchase, repairs and fees',
+    lead: 'First-lien pool at 8% interest, no points, $20,000 minimum',
     heroLabel: 'Total funds needed',
     ctaLabel: 'Send private terms',
   },
@@ -36,9 +43,9 @@ export const LENDER_LENSES = {
     key: 'dscr',
     label: 'DSCR',
     program: 'dscr',
-    title: 'Commercial DSCR takeout',
-    lead: 'Stabilized refinance at full occupancy pays off the bridge',
-    heroLabel: 'Takeout refi loan',
+    title: 'Commercial DSCR refinance',
+    lead: 'Permanent takeout after lease-up pays off the bridge',
+    heroLabel: 'Takeout loan',
     ctaLabel: 'Send DSCR terms',
   },
 };
@@ -89,88 +96,168 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     rf.closingInLoan,
     rf.closing,
   );
+
+  // 1. Bridge (hard money: non-Dutch draws, deferred interest due at payoff, $0 down)
   const processing = firstSet(base?.bridgeProcessing, gb.processing) ?? LENDER_DEFAULTS.bridgeProcessing;
   const pointsPct = firstSet(base?.bridgePointsPct, gb.pointsPct) ?? LENDER_DEFAULTS.bridgePointsPct;
   const ratePct = firstSet(base?.bridgeRate, gb.ratePct) ?? LENDER_DEFAULTS.bridgeRate;
   const deferredMonths = firstSet(base?.bridgeDeferredMonths, gb.deferredMonths) ?? LENDER_DEFAULTS.bridgeDeferredMonths;
   const termMonths = pos(base?.bridgeTermMonths, gb.termMonths, LENDER_DEFAULTS.bridgeTermMonths);
-  const minParticipation = pos(base?.privateMinParticipation, gb.minParticipation, LENDER_DEFAULTS.privateMinParticipation);
 
   const subtotal = purchase + repairs + closing + processing;
   const pointsRate = pointsPct / 100;
-  const deferredRate = (deferredMonths * ratePct) / 100 / 12;
-  const factor = 1 - pointsRate - deferredRate;
-  const totalLoan = factor > 0 ? subtotal / factor : subtotal;
+  const totalLoan = pointsRate < 1 ? subtotal / (1 - pointsRate) : subtotal;
   const points = totalLoan * pointsRate;
-  const monthlyInterest = (totalLoan * ratePct) / 100 / 12;
-  const deferredInterest = monthlyInterest * deferredMonths;
+  const initialDrawn = Math.max(0, totalLoan - repairs);
+  const initialMonthlyInterest = (initialDrawn * ratePct) / 100 / 12;
+  const fullMonthlyInterest = (totalLoan * ratePct) / 100 / 12;
+  const monthlyInterest = initialMonthlyInterest;
+  const deferredInterest = initialMonthlyInterest * deferredMonths;
+  const bridgePayoff = totalLoan + deferredInterest;
   const feesTotal = closing + processing + points + deferredInterest;
   const downPayment = 0;
   const ltcPct = totalLoan > 0 ? 100 : 0;
 
-  const activeLens = baseLens.key === 'private'
-    ? { ...baseLens, lead: `Pooled first-position funding, ${money(minParticipation)} minimum per lender` }
-    : baseLens;
+  // 2. Private (individuals pooling: 8%, no points, no processing, $20,000 minimum)
+  const privateRate = firstSet(base?.privateRate, gb.privateRate) ?? LENDER_DEFAULTS.privateRate;
+  const privatePointsPct = LENDER_DEFAULTS.privatePointsPct;
+  const privateTermMonths = pos(base?.privateTermMonths, gb.privateTermMonths, LENDER_DEFAULTS.privateTermMonths);
+  const minParticipation = pos(base?.privateMinParticipation, gb.minParticipation, LENDER_DEFAULTS.privateMinParticipation);
+  const privateTotalFunds = purchase + repairs + closing;
+  const privateMonthlyInterest = (privateTotalFunds * privateRate) / 100 / 12;
+  const privateMinMonthlyReturn = (minParticipation * privateRate) / 100 / 12;
 
+  // 3. DSCR (permanent refinance takeout)
   const value = pos(rf.estimatedValue, base?.value, valSummary?.income);
-  const ltvPct = value > 0 && totalLoan > 0 ? (totalLoan / value) * 100 : 0;
   const refiLtv = pos(base?.refiLtv, rf.ltvPct, LENDER_DEFAULTS.refiLtv);
   const newLoan = value > 0 ? (value * refiLtv) / 100 : num(rf.loan, 0);
+  const refiRate = firstSet(base?.refiRate) ?? LENDER_DEFAULTS.refiRate;
+  const refiYears = pos(base?.refiYears, LENDER_DEFAULTS.refiYears);
+  const refiDscr = pos(base?.refiDscr, LENDER_DEFAULTS.refiDscr);
+  const refiPayment = pmt(refiRate, refiYears, newLoan);
   const loanByDscr = num(rf.loanByDscr, 0);
 
   const refiFeesFlat = firstSet(base?.refiFeesFlat, rf.feesFlat) ?? LENDER_DEFAULTS.refiFeesFlat;
   const refiFeesPct = firstSet(base?.refiFeesPct, rf.feesPct) ?? LENDER_DEFAULTS.refiFeesPct;
   const refiFeesPctAmt = (newLoan * refiFeesPct) / 100;
   const refiFeesTotal = refiFeesFlat + refiFeesPctAmt;
-  const netAtRefi = newLoan - totalLoan - refiFeesTotal;
+  const netAtRefi = newLoan - bridgePayoff - refiFeesTotal;
   const isGap = netAtRefi < 0;
+
+  const privateSurplusAtRefi = newLoan - privateTotalFunds - refiFeesTotal;
+  const privateIsGap = privateSurplusAtRefi < 0;
+
+  const activeLens = baseLens.key === 'private'
+    ? { ...baseLens, lead: `First-lien pool at ${privateRate}% interest, no points, ${money(minParticipation)} minimum` }
+    : baseLens.key === 'bridge'
+      ? { ...baseLens, lead: `Purchase + repairs + fees rolled in, $0 down · ${ratePct}% non-Dutch` }
+      : { ...baseLens, heroLabel: `Takeout loan (${refiLtv}% LTV)` };
 
   const firstLeaseStage = Math.min(6, units);
   const pointsWord = pointsPct === 1 ? 'point' : 'points';
-  const steps = [
+
+  const bridgeSteps = [
     {
       num: '01',
       title: 'Close',
-      figure: purchase > 0 ? money(purchase) : '$0 down',
+      figure: money(initialDrawn),
       overlay: [
-        purchase > 0
-          ? `Lender pays off seller's mortgage (${money(purchase)}) at closing.`
-          : 'Lender funds purchase payoff at closing.',
-        '$0 cash down from the buyer.',
+        `Funds ${money(purchase)} purchase, ${money(closing)} closing, ${money(processing)} processing, and ${money(points)} origination (${money(initialDrawn)} drawn at close).`,
+        '$0 cash down.',
       ],
     },
     {
       num: '02',
-      title: 'Fix + lease',
-      figure: `${firstLeaseStage} units → ${units}`,
+      title: 'Repairs in draws',
+      figure: money(repairs),
       overlay: [
-        repairs > 0 ? `${money(repairs)} repair budget released in draws as work finishes.` : 'Repairs funded in draws as work finishes.',
-        deferredMonths > 0 ? `${deferredMonths}-month deferred interest cushion (${money(deferredInterest)}) covers initial lease-up.` : null,
-        `Lease ${firstLeaseStage} units first, then stabilize all ${units} units.`,
-      ].filter(Boolean),
+        `${money(repairs)} repair budget released in inspection draws. Interest charged only on repair money once drawn (non-Dutch).`,
+      ],
     },
     {
       num: '03',
-      title: 'Refinance',
-      figure: newLoan > 0 ? money(newLoan) : `${refiLtv}% LTV`,
+      title: 'Lease-up',
+      figure: deferredMonths > 0 ? `${deferredMonths} mo deferred` : `${units} units`,
       overlay: [
-        value > 0
-          ? `${refiLtv}% of ${money(value)} value by income = ${money(newLoan)}.`
-          : `${refiLtv}% LTV permanent commercial refinance.`,
-        loanByDscr > 0 ? `DSCR sizing capacity: ${money(loanByDscr)}.` : null,
+        deferredMonths > 0 ? `${deferredMonths}-month deferred interest (${money(deferredInterest)}) due at payoff.` : null,
+        `Lease ${firstLeaseStage} units first, then all ${units} units.`,
       ].filter(Boolean),
     },
     {
       num: '04',
-      title: 'Bridge paid off',
-      figure: totalLoan > 0 ? money(totalLoan) : 'Paid in full',
+      title: 'Exit',
+      figure: 'Refinance payoff',
+      overlay: ['Paid off by refinance after lease-up.'],
+    },
+  ];
+
+  const privateSteps = [
+    {
+      num: '01',
+      title: 'Pool closes',
+      figure: money(privateTotalFunds),
       overlay: [
-        totalLoan > 0
-          ? `Permanent refinance pays off the ${money(totalLoan)} bridge loan in full.`
-          : 'Permanent refinance retires the bridge loan.',
+        `First-lien pooled note covers ${money(purchase)} purchase, ${money(repairs)} repairs, and ${money(closing)} title/closing.`,
+      ],
+    },
+    {
+      num: '02',
+      title: 'Interest earned',
+      figure: `${privateRate}% · no points`,
+      overlay: [
+        `${money(minParticipation)} minimum participation earns ${money(privateMinMonthlyReturn)}/mo at ${privateRate}% (no points).`,
+      ],
+    },
+    {
+      num: '03',
+      title: 'Lease-up',
+      figure: `${firstLeaseStage} units → ${units}`,
+      overlay: [`Repairs complete and units lease up to all ${units} units.`],
+    },
+    {
+      num: '04',
+      title: privateIsGap ? 'Gap at refinance' : 'Surplus at refinance',
+      figure: money(Math.abs(privateSurplusAtRefi)),
+      overlay: [
+        privateIsGap
+          ? `Takeout refinance leaves ${money(Math.abs(privateSurplusAtRefi))} gap after paying off the ${money(privateTotalFunds)} pool.`
+          : `Takeout refinance pays off the ${money(privateTotalFunds)} pool with ${money(privateSurplusAtRefi)} surplus at refinance.`,
       ],
     },
   ];
+
+  const dscrSteps = [
+    {
+      num: '01',
+      title: 'Stabilized value',
+      figure: money(value),
+      overlay: [`Income-based value at stabilization: ${money(value)}.`],
+    },
+    {
+      num: '02',
+      title: `Takeout loan (${refiLtv}% LTV)`,
+      figure: money(newLoan),
+      overlay: [`${refiLtv}% LTV · Value ${money(value)} · Loan ${money(newLoan)}.`],
+    },
+    {
+      num: '03',
+      title: 'Pays off bridge',
+      figure: money(bridgePayoff),
+      overlay: [`Takeout loan pays off the ${money(bridgePayoff)} bridge balance and ${money(refiFeesTotal)} refi fees.`],
+    },
+    {
+      num: '04',
+      title: 'Permanent term',
+      figure: `${refiYears}-yr · ${refiRate}%`,
+      overlay: [`${refiYears}-year amortization at ${refiRate}% (${money(refiPayment)}/mo P&I), ${refiDscr}x minimum DSCR.`],
+    },
+  ];
+
+  const steps = activeLens.key === 'private'
+    ? privateSteps
+    : activeLens.key === 'dscr'
+      ? dscrSteps
+      : bridgeSteps;
 
   const loanAskRows = [
     {
@@ -178,11 +265,11 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Purchase',
       value: purchase,
       display: money(purchase),
-      overlay: ['Seller payoff placeholder until exact payoff statement is confirmed.'],
+      overlay: ['Seller payoff baseline for closing.'],
     },
     {
       key: 'repairs',
-      label: 'Repairs',
+      label: 'Repairs (in draws)',
       value: repairs,
       display: money(repairs),
       overlay: guide?.costSummary?.lines?.length
@@ -201,7 +288,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Processing',
       value: processing,
       display: money(processing),
-      overlay: ['Underwriting / processing baseline from past bridge loan terms.'],
+      overlay: ['Underwriting / processing fee rolled into the loan.'],
     },
     {
       key: 'points',
@@ -209,24 +296,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       value: points,
       display: money(points),
       overlay: [
-        `${pointsPct}% origination rolled into the ${money(totalLoan)} loan (${money(subtotal)} net before points and deferred interest).`,
+        `${pointsPct}% origination rolled into the ${money(totalLoan)} loan (${money(subtotal)} net before points).`,
         'Counter points in Your terms.',
       ],
     },
-    ...(deferredMonths > 0
-      ? [{
-          key: 'deferredInterest',
-          label: `${deferredMonths} mo deferred interest`,
-          value: deferredInterest,
-          display: money(deferredInterest),
-          overlay: [
-            `${deferredMonths} months interest-only lease-up cushion (${deferredMonths} × ${money(monthlyInterest)}/mo = ${money(deferredInterest)}) rolled into the loan.`,
-          ],
-        }]
-      : []),
     {
       key: 'total',
-      label: activeLens.key === 'private' ? 'Total funds needed ($0 down)' : 'Total loan ($0 down)',
+      label: `Total bridge loan (${ltcPct}% LTC · $0 down)`,
       value: totalLoan,
       display: money(totalLoan),
       emphasis: 'total',
@@ -237,84 +313,140 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
           `${money(closing)} closing`,
           `${money(processing)} processing`,
           `${money(points)} points`,
-          deferredMonths > 0 ? `${money(deferredInterest)} deferred interest` : null,
-        ].filter(Boolean).join(' + ') + ` = ${money(totalLoan)}.`,
-        value > 0 ? `${Math.round(ltvPct)}% of ${money(value)} stabilized value; ${ltcPct}% of cost.` : null,
-      ].filter(Boolean),
+        ].join(' + ') + ` = ${money(totalLoan)}.`,
+        `${ltcPct}% of cost · $0 cash down.`,
+      ],
     },
     {
       key: 'interest',
-      label: `Interest (${ratePct}% IO)`,
-      value: monthlyInterest,
-      display: `${money(monthlyInterest)}/mo`,
+      label: `Interest (${ratePct}% IO · non-Dutch)`,
+      value: initialMonthlyInterest,
+      display: `${money(initialMonthlyInterest)}/mo at close`,
       emphasis: 'accent',
       overlay: [
-        `${money(totalLoan)} × ${ratePct}% ÷ 12 = ${money(monthlyInterest)}/mo interest-only (full drawn balance).`,
-        deferredMonths > 0 ? `First ${deferredMonths} months deferred in loan; counter rate or deferred months in Your terms.` : 'Counter rate and draw interest in Your terms.',
+        `${money(initialDrawn)} drawn at close × ${ratePct}% ÷ 12 = ${money(initialMonthlyInterest)}/mo.`,
+        `Interest charged only on repair money once drawn (${money(fullMonthlyInterest)}/mo once all ${money(repairs)} in repairs are drawn).`,
       ],
     },
-  ];
-
-  const refiCheckRows = [
-    {
-      key: 'newLoan',
-      label: value > 0 ? `New loan (${refiLtv}% of ${moneyK(value)})` : `New loan (${refiLtv}% LTV)`,
-      value: newLoan,
-      display: money(newLoan),
-      overlay: [
-        value > 0
-          ? `${refiLtv}% × ${money(value)} value by income = ${money(newLoan)}.`
-          : 'Permanent takeout loan sized at stabilized refinance.',
-        loanByDscr > 0 ? `DSCR sizing: ${money(loanByDscr)}.` : null,
-      ].filter(Boolean),
-    },
-    {
-      key: 'payoff',
-      label: 'Pays off bridge',
-      value: -totalLoan,
-      display: totalLoan > 0 ? `−${money(totalLoan)}` : '$0',
-      overlay: [
-        `Retires full bridge payoff (${money(totalLoan)}).`,
-      ],
-    },
-    {
-      key: 'refiFees',
-      label: 'Refi fees',
-      value: -refiFeesTotal,
-      display: refiFeesTotal > 0 ? `−${money(refiFeesTotal)}` : '$0',
-      overlay: [
-        `${money(refiFeesFlat)} flat + ${refiFeesPct}% (${money(refiFeesPctAmt)}) broker/points = ${money(refiFeesTotal)}.`,
-        'Modeled from 4 past bridge refinances.',
-      ],
-    },
-    {
-      key: 'gap',
-      label: isGap ? 'Gap at low value' : 'Surplus at low value',
-      value: netAtRefi,
-      display: isGap ? money(Math.abs(netAtRefi)) : money(netAtRefi),
-      tone: isGap ? 'warn' : 'good',
-      emphasis: 'total',
-      overlay: isGap
-        ? [
-            `${money(newLoan)} − ${money(totalLoan)} bridge − ${money(refiFeesTotal)} refi fees = ${money(Math.abs(netAtRefi))} short at ${money(value)} value.`,
-            'Covered by lease-up rent or stabilized value above the low valuation.',
-          ]
-        : [
-            `${money(newLoan)} − ${money(totalLoan)} bridge − ${money(refiFeesTotal)} refi fees = ${money(netAtRefi)} net proceeds.`,
+    ...(deferredMonths > 0
+      ? [{
+          key: 'deferredInterest',
+          label: `Deferred interest (${deferredMonths} mo · due at payoff)`,
+          value: deferredInterest,
+          display: money(deferredInterest),
+          overlay: [
+            `${deferredMonths} months × ${money(initialMonthlyInterest)}/mo = ${money(deferredInterest)} due at payoff.`,
           ],
+        }]
+      : []),
+  ];
+
+  const bridgeTermsRows = [
+    {
+      key: 'ltc',
+      label: 'Loan-to-cost',
+      value: ltcPct,
+      display: `${ltcPct}% LTC · Loan ${money(totalLoan)}`,
+      overlay: [`${ltcPct}% of total project cost (${money(totalLoan)}) with $0 down.`],
+    },
+    {
+      key: 'rate',
+      label: 'Interest rate',
+      value: ratePct,
+      display: `${ratePct}% IO · non-Dutch`,
+      overlay: ['Interest charged only on funds drawn, including repair draws as released.'],
+    },
+    {
+      key: 'draws',
+      label: 'Repair draws',
+      value: repairs,
+      display: 'Released in draws',
+      overlay: [`${money(repairs)} repair budget released in inspection draws; interest accrues only on drawn funds.`],
+    },
+    {
+      key: 'deferred',
+      label: 'Deferred interest',
+      value: deferredMonths,
+      display: deferredMonths > 0 ? `${deferredMonths} months (due at payoff)` : 'None',
+      overlay: [
+        deferredMonths > 0
+          ? `${deferredMonths} months deferred interest (${money(deferredInterest)}) due at payoff.`
+          : 'No deferred interest.',
+      ],
+    },
+    {
+      key: 'term',
+      label: 'Loan term',
+      value: termMonths,
+      display: `${termMonths} months`,
+      overlay: [`${termMonths}-month bridge term with extension options in Your terms.`],
+    },
+    {
+      key: 'exit',
+      label: 'Exit',
+      value: 0,
+      display: 'Paid off by refinance after lease-up',
+      emphasis: 'total',
+      tone: 'good',
+      overlay: ['Paid off by refinance after lease-up.'],
     },
   ];
 
-  const participantCap = minParticipation > 0 && totalLoan > 0 ? Math.max(1, Math.floor(totalLoan / minParticipation)) : 1;
+  const privateFundsRows = [
+    {
+      key: 'purchase',
+      label: 'Purchase',
+      value: purchase,
+      display: money(purchase),
+      overlay: ['Seller payoff at closing.'],
+    },
+    {
+      key: 'repairs',
+      label: 'Repairs',
+      value: repairs,
+      display: money(repairs),
+      overlay: guide?.costSummary?.lines?.length
+        ? guide.costSummary.lines.map((l) => l.label).filter(Boolean)
+        : ['Unit-by-unit rehab budget.'],
+    },
+    {
+      key: 'closing',
+      label: 'Title / closing',
+      value: closing,
+      display: money(closing),
+      overlay: ['Title, recording, and closing costs.'],
+    },
+    {
+      key: 'total',
+      label: 'Total funds needed',
+      value: privateTotalFunds,
+      display: money(privateTotalFunds),
+      emphasis: 'total',
+      overlay: [
+        `${money(purchase)} purchase + ${money(repairs)} repairs + ${money(closing)} title/closing = ${money(privateTotalFunds)}.`,
+        'No points or extra upfront fees.',
+      ],
+    },
+    {
+      key: 'interest',
+      label: `Interest (${privateRate}% · no points)`,
+      value: privateMonthlyInterest,
+      display: `${money(privateMonthlyInterest)}/mo`,
+      emphasis: 'accent',
+      overlay: [
+        `${money(privateTotalFunds)} × ${privateRate}% ÷ 12 = ${money(privateMonthlyInterest)}/mo across the pool (${money(privateMinMonthlyReturn)}/mo per ${money(minParticipation)} share).`,
+      ],
+    },
+  ];
+
+  const participantCap = minParticipation > 0 && privateTotalFunds > 0 ? Math.max(1, Math.floor(privateTotalFunds / minParticipation)) : 1;
   const privatePoolRows = [
     {
-      key: 'totalFunds',
-      label: 'Total funds needed',
-      value: totalLoan,
-      display: money(totalLoan),
-      overlay: [
-        `${money(purchase)} purchase + ${money(repairs)} repairs + ${money(feesTotal)} closing, points, processing, and ${deferredMonths}-mo deferred interest.`,
-      ],
+      key: 'rate',
+      label: 'Interest rate',
+      value: privateRate,
+      display: `${privateRate}% · no points`,
+      overlay: [`${privateRate}% annual interest, no points, no upfront fees.`],
     },
     {
       key: 'minParticipation',
@@ -322,32 +454,131 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       value: minParticipation,
       display: money(minParticipation),
       overlay: [
-        `Pooled private money: several lenders can combine at ${money(minParticipation)} minimum each to fill the ${money(totalLoan)} total.`,
+        `Pooled private money: several lenders can combine at ${money(minParticipation)} minimum each (${money(privateMinMonthlyReturn)}/mo at ${privateRate}%).`,
       ],
     },
     {
       key: 'poolStructure',
       label: 'Pool structure',
       value: participantCap,
-      display: 'First-lien pool',
+      display: 'First-lien pooled',
       overlay: [
-        `Up to ${participantCap} lenders at ${money(minParticipation)} minimum, or fewer with larger shares.`,
-        `${ratePct}% IO, ${deferredMonths} months deferred interest, ${termMonths}-month term.`,
+        `First-lien pool up to ${participantCap} lenders at ${money(minParticipation)} minimum, or fewer with larger shares.`,
       ],
     },
     {
+      key: 'term',
+      label: 'Loan term',
+      value: privateTermMonths,
+      display: `${privateTermMonths} months`,
+      overlay: [`${privateTermMonths}-month private pool term.`],
+    },
+    {
       key: 'surplus',
-      label: isGap ? 'Gap at refinance' : 'Left over at refinance',
+      label: privateIsGap ? 'Gap at refinance' : 'Surplus at refinance',
+      value: privateSurplusAtRefi,
+      display: money(Math.abs(privateSurplusAtRefi)),
+      tone: privateIsGap ? 'warn' : 'good',
+      emphasis: 'total',
+      overlay: [
+        privateIsGap
+          ? `Takeout refinance (${money(newLoan)}) leaves ${money(Math.abs(privateSurplusAtRefi))} gap after paying off the ${money(privateTotalFunds)} pool.`
+          : `Takeout refinance (${money(newLoan)}) pays off the ${money(privateTotalFunds)} pool in full with ${money(privateSurplusAtRefi)} surplus at refinance.`,
+      ],
+    },
+  ];
+
+  const dscrLoanRows = [
+    {
+      key: 'value',
+      label: 'Stabilized value',
+      value: value,
+      display: money(value),
+      overlay: [`Stabilized income valuation: ${money(value)}.`],
+    },
+    {
+      key: 'loan',
+      label: `Takeout loan (${refiLtv}% LTV)`,
+      value: newLoan,
+      display: money(newLoan),
+      emphasis: 'total',
+      overlay: [`${refiLtv}% LTV · Value ${money(value)} · Loan ${money(newLoan)}.`],
+    },
+    {
+      key: 'rate',
+      label: 'Interest rate',
+      value: refiRate,
+      display: `${refiRate}%`,
+      overlay: [`Permanent DSCR rate: ${refiRate}%.`],
+    },
+    {
+      key: 'amortization',
+      label: 'Amortization',
+      value: refiYears,
+      display: `${refiYears} years`,
+      overlay: [`${refiYears}-year amortization schedule.`],
+    },
+    {
+      key: 'payment',
+      label: 'Monthly payment (P&I)',
+      value: refiPayment,
+      display: `${money(refiPayment)}/mo`,
+      emphasis: 'accent',
+      overlay: [`${money(newLoan)} over ${refiYears} years at ${refiRate}% = ${money(refiPayment)}/mo P&I.`],
+    },
+    {
+      key: 'dscr',
+      label: 'Minimum DSCR',
+      value: refiDscr,
+      display: `${refiDscr}x`,
+      overlay: [`Minimum debt-service coverage ratio: ${refiDscr}x.`],
+    },
+  ];
+
+  const refiCheckRows = [
+    {
+      key: 'newLoan',
+      label: value > 0 ? `New loan (${refiLtv}% LTV · Value ${money(value)})` : `New loan (${refiLtv}% LTV)`,
+      value: newLoan,
+      display: money(newLoan),
+      overlay: [
+        value > 0
+          ? `${refiLtv}% LTV · Value ${money(value)} · Loan ${money(newLoan)}.`
+          : 'Permanent takeout loan sized at stabilized refinance.',
+        loanByDscr > 0 ? `DSCR sizing capacity: ${money(loanByDscr)}.` : null,
+      ].filter(Boolean),
+    },
+    {
+      key: 'payoff',
+      label: 'Pays off bridge',
+      value: -bridgePayoff,
+      display: bridgePayoff > 0 ? `−${money(bridgePayoff)}` : '$0',
+      overlay: [
+        `Pays off the ${money(bridgePayoff)} bridge payoff in full.`,
+      ],
+    },
+    {
+      key: 'refiFees',
+      label: `Refi fees (${money(refiFeesFlat)} flat + ${refiFeesPct}%)`,
+      value: -refiFeesTotal,
+      display: refiFeesTotal > 0 ? `−${money(refiFeesTotal)}` : '$0',
+      overlay: [
+        `${money(refiFeesFlat)} flat + ${refiFeesPct}% (${money(refiFeesPctAmt)}) = ${money(refiFeesTotal)}.`,
+      ],
+    },
+    {
+      key: 'gap',
+      label: isGap ? 'Gap at refinance' : 'Surplus at refinance',
       value: netAtRefi,
       display: isGap ? money(Math.abs(netAtRefi)) : money(netAtRefi),
       tone: isGap ? 'warn' : 'good',
       emphasis: 'total',
       overlay: isGap
         ? [
-            `${money(newLoan)} takeout refi − ${money(totalLoan)} payoff − ${money(refiFeesTotal)} refi fees = ${money(Math.abs(netAtRefi))} gap at ${money(value)} value.`,
+            `Loan ${money(newLoan)} − Bridge payoff ${money(bridgePayoff)} − Refi fees ${money(refiFeesTotal)} = ${money(Math.abs(netAtRefi))} gap.`,
           ]
         : [
-            `${money(newLoan)} takeout refi − ${money(totalLoan)} payoff − ${money(refiFeesTotal)} refi fees = ${money(netAtRefi)} left over at refinance.`,
+            `Loan ${money(newLoan)} − Bridge payoff ${money(bridgePayoff)} − Refi fees ${money(refiFeesTotal)} = ${money(netAtRefi)} surplus.`,
           ],
     },
   ];
@@ -371,22 +602,45 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     feesTotal,
     subtotal,
     totalLoan,
+    initialDrawn,
+    initialMonthlyInterest,
+    fullMonthlyInterest,
     monthlyInterest,
+    bridgePayoff,
     downPayment,
     ltcPct,
     value,
-    ltvPct,
     steps,
     loanAskRows,
+    bridgeTermsRows,
+    privatePool: {
+      ratePct: privateRate,
+      pointsPct: privatePointsPct,
+      termMonths: privateTermMonths,
+      minParticipation,
+      totalFunds: privateTotalFunds,
+      monthlyInterest: privateMonthlyInterest,
+      minMonthlyReturn: privateMinMonthlyReturn,
+      participantCap,
+      surplusAtRefi: privateSurplusAtRefi,
+      isGap: privateIsGap,
+    },
+    privateFundsRows,
     privatePoolRows,
+    dscrLoanRows,
     refiCheck: {
       refiLtv,
+      refiRate,
+      refiYears,
+      refiDscr,
+      refiPayment,
       newLoan,
       loanByDscr,
       refiFeesFlat,
       refiFeesPct,
       refiFeesPctAmt,
       refiFeesTotal,
+      bridgePayoff,
       netAtRefi,
       isGap,
     },

@@ -22,12 +22,14 @@ export const PLAN_DEFAULTS = {
   rehabStartWeek: 0, // when unit work begins
   lenderRate: 0, // short-term lender, interest only, % per year
   lenderPoints: 0, // % of each draw
-  bridgeRate: 13, // Plan 1A bridge rate, interest only, % per year
+  bridgeRate: 10, // Plan 1A bridge rate, interest only, % per year
   bridgePoints: 1, // Plan 1A bridge origination points (%)
   bridgeProcessing: 1295, // Plan 1A bridge processing fee ($)
   bridgeClosing: 0, // Plan 1A bridge title/closing costs ($)
   bridgeDeferredMonths: 2, // Plan 1A deferred interest cushion (months)
   bridgeTermMonths: 12, // Plan 1A bridge loan term (months)
+  privateRate: 8, // Private pooled interest rate (% per year, no points)
+  privateTermMonths: 12, // Private pooled loan term (months)
   privateMinParticipation: 20000, // Minimum private pool participation ($)
   contingency: 0, // repair contingency ($)
   lenderSeasoningMonths: null, // months of stabilized operations required by lender, null until confirmed
@@ -1545,6 +1547,12 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
     termMonths: baseIn?.bridgeTermMonths !== undefined && baseIn?.bridgeTermMonths !== ''
       ? Math.max(0, num(baseIn.bridgeTermMonths, 0))
       : Math.max(0, num(plan.bridgeTermMonths, PLAN_DEFAULTS.bridgeTermMonths)),
+    privateRate: baseIn?.privateRate !== undefined && baseIn?.privateRate !== ''
+      ? Math.max(0, num(baseIn.privateRate, 0))
+      : Math.max(0, num(plan.privateRate, PLAN_DEFAULTS.privateRate)),
+    privateTermMonths: baseIn?.privateTermMonths !== undefined && baseIn?.privateTermMonths !== ''
+      ? Math.max(0, num(baseIn.privateTermMonths, 0))
+      : Math.max(0, num(plan.privateTermMonths, PLAN_DEFAULTS.privateTermMonths)),
     minParticipation: baseIn?.privateMinParticipation !== undefined && baseIn?.privateMinParticipation !== ''
       ? Math.max(0, num(baseIn.privateMinParticipation, 0))
       : Math.max(0, num(plan.privateMinParticipation, PLAN_DEFAULTS.privateMinParticipation)),

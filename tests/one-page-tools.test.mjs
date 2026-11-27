@@ -215,7 +215,7 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   assert.match(lenderHtml, /data-section="plan"/);
   assert.match(lenderHtml, /data-section="what-if"/);
   assert.match(lenderHtml, /data-section="terms"/);
-  assert.match(lenderHtml, /Plan 1A · Bridge to refinance/);
+  assert.match(lenderHtml, /Bridge loan plan/);
   assert.match(lenderHtml, /Loan assumptions/);
   assert.match(lenderHtml, /data-mock="LenderTerms"/);
   assert.match(lenderHtml, /Supporting documents/);

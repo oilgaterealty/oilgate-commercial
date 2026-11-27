@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase.js';
 import { evaluate, money, valueSummary } from '../lib/dealmath.js';
 import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES } from '../lib/lenderModel.js';
 import { effectiveMarketRange } from '../lib/rangeValue.js';
-import { plain } from '../lib/plain.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
@@ -71,11 +70,13 @@ const SECTIONS = [
   ['messages', 'Messages'],
 ];
 
-// The lender's one-page workspace: whiteboard overview (Bridge / Private / DSCR), terms, Plan 1A + 1B, bridge/refi what-if, records, docs, photos, messages.
-export default function Lender({ deal, me, preview, tab }) {
+const LENS_DRIVEN_SECTIONS = new Set(['overview', 'terms', 'plan', 'what-if']);
+
+// The lender's one-page workspace with three strictly isolated tabs (Bridge, Private, DSCR) driving Overview, Your terms, The plan, and What-if.
+export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' }) {
   const root = preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { offers: 'what-if' });
-  const [lenderLens, setLenderLens] = useState('bridge');
+  const [lenderLens, setLenderLens] = useState(() => (LENDER_LENSES[initialLens] ? initialLens : 'bridge'));
   const [rows] = useUploads(deal);
   const visible = preview ? seenBy('lender', rows) : rows || [];
   const photos = photosOf(visible);
@@ -119,22 +120,24 @@ export default function Lender({ deal, me, preview, tab }) {
     lens: lenderLens,
   });
   const fallbackRent = !isRentValue(effectiveGuide?.rentValue) ? buildFallbackRentValue(b, pkg) : null;
-  const heroFigure = lenderLens === 'dscr' ? money(pkg.refiCheck.newLoan) : money(pkg.totalLoan);
-  const heroOverlay = lenderLens === 'dscr'
-    ? pkg.refiCheckRows[0]?.overlay || []
-    : pkg.loanAskRows.find((r) => r.key === 'total')?.overlay || [];
 
-  const pointsWord = pkg.pointsPct === 1 ? 'point' : 'points';
-  const stabilizedRentMo = o ? o.egi / 12 : 0;
-  const stabilizedNoiMo = o ? o.noi / 12 : 0;
-  const plan1aSteps = [
+  const heroFigure = lenderLens === 'dscr'
+    ? money(pkg.refiCheck.newLoan)
+    : lenderLens === 'private'
+      ? money(pkg.privatePool.totalFunds)
+      : money(pkg.totalLoan);
+  const heroOverlay = lenderLens === 'dscr'
+    ? pkg.dscrLoanRows.find((r) => r.key === 'loan')?.overlay || []
+    : lenderLens === 'private'
+      ? pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay || []
+      : pkg.loanAskRows.find((r) => r.key === 'total')?.overlay || [];
+
+  const bridgePlanSteps = [
     {
       num: 1,
       title: 'Close',
-      value: `${money(pkg.totalLoan)} · $0 down`,
-      overlay: [
-        `Lender pays off the seller's loan (${money(pkg.purchase)}) and rolls ${money(pkg.closing)} title/closing, ${money(pkg.processing)} processing, ${pkg.pointsPct} ${pointsWord} (${money(pkg.points)}), and ${pkg.deferredMonths} mo deferred interest (${money(pkg.deferredInterest)}) into one ${money(pkg.totalLoan)} loan.`,
-      ],
+      value: `${money(pkg.initialDrawn)} drawn · $0 down`,
+      overlay: pkg.steps[0]?.overlay || [],
     },
     {
       num: 2,
@@ -142,65 +145,121 @@ export default function Lender({ deal, me, preview, tab }) {
       value: money(pkg.repairs),
       overlay: guideCostSummary?.lines?.length
         ? guideCostSummary.lines.map((l) => l.label).filter(Boolean)
-        : [`${money(pkg.repairs)} repair budget released in inspection draws as work completes.`],
+        : pkg.steps[1]?.overlay || [],
     },
     {
       num: 3,
-      title: `Lease-up (${pkg.deferredMonths}-mo deferred interest)`,
-      value: `${money(pkg.deferredInterest)} cushion · ${pkg.units} units`,
-      overlay: [
-        `${pkg.deferredMonths} months deferred interest (${money(pkg.deferredInterest)}) covers initial lease-up at ${pkg.ratePct}% IO (${money(pkg.monthlyInterest)}/mo).`,
-        stabilizedRentMo > 0 ? `Stabilized rent ${money(stabilizedRentMo)}/mo, NOI ${money(stabilizedNoiMo)}/mo across ${pkg.units} units.` : null,
-      ].filter(Boolean),
+      title: `Lease-up (${pkg.deferredMonths}-mo deferred)`,
+      value: `${money(pkg.deferredInterest)} due at payoff`,
+      overlay: pkg.steps[2]?.overlay || [],
     },
     {
       num: 4,
-      title: 'Refinance pays off bridge',
-      value: `${money(pkg.refiCheck.newLoan)} (${pkg.refiCheck.refiLtv}% LTV)`,
-      overlay: [
-        `${pkg.refiCheck.refiLtv}% of ${money(pkg.value)} stabilized value = ${money(pkg.refiCheck.newLoan)}.`,
-        `Pays off ${money(pkg.totalLoan)} bridge loan and ${money(pkg.refiCheck.refiFeesTotal)} refi fees, leaving ${pkg.refiCheck.isGap ? `${money(Math.abs(pkg.refiCheck.netAtRefi))} gap` : `${money(pkg.refiCheck.netAtRefi)} left over`}.`,
-      ],
+      title: 'Exit',
+      value: 'Paid off by refinance after lease-up',
+      overlay: ['Paid off by refinance after lease-up.'],
+    },
+  ];
+
+  const privatePlanSteps = [
+    {
+      num: 1,
+      title: 'Pool closes',
+      value: money(pkg.privatePool.totalFunds),
+      overlay: pkg.steps[0]?.overlay || [],
+    },
+    {
+      num: 2,
+      title: 'Interest paid',
+      value: `${pkg.privatePool.ratePct}% · no points · ${money(pkg.privatePool.monthlyInterest)}/mo`,
+      overlay: pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay || [],
+    },
+    {
+      num: 3,
+      title: `Minimum participation (${money(pkg.minParticipation)})`,
+      value: `${money(pkg.privatePool.minMonthlyReturn)}/mo`,
+      overlay: pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay || [],
+    },
+    {
+      num: 4,
+      title: pkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance',
+      value: money(Math.abs(pkg.privatePool.surplusAtRefi)),
+      overlay: pkg.privatePoolRows.find((r) => r.key === 'surplus')?.overlay || [],
+    },
+  ];
+
+  const dscrPlanSteps = [
+    {
+      num: 1,
+      title: 'Stabilized value',
+      value: money(pkg.value),
+      overlay: pkg.steps[0]?.overlay || [],
+    },
+    {
+      num: 2,
+      title: `Takeout loan (${pkg.refiCheck.refiLtv}% LTV)`,
+      value: money(pkg.refiCheck.newLoan),
+      overlay: pkg.steps[1]?.overlay || [],
+    },
+    {
+      num: 3,
+      title: 'Pays off bridge',
+      value: money(pkg.refiCheck.bridgePayoff),
+      overlay: pkg.steps[2]?.overlay || [],
+    },
+    {
+      num: 4,
+      title: `${pkg.refiCheck.refiYears}-year term at ${pkg.refiCheck.refiRate}%`,
+      value: `${money(pkg.refiCheck.refiPayment)}/mo P&I`,
+      overlay: pkg.steps[3]?.overlay || [],
     },
   ];
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-6 pb-20" data-active-tab={lenderLens}>
       <JumpNav sections={SECTIONS} active={activeSection} onJump={jumpTo} base={root} preview={preview} />
+
+      {LENS_DRIVEN_SECTIONS.has(activeSection) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink/15 bg-white p-2.5 shadow-sm">
+          <div role="tablist" aria-label="Lender type" className="inline-flex flex-wrap gap-1 rounded-xl bg-paper p-1">
+            {Object.values(LENDER_LENSES).map((item) => {
+              const active = item.key === lenderLens;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setLenderLens(item.key)}
+                  className={`min-h-[44px] rounded-lg px-4 py-1.5 text-sm font-semibold transition ${
+                    active ? 'bg-ink text-white shadow-sm' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="rounded-full bg-paper px-3 py-1 text-xs font-medium text-ink">
+            {pkg.units} units · {pkg.lens.title}
+          </span>
+        </div>
+      )}
 
       <section id="sec-overview" data-section="overview" className="scroll-mt-20 space-y-5">
         <Cover rows={photos} compact />
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
           <>
-            {/* 1. Title + one line + lender-type switch (Bridge, Private, DSCR) + hero ask metric */}
+            {/* 1. Top card ask for the selected lender tab */}
             <section data-wb="hero" className="rounded-2xl border border-ink border-t-2 border-t-warm bg-ink p-5 text-white sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div role="tablist" aria-label="Lender type" className="inline-flex rounded-xl border border-white/15 bg-white/5 p-1">
-                  {Object.values(LENDER_LENSES).map((item) => {
-                    const active = item.key === lenderLens;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        onClick={() => setLenderLens(item.key)}
-                        className={`min-h-[40px] rounded-lg px-3.5 py-1.5 text-sm font-medium transition ${
-                          active ? 'bg-white text-ink' : 'text-white/75 hover:text-white'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
                 <span className="rounded-full border border-warm/40 bg-warm/15 px-3 py-1 text-xs font-medium tracking-wide text-warm-soft">
-                  {pkg.units} units · Plan 1A
+                  {pkg.lens.label} · {pkg.units} units
                 </span>
               </div>
 
-              <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-end">
+              <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-end">
                 <div className="min-w-0">
                   <h2 className="font-display text-2xl font-semibold tracking-tight text-white sm:text-4xl">
                     {pkg.lens.title}
@@ -221,7 +280,15 @@ export default function Lender({ deal, me, preview, tab }) {
               {lenderLens === 'private' ? (
                 <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 tabular-nums">
                   <div>
-                    <dt className="text-xs text-white/65">Minimum participation</dt>
+                    <dt className="text-xs text-white/65">Rate</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.privatePoolRows[0]?.overlay || []} className="text-white">
+                        {pkg.privatePool.ratePct}% · no points
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">Minimum share</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
                       <OverlayTrigger lines={pkg.privatePoolRows[1]?.overlay || []} className="text-white">
                         {money(pkg.minParticipation)}
@@ -229,18 +296,37 @@ export default function Lender({ deal, me, preview, tab }) {
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/65">Loan vs value</dt>
+                    <dt className="text-xs text-white/65">{pkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance'}</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={[`${money(pkg.totalLoan)} of ${money(pkg.value)} stabilized value`]} className="text-white">
-                        {pkg.ltvPct > 0 ? `${Math.round(pkg.ltvPct)}% LTV` : '—'}
+                      <OverlayTrigger lines={pkg.privatePoolRows[4]?.overlay || []} className="text-white">
+                        {money(Math.abs(pkg.privatePool.surplusAtRefi))}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                </dl>
+              ) : lenderLens === 'dscr' ? (
+                <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 tabular-nums">
+                  <div>
+                    <dt className="text-xs text-white/65">Stabilized value</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.dscrLoanRows[0]?.overlay || []} className="text-white">
+                        {money(pkg.value)}
                       </OverlayTrigger>
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/65">{pkg.refiCheck.isGap ? 'Gap at refinance' : 'Left over at refinance'}</dt>
+                    <dt className="text-xs text-white/65">Rate &amp; term</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.privatePoolRows[3]?.overlay || []} className="text-white">
-                        {money(Math.abs(pkg.refiCheck.netAtRefi))}
+                      <OverlayTrigger lines={pkg.dscrLoanRows[4]?.overlay || []} className="text-white">
+                        {pkg.refiCheck.refiRate}% · {pkg.refiCheck.refiYears}-yr
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">Minimum DSCR</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.dscrLoanRows[5]?.overlay || []} className="text-white">
+                        {pkg.refiCheck.refiDscr}x
                       </OverlayTrigger>
                     </dd>
                   </div>
@@ -252,18 +338,18 @@ export default function Lender({ deal, me, preview, tab }) {
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">{money(pkg.downPayment)}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/65">Loan vs value</dt>
+                    <dt className="text-xs text-white/65">Rate (non-Dutch)</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={[`${money(pkg.totalLoan)} of ${money(pkg.value)} stabilized value`]} className="text-white">
-                        {pkg.ltvPct > 0 ? `${Math.round(pkg.ltvPct)}% LTV` : '—'}
+                      <OverlayTrigger lines={pkg.loanAskRows.find((r) => r.key === 'interest')?.overlay || []} className="text-white">
+                        {pkg.ratePct}% IO
                       </OverlayTrigger>
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/65">Exit refi ({pkg.refiCheck.refiLtv}%)</dt>
+                    <dt className="text-xs text-white/65">Term</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-white">
-                        {money(pkg.refiCheck.newLoan)}
+                      <OverlayTrigger lines={pkg.bridgeTermsRows[4]?.overlay || []} className="text-white">
+                        {pkg.termMonths} months
                       </OverlayTrigger>
                     </dd>
                   </div>
@@ -288,7 +374,7 @@ export default function Lender({ deal, me, preview, tab }) {
               </div>
             </section>
 
-            {/* 2. Four-step progression strip */}
+            {/* 2. Four-step progression strip for the selected tab */}
             <section data-wb="steps" aria-label="Deal steps" className="rounded-2xl border border-line bg-white p-4 sm:p-5">
               <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {pkg.steps.map((step, idx) => (
@@ -305,28 +391,28 @@ export default function Lender({ deal, me, preview, tab }) {
               </ol>
             </section>
 
-            {/* 3. Loan ask / Total funds needed + 4. Refinance check or Private pool */}
-            <div className="grid gap-5 lg:grid-cols-2">
-              <Card data-wb="loan-ask">
-                <CardTitle
-                  aside={
-                    <a
-                      href={`${root}/terms`}
-                      onClick={(ev) => { ev.preventDefault(); jumpTo('terms', root); }}
-                      className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
-                    >
-                      Counter in Your terms
-                    </a>
-                  }
-                >
-                  {lenderLens === 'private' ? 'Total funds needed' : 'Loan ask'}
-                </CardTitle>
-                <div data-wb="loan-ask-body">
-                  <LedgerRows rows={pkg.loanAskRows} />
-                </div>
-              </Card>
+            {/* 3. Tab-specific two-card breakdown */}
+            {lenderLens === 'private' ? (
+              <div className="grid gap-5 lg:grid-cols-2">
+                <Card data-wb="loan-ask">
+                  <CardTitle
+                    aside={
+                      <a
+                        href={`${root}/terms`}
+                        onClick={(ev) => { ev.preventDefault(); jumpTo('terms', root); }}
+                        className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+                      >
+                        Counter in Your terms
+                      </a>
+                    }
+                  >
+                    Total funds needed
+                  </CardTitle>
+                  <div data-wb="loan-ask-body">
+                    <LedgerRows rows={pkg.privateFundsRows} />
+                  </div>
+                </Card>
 
-              {lenderLens === 'private' ? (
                 <Card data-wb="private-pool">
                   <CardTitle
                     aside={
@@ -341,25 +427,82 @@ export default function Lender({ deal, me, preview, tab }) {
                     <LedgerRows rows={pkg.privatePoolRows} />
                   </div>
                 </Card>
-              ) : (
+              </div>
+            ) : lenderLens === 'dscr' ? (
+              <div className="grid gap-5 lg:grid-cols-2">
+                <Card data-wb="dscr-ask">
+                  <CardTitle
+                    aside={
+                      <a
+                        href={`${root}/terms`}
+                        onClick={(ev) => { ev.preventDefault(); jumpTo('terms', root); }}
+                        className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+                      >
+                        Counter in Your terms
+                      </a>
+                    }
+                  >
+                    DSCR loan
+                  </CardTitle>
+                  <div data-wb="dscr-ask-body">
+                    <LedgerRows rows={pkg.dscrLoanRows} />
+                  </div>
+                </Card>
+
                 <Card data-wb="refi-check">
                   <CardTitle
                     aside={
                       <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-sm font-medium text-ink-soft">
-                        {money(pkg.value)} value
+                        Value {money(pkg.value)}
                       </OverlayTrigger>
                     }
                   >
-                    Refinance check
+                    Refinance payoff
                   </CardTitle>
                   <div data-wb="refi-check-body">
                     <LedgerRows rows={pkg.refiCheckRows} />
                   </div>
                 </Card>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="grid gap-5 lg:grid-cols-2">
+                <Card data-wb="loan-ask">
+                  <CardTitle
+                    aside={
+                      <a
+                        href={`${root}/terms`}
+                        onClick={(ev) => { ev.preventDefault(); jumpTo('terms', root); }}
+                        className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+                      >
+                        Counter in Your terms
+                      </a>
+                    }
+                  >
+                    Loan ask
+                  </CardTitle>
+                  <div data-wb="loan-ask-body">
+                    <LedgerRows rows={pkg.loanAskRows} />
+                  </div>
+                </Card>
 
-            {/* 5. Rent plan */}
+                <Card data-wb="bridge-terms">
+                  <CardTitle
+                    aside={
+                      <OverlayTrigger lines={pkg.bridgeTermsRows[0]?.overlay || []} className="text-sm font-medium text-ink-soft">
+                        {pkg.ltcPct}% LTC · $0 down
+                      </OverlayTrigger>
+                    }
+                  >
+                    Bridge terms
+                  </CardTitle>
+                  <div data-wb="bridge-terms-body">
+                    <LedgerRows rows={pkg.bridgeTermsRows} />
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {/* 4. Rent plan */}
             {(isRentValue(effectiveGuide?.rentValue) || fallbackRent) && (
               <div data-wb="rent-plan">
                 {isRentValue(effectiveGuide?.rentValue)
@@ -372,35 +515,80 @@ export default function Lender({ deal, me, preview, tab }) {
       </section>
 
       <section id="sec-terms" data-section="terms" className="scroll-mt-20">
-        <LenderTerms deal={deal} me={me} preview={preview} guide={effectiveGuide} base={b} offer={plan} lenderLens={lenderLens} />
+        <LenderTerms
+          deal={deal}
+          me={me}
+          preview={preview}
+          guide={effectiveGuide}
+          base={b}
+          offer={plan}
+          lenderLens={lenderLens}
+          onLensChange={setLenderLens}
+          hideProgramTabs
+        />
       </section>
 
       <section id="sec-plan" data-section="plan" className="scroll-mt-20 space-y-5">
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
-          <>
-            <Card data-plan="1a">
+          lenderLens === 'private' ? (
+            <Card data-plan="private">
               <CardTitle
                 aside={
                   <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
-                    Primary path
+                    First-lien pooled
                   </span>
                 }
               >
-                Plan 1A · Bridge to refinance
+                Private pool plan
               </CardTitle>
 
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
+                <Stat label="Total funds needed" value={money(pkg.privatePool.totalFunds)} overlay={pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay} />
                 <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
-                <Stat label={`${pkg.deferredMonths}-mo deferred interest`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
-                <Stat label={`Takeout refi (${pkg.refiCheck.refiLtv}%)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.refiCheckRows[0]?.overlay} />
+                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}% · no points`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
+                <Stat label="Minimum share" value={money(pkg.minParticipation)} overlay={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay} />
               </dl>
 
               {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
 
               <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                {plan1aSteps.map((step) => (
+                {privatePlanSteps.map((step) => (
+                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                      {step.num}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-ink">{step.title}</span>
+                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                        {step.value}
+                      </OverlayTrigger>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          ) : lenderLens === 'dscr' ? (
+            <Card data-plan="dscr">
+              <CardTitle
+                aside={
+                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                    {pkg.refiCheck.refiYears}-yr · {pkg.refiCheck.refiRate}%
+                  </span>
+                }
+              >
+                DSCR refinance plan
+              </CardTitle>
+
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label={`Takeout loan (${pkg.refiCheck.refiLtv}% LTV)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.overlay} />
+                <Stat label="Stabilized value" value={money(pkg.value)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'value')?.overlay} />
+                <Stat label="Monthly payment (P&I)" value={`${money(pkg.refiCheck.refiPayment)}/mo`} overlay={pkg.dscrLoanRows.find((r) => r.key === 'payment')?.overlay} />
+                <Stat label="Pays off bridge" value={money(pkg.refiCheck.bridgePayoff)} overlay={pkg.refiCheckRows.find((r) => r.key === 'payoff')?.overlay} />
+              </dl>
+
+              <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                {dscrPlanSteps.map((step) => (
                   <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
                       {step.num}
@@ -419,31 +607,44 @@ export default function Lender({ deal, me, preview, tab }) {
                 <LedgerRows rows={pkg.refiCheckRows} />
               </div>
             </Card>
+          ) : (
+            <Card data-plan="1a">
+              <CardTitle
+                aside={
+                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                    {pkg.ltcPct}% LTC · $0 down
+                  </span>
+                }
+              >
+                Bridge loan plan
+              </CardTitle>
 
-            {pkg.hasSellerFinancingOption && (
-              <Card data-plan="1b">
-                <CardTitle aside={<span className="rounded-full bg-paper px-2.5 py-0.5 text-xs font-medium text-ink-soft">Plan 1B · Backup option</span>}>
-                  Seller financing
-                </CardTitle>
-                <dl className="divide-y divide-line">
-                  <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                    <dt className="text-sm text-ink-soft">Primary bridge path</dt>
-                    <dd className="text-sm font-semibold tabular-nums text-ink">Plan 1A · {money(pkg.totalLoan)}</dd>
-                  </div>
-                  <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                    <dt className="text-sm text-ink-soft">Backup structure</dt>
-                    <dd className="text-sm font-medium text-ink">
-                      <OverlayTrigger lines={[plain(plan.structure, e).glance]}>Seller carry note</OverlayTrigger>
-                    </dd>
-                  </div>
-                  <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                    <dt className="text-sm text-ink-soft">Repair budget</dt>
-                    <dd className="text-sm font-semibold tabular-nums text-ink">{money(pkg.repairs)}</dd>
-                  </div>
-                </dl>
-              </Card>
-            )}
-          </>
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
+                <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
+                <Stat label={`Interest (${pkg.ratePct}% IO · non-Dutch)`} value={`${money(pkg.initialMonthlyInterest)}/mo`} overlay={pkg.loanAskRows.find((r) => r.key === 'interest')?.overlay} />
+                <Stat label={`Deferred (${pkg.deferredMonths} mo · due at payoff)`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
+              </dl>
+
+              {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
+
+              <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                {bridgePlanSteps.map((step) => (
+                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                      {step.num}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-ink">{step.title}</span>
+                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                        {step.value}
+                      </OverlayTrigger>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          )
         )}
       </section>
 

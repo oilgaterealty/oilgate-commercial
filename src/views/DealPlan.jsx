@@ -125,6 +125,26 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
           onClick={() => onSelect(offer)} className={`min-h-10 rounded-full border px-4 py-2 text-sm ${offer.id === selected.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>{offer.name}</button>)}
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        {setBase && (
+          <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Refinance LTV">
+            {[75, 80].map((ltv) => {
+              const active = +(base?.refiLtv ?? result?.operating?.b?.refiLtv ?? 75) === ltv;
+              return (
+                <button
+                  key={ltv}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setBase({ ...base, refiLtv: ltv })}
+                  className={`min-h-[34px] rounded-full px-3 py-1 text-xs font-semibold transition ${
+                    active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {ltv}% LTV
+                </button>
+              );
+            })}
+          </div>
+        )}
         <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
           <span>Short months paid by the repair loan ($)</span>
           <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months paid by the repair loan ($)" value={shortCarry}

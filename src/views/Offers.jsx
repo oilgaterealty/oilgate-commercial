@@ -110,7 +110,7 @@ export function Results({ r }) {
   );
 }
 
-function BuildingNumbers({ base, setBase, o, comps }) {
+function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
   const [open, setOpen] = useState(false);
   const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: o.b.units, comps });
   const buildingOverlay = [
@@ -118,11 +118,32 @@ function BuildingNumbers({ base, setBase, o, comps }) {
     `Yearly NOI: ${money(o.noi)} · Cap rate: ${pct(o.capRate, 1)} · Refinance loan: ${money(o.refiLoan)} (${o.refiLimitedBy === 'DSCR' ? 'rent-limited' : 'value-limited'}), nets ${money(o.refiNet)}.`,
     ...(val.compsLine ? [val.compsLine, ...(val.compsOverlay || [])] : []),
   ];
+  const activeRefiLtv = +(base.refiLtv ?? BASE_DEFAULTS.refiLtv);
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-xl font-semibold">Building numbers</h2>
-        <div className="flex items-center gap-1.5 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {owner && (
+            <div className="inline-flex rounded-full border border-line bg-paper p-0.5" role="group" aria-label="Refinance LTV">
+              {[75, 80].map((ltv) => {
+                const active = activeRefiLtv === ltv;
+                return (
+                  <button
+                    key={ltv}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setBase({ ...base, refiLtv: ltv })}
+                    className={`min-h-[34px] rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
+                    }`}
+                  >
+                    {ltv}% LTV
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <OverlayTrigger lines={buildingOverlay} className="font-semibold text-ink">{val.incomeLine}</OverlayTrigger>
           <InfoTip label="How value is figured" lines={buildingOverlay} />
         </div>

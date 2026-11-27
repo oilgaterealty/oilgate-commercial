@@ -1,8 +1,8 @@
-// Charlotte lender view Round 2 tests:
-// Bridge -> Private -> DSCR tab order, 1 point + $1,295 + 2-mo deferred interest + title/closing rolled in,
-// Private pooled $20k min + total funds needed + left over at refi (no full refi check table),
-// market rent 780..1115 midpoint 948 (no $1,220, no rent > 1,115), As-is 0 of 10 / $0,
-// Plan 1A leading + Plan 1B secondary, LenderWhatIf (no seller-financing), zero visible subtext, strict privacy isolation.
+// Charlotte lender view tab-isolation tests:
+// Bridge (10% non-Dutch, 1 pt, $1,295, 12 mo, 2-mo deferred due at payoff, $0 down, LTC, draws, extensions; NO LTV/DSCR/amortization/refi table),
+// Private (8%, no points, $20k min, first-lien pooled, total funds needed, surplus at refinance; NO processing/DSCR/amortization/refi table),
+// DSCR (75% LTV of $586k = $439,500 changeable to 80%, DSCR min, rate, 30-yr amort, prepayment, refi fees, pays off bridge; NO points/processing/deferred),
+// percent-next-to-dollar always labels both, Owner 75%/80% LTV toggle, zero subtext, strict privacy isolation.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -12,11 +12,10 @@ import { createRequire } from 'node:module';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
-import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, valueSummary } from '../src/lib/dealmath.js';
-import { buildLenderPackage, LENDER_LENSES } from '../src/lib/lenderModel.js';
-import { buildLeadGuide, rentValue } from '../src/lib/dealplan.js';
+import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
+import { buildLenderPackage, LENDER_DEFAULTS, LENDER_LENSES } from '../src/lib/lenderModel.js';
+import { buildLeadGuide, monthlyPlan, overallRepairBudget, rentValue } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
-import { plain } from '../src/lib/plain.js';
 
 const require = createRequire(import.meta.url);
 const jsxRuntime = require('react/jsx-runtime');
@@ -49,13 +48,19 @@ const WHITEBOARD_BASE = {
   value: 586000,
   rehab: 124050,
   purchasePrice: 275000,
-  bridgeRepairs: 140000,
+  bridgeRepairs: 124050,
   bridgeClosing: 5500,
   bridgeProcessing: 1295,
   bridgePointsPct: 1,
-  bridgeRate: 13,
+  bridgeRate: 10,
   bridgeDeferredMonths: 2,
+  bridgeTermMonths: 12,
+  privateRate: 8,
+  privateTermMonths: 12,
   privateMinParticipation: 20000,
+  refiRate: 7.5,
+  refiYears: 30,
+  refiDscr: 1.25,
   refiLtv: 75,
   refiFeesFlat: 5000,
   refiFeesPct: 2.1,
@@ -66,16 +71,20 @@ const WHITEBOARD_BASE = {
 const WHITEBOARD_PLAN = {
   sellerLoanBalance: 275000,
   contingency: 10002,
-  lenderRate: 13,
+  lenderRate: 10,
   lenderPoints: 1,
-  bridgeRate: 13,
+  bridgeRate: 10,
   bridgePoints: 1,
   bridgeProcessing: 1295,
   bridgeClosing: 5500,
   bridgeDeferredMonths: 2,
+  bridgeTermMonths: 12,
+  privateRate: 8,
+  privateTermMonths: 12,
+  privateMinParticipation: 20000,
   units: [
     ...Array.from({ length: 8 }, (_, i) => ({ id: String(i + 1), rehab: 14256 })),
-    { id: '9', rehab: 0, occupied: true }, // occupied non-paying tenant -> $0 / 0 rented as-is
+    { id: '9', rehab: 0, occupied: true },
     { id: '10', rehab: 0 },
   ],
   costs: [],
@@ -91,80 +100,78 @@ const WHITEBOARD_OFFER = {
   inputs: { note: 275000, rate: 5, amortYears: 0, closing: 5500 },
 };
 
-test('LENDER_LENSES order is Bridge, Private, DSCR', () => {
+test('LENDER_DEFAULTS and LENDER_LENSES reflect owner-confirmed Bridge (10%), Private (8%), and DSCR (75% LTV) terms', () => {
   assert.deepEqual(Object.keys(LENDER_LENSES), ['bridge', 'private', 'dscr']);
   assert.deepEqual(Object.values(LENDER_LENSES).map((l) => l.label), ['Bridge', 'Private', 'DSCR']);
+  assert.equal(LENDER_DEFAULTS.bridgeRate, 10);
+  assert.equal(LENDER_DEFAULTS.bridgePointsPct, 1);
+  assert.equal(LENDER_DEFAULTS.bridgeProcessing, 1295);
+  assert.equal(LENDER_DEFAULTS.bridgeDeferredMonths, 2);
+  assert.equal(LENDER_DEFAULTS.bridgeTermMonths, 12);
+  assert.equal(LENDER_DEFAULTS.privateRate, 8);
+  assert.equal(LENDER_DEFAULTS.privatePointsPct, 0);
+  assert.equal(LENDER_DEFAULTS.privateMinParticipation, 20000);
+  assert.equal(LENDER_DEFAULTS.refiLtv, 75);
+  assert.equal(LENDER_DEFAULTS.refiFeesFlat, 5000);
+  assert.equal(LENDER_DEFAULTS.refiFeesPct, 2.1);
 });
 
-test('buildLenderPackage derives Plan 1A bridge with 1 point, $1,295 processing, 2-mo deferred interest, and private pool', () => {
+test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8% no points), and DSCR (75%/80% LTV) packages', () => {
   const guide = buildLeadGuide(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
-  const pkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'bridge' });
+  const bridgePkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'bridge' });
 
-  assert.equal(pkg.purchase, 275000);
-  assert.equal(pkg.repairs, 124050);
-  assert.equal(pkg.closing, 5500);
-  assert.equal(pkg.processing, 1295);
-  assert.equal(pkg.pointsPct, 1);
-  assert.equal(pkg.ratePct, 13);
-  assert.equal(pkg.deferredMonths, 2);
-  assert.equal(pkg.minParticipation, 20000);
-  assert.equal(pkg.downPayment, 0);
-  assert.equal(pkg.ltcPct, 100);
-  assert.equal(Math.round(pkg.points), 4191);
-  assert.equal(Math.round(pkg.deferredInterest), 9081);
-  assert.equal(Math.round(pkg.totalLoan), 419117);
-  assert.equal(Math.round(pkg.monthlyInterest), 4540);
-  assert.ok(pkg.loanAskRows.some((r) => r.key === 'deferredInterest' && r.label === '2 mo deferred interest'));
-  assert.ok(pkg.loanAskRows.some((r) => r.key === 'points' && r.label === '1 point'));
+  // Bridge: 275,000 + 124,050 + 5,500 + 1,295 = 405,845 / 0.99 = 409,944; drawn at close = 285,894; 10% IO = 2,382/mo; 2 mo deferred = 4,765
+  assert.equal(bridgePkg.purchase, 275000);
+  assert.equal(bridgePkg.repairs, 124050);
+  assert.equal(bridgePkg.closing, 5500);
+  assert.equal(bridgePkg.processing, 1295);
+  assert.equal(bridgePkg.pointsPct, 1);
+  assert.equal(bridgePkg.ratePct, 10);
+  assert.equal(bridgePkg.deferredMonths, 2);
+  assert.equal(bridgePkg.downPayment, 0);
+  assert.equal(bridgePkg.ltcPct, 100);
+  assert.equal(Math.round(bridgePkg.totalLoan), 409944);
+  assert.equal(Math.round(bridgePkg.points), 4099);
+  assert.equal(Math.round(bridgePkg.initialDrawn), 285894);
+  assert.equal(Math.round(bridgePkg.initialMonthlyInterest), 2382);
+  assert.equal(Math.round(bridgePkg.deferredInterest), 4765);
+  assert.equal(Math.round(bridgePkg.bridgePayoff), 414709);
+  assert.equal(bridgePkg.bridgeTermsRows.at(-1).display, 'Paid off by refinance after lease-up');
 
-  assert.equal(pkg.value, 586000);
-  assert.equal(pkg.refiCheck.newLoan, 439500);
-  assert.equal(Math.round(pkg.refiCheck.refiFeesTotal), 14230);
-  assert.equal(Math.round(pkg.refiCheck.netAtRefi), 6153);
-  assert.equal(pkg.refiCheck.isGap, false);
-  assert.equal(pkg.hasSellerFinancingOption, true);
+  // Bridge rows & steps never expose LTV-of-value, DSCR, amortization, or refi fee numbers
+  const bridgeText = JSON.stringify({ steps: bridgePkg.steps, loanAskRows: bridgePkg.loanAskRows, bridgeTermsRows: bridgePkg.bridgeTermsRows });
+  assert.doesNotMatch(bridgeText, /\bLTV\b|DSCR|amortiz|Refi fees/i);
 
+  // Private: 275,000 + 124,050 + 5,500 = 404,550; 8% = 2,697/mo; no points; no processing
   const privPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'private' });
-  assert.equal(privPkg.totalLoan, pkg.totalLoan);
-  assert.equal(privPkg.privatePoolRows[0].display, '$419,117');
-  assert.equal(privPkg.privatePoolRows[1].display, '$20,000');
-  assert.equal(privPkg.privatePoolRows[3].label, 'Left over at refinance');
-  assert.equal(privPkg.privatePoolRows[3].display, '$6,153');
+  assert.equal(privPkg.privatePool.ratePct, 8);
+  assert.equal(privPkg.privatePool.pointsPct, 0);
+  assert.equal(privPkg.privatePool.totalFunds, 404550);
+  assert.equal(privPkg.privatePool.minParticipation, 20000);
+  assert.equal(Math.round(privPkg.privatePool.monthlyInterest), 2697);
+  assert.ok(privPkg.privatePool.surplusAtRefi > 0);
+  const privText = JSON.stringify({ steps: privPkg.steps, privateFundsRows: privPkg.privateFundsRows, privatePoolRows: privPkg.privatePoolRows });
+  assert.match(privText, /8% · no points/);
+  assert.match(privText, /First-lien pooled/);
+  assert.doesNotMatch(privText, /processing|\$1,295|1 point|DSCR|amortiz/i);
 
+  // DSCR: 75% of 586,000 = 439,500; 80% of 586,000 = 468,800; pays off bridge 414,709; refi fees 5000 + 2.1%
   const dscrPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'dscr' });
-  assert.equal(dscrPkg.refiCheck.newLoan, pkg.refiCheck.newLoan);
-  assert.notEqual(dscrPkg.lens.title, pkg.lens.title);
+  assert.equal(dscrPkg.value, 586000);
+  assert.equal(dscrPkg.refiCheck.refiLtv, 75);
+  assert.equal(dscrPkg.refiCheck.newLoan, 439500);
+  assert.equal(Math.round(dscrPkg.refiCheck.refiFeesTotal), 14230);
+  assert.equal(Math.round(dscrPkg.refiCheck.netAtRefi), 10561);
+  assert.equal(dscrPkg.refiCheck.isGap, false);
+  const dscrText = JSON.stringify({ steps: dscrPkg.steps, dscrLoanRows: dscrPkg.dscrLoanRows, refiCheckRows: dscrPkg.refiCheckRows });
+  assert.doesNotMatch(dscrText, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b/i);
+
+  const dscr80Pkg = buildLenderPackage({ base: { ...WHITEBOARD_BASE, refiLtv: 80 }, offer: WHITEBOARD_OFFER, guide, lens: 'dscr' });
+  assert.equal(dscr80Pkg.refiCheck.refiLtv, 80);
+  assert.equal(dscr80Pkg.refiCheck.newLoan, 468800);
 });
 
-test('rent range 780..1115 defaults to midpoint 948, never exceeds 1115, and As-is is 0 of 10 / $0', () => {
-  const rv = rentValue(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
-  assert.equal(rv.marketRange.low, 780);
-  assert.equal(rv.marketRange.high, 1115);
-  assert.equal(defaultMarketRent(rv.marketRange), 948);
-
-  // As-is must be 0 rented / $0 even when Unit 9 is marked occupied with $0 rent.
-  const asis = rv.views.find((v) => v.key === 'asis');
-  assert.equal(asis.rented, 0);
-  assert.equal(asis.rentMo, 0);
-
-  // Stale cached guide with rented: 1, rentMo: 0 also normalizes to 0 in whatIfViews.
-  const staleRv = { ...rv, views: [{ ...asis, rented: 1, rentMo: 0 }, ...rv.views.slice(1)] };
-  const cleanedViews = whatIfViews(staleRv, 948);
-  assert.equal(cleanedViews[0].rented, 0);
-  assert.equal(cleanedViews[0].rentMo, 0);
-
-  // Neither rentValue grid nor whatIfGrid ever includes a row above 1115 or $1,220.
-  assert.ok(rv.grid.every((r) => r.rent <= 1115));
-  const wGrid = whatIfGrid(rv, 948);
-  assert.ok(wGrid.every((r) => r.rent <= 1115));
-  assert.ok(!wGrid.some((r) => r.rent === 1220));
-
-  const lifted = effectiveMarketRange({ low: 780, high: 1020 }, { marketRentHigh: 1115 });
-  assert.equal(lifted.high, 1115);
-  assert.equal(defaultMarketRent(lifted), 948);
-});
-
-function buildLenderMocks(guide) {
+async function buildLenderMocks(guide) {
   const Shell = {
     Card: ({ children, className = '', ...p }) => React.createElement('section', { className, ...p }, children),
     CardTitle: ({ children, aside }) => React.createElement('div', null, React.createElement('h2', null, children), aside),
@@ -187,13 +194,34 @@ function buildLenderMocks(guide) {
     './Messages.jsx': { sendToOwner: async () => null },
     './Shell.jsx': Shell,
   });
+  const DictationMod = loadJsx('src/components/Dictation.jsx', {
+    '../lib/dictation.js': { MAX_RECORDING_MS: 60000 },
+    '../lib/mediaCoordinator.js': { mediaCoordinator: { acquire: () => ({ ok: true }), release: () => {} } },
+  });
+  const noopQuery = {
+    select: () => ({
+      eq: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: null }) }),
+        then: () => {},
+      }),
+    }),
+  };
+  const LenderTermsMod = loadJsx('src/views/LenderTerms.jsx', {
+    '../components/Dictation.jsx': DictationMod,
+    '../lib/supabase.js': { supabase: { from: () => noopQuery } },
+    '../lib/format.js': await import('../src/lib/format.js'),
+    '../lib/v63.js': await import('../src/lib/v63.js'),
+    '../lib/dealmath.js': { BASE_DEFAULTS, money },
+    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES },
+    '../components/Shell.jsx': Shell,
+    '../components/Messages.jsx': { sendToOwner: async () => null },
+  });
   return loadJsx('src/views/Lender.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
-    '../lib/supabase.js': { supabase: { rpc: () => ({ then: () => {} }) } },
+    '../lib/supabase.js': { supabase: { from: () => noopQuery, rpc: () => ({ then: () => {} }) } },
     '../lib/dealmath.js': { evaluate, money, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, LENDER_LENSES },
     '../lib/rangeValue.js': { effectiveMarketRange },
-    '../lib/plain.js': { plain },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [{ ...WHITEBOARD_OFFER, seller_summary: { guide } }], base: WHITEBOARD_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
     '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
@@ -205,65 +233,141 @@ function buildLenderMocks(guide) {
     '../components/Shell.jsx': Shell,
     '../components/Messages.jsx': { __esModule: true, default: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
-    './LenderTerms.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'LenderTerms' }) },
+    './LenderTerms.jsx': LenderTermsMod,
     './CityRecords.jsx': { __esModule: true, default: () => null },
   });
 }
 
-test('Lender.jsx renders Bridge/Private/DSCR order, Round 2 numbers, zero subtext, Plan 1A leading, and LenderWhatIf', async () => {
-  const guide = buildLeadGuide(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
-  const LenderMod = buildLenderMocks(guide);
+function sliceSections(html) {
+  return {
+    overview: html.slice(html.indexOf('id="sec-overview"'), html.indexOf('id="sec-terms"')),
+    terms: html.slice(html.indexOf('id="sec-terms"'), html.indexOf('id="sec-plan"')),
+    plan: html.slice(html.indexOf('id="sec-plan"'), html.indexOf('id="sec-what-if"')),
+    whatIf: html.slice(html.indexOf('id="sec-what-if"'), html.indexOf('id="sec-city-records"')),
+  };
+}
 
-  const html = renderToStaticMarkup(React.createElement(LenderMod.default, {
+test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Your terms, The plan, and What-if', async () => {
+  const guide = buildLeadGuide(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
+  const LenderMod = await buildLenderMocks(guide);
+
+  // 1. BRIDGE TAB
+  const bridgeHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {
     deal: { id: 'd1', slug: 'charlotte' },
     me: { uid: 'l1', email: 'lender@example.com' },
     preview: false,
+    initialLens: 'bridge',
   }));
+  const tabOrder = ['>Bridge<', '>Private<', '>DSCR<'].map((t) => bridgeHtml.indexOf(t));
+  assert.ok(tabOrder[0] >= 0 && tabOrder[1] > tabOrder[0] && tabOrder[2] > tabOrder[1]);
 
-  // Overview section: Bridge -> Private -> DSCR tab order, zero seller financing, zero subtext.
-  const overviewHtml = html.split('id="sec-terms"')[0];
-  const tabOrder = ['>Bridge<', '>Private<', '>DSCR<'].map((t) => overviewHtml.indexOf(t));
-  assert.ok(tabOrder[0] >= 0 && tabOrder[1] > tabOrder[0] && tabOrder[2] > tabOrder[1], 'Tab order must be Bridge, Private, DSCR');
+  const bSec = sliceSections(bridgeHtml);
+  const bAll = bSec.overview + bSec.terms + bSec.plan + bSec.whatIf;
+  assert.doesNotMatch(bSec.overview, /<p\b|<small\b|<caption\b/i);
+  assert.doesNotMatch(bAll, /Seller financing/i);
+  assert.match(bSec.overview, /Bridge loan/);
+  assert.match(bSec.overview, /10% IO/);
+  assert.match(bSec.overview, /non-Dutch/);
+  assert.match(bSec.overview, /\$409,944/);
+  assert.match(bSec.overview, /\$1,295/);
+  assert.match(bSec.overview, /Paid off by refinance after lease-up/);
+  assert.match(bSec.terms, /Bridge terms/);
+  assert.match(bSec.terms, /LTC \(% of cost\)/);
+  assert.match(bSec.terms, /Number of extensions/);
+  assert.match(bSec.terms, /Rehab draws/);
+  assert.match(bSec.plan, /Bridge loan plan/);
+  assert.match(bSec.whatIf, /Loan assumptions/);
+  assert.match(bSec.whatIf, /Deferred interest/);
+  assert.doesNotMatch(bAll, /\bLTV\b|DSCR|amortiz|Refinance check|Refi fees|Takeout loan/i);
+  assert.doesNotMatch(bAll, /\d+%\s*LTV\s*\(\$/i);
 
-  assert.doesNotMatch(overviewHtml, /Seller financing/i);
-  assert.match(overviewHtml, /Bridge loan/);
-  assert.match(overviewHtml, /\$419,117/);
-  assert.match(overviewHtml, /1 point/);
-  assert.match(overviewHtml, /2 mo deferred interest/);
-  assert.match(overviewHtml, /\$9,081/);
-  assert.match(overviewHtml, /\$5,500/);
-  assert.match(overviewHtml, /\$1,295/);
-  assert.match(overviewHtml, /\$4,540\/mo/);
-  assert.match(overviewHtml, /\$439,500/);
-  assert.match(overviewHtml, /type="range"[^>]*min="780"[^>]*max="1115"[^>]*value="948"/);
-  assert.doesNotMatch(overviewHtml, /\$1,220/);
-  assert.match(overviewHtml, /0 of 10/);
-  assert.doesNotMatch(overviewHtml, /1 of 10/);
+  // 2. PRIVATE TAB
+  const privHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {
+    deal: { id: 'd1', slug: 'charlotte' },
+    me: { uid: 'l1', email: 'lender@example.com' },
+    preview: false,
+    initialLens: 'private',
+  }));
+  const pSec = sliceSections(privHtml);
+  const pAll = pSec.overview + pSec.terms + pSec.plan + pSec.whatIf;
+  assert.doesNotMatch(pSec.overview, /<p\b|<small\b|<caption\b/i);
+  assert.match(pSec.overview, /Private pooled loan/);
+  assert.match(pSec.overview, /\$404,550/);
+  assert.match(pSec.overview, /\$20,000/);
+  assert.match(pSec.overview, /8% · no points/);
+  assert.match(pSec.overview, /First-lien pooled/);
+  assert.match(pSec.overview, /Surplus at refinance/);
+  assert.match(pSec.terms, /Private terms/);
+  assert.match(pSec.terms, /Your participation/);
+  assert.match(pSec.terms, /8% · no points/);
+  assert.match(pSec.plan, /Private pool plan/);
+  assert.match(pSec.whatIf, /Your share/);
+  assert.doesNotMatch(pAll, /processing|\$1,295|Origination points|1 point|DSCR|amortiz|Refinance check|Refi fees|Number of extensions/i);
 
-  const orderMarkers = ['data-wb="hero"', 'data-wb="steps"', 'data-wb="loan-ask"', 'data-wb="refi-check"', 'data-wb="rent-plan"'];
-  const indices = orderMarkers.map((m) => overviewHtml.indexOf(m));
-  for (let i = 0; i < indices.length; i++) {
-    assert.ok(indices[i] >= 0, `Missing ${orderMarkers[i]}`);
-    if (i > 0) assert.ok(indices[i] > indices[i - 1], `Out of order: ${orderMarkers[i]}`);
-  }
-  assert.doesNotMatch(overviewHtml, /<p\b|<small\b|<caption\b/i);
+  // 3. DSCR TAB
+  const dscrHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {
+    deal: { id: 'd1', slug: 'charlotte' },
+    me: { uid: 'l1', email: 'lender@example.com' },
+    preview: false,
+    initialLens: 'dscr',
+  }));
+  const dSec = sliceSections(dscrHtml);
+  const dAll = dSec.overview + dSec.terms + dSec.plan + dSec.whatIf;
+  assert.doesNotMatch(dSec.overview, /<p\b|<small\b|<caption\b/i);
+  assert.match(dSec.overview, /Commercial DSCR refinance/);
+  assert.match(dSec.overview, /75% LTV/);
+  assert.match(dSec.overview, /\$586,000/);
+  assert.match(dSec.overview, /\$439,500/);
+  assert.match(dSec.overview, /1\.25x/);
+  assert.match(dSec.overview, /30 years/);
+  assert.match(dSec.overview, /Pays off bridge/);
+  assert.match(dSec.terms, /DSCR terms/);
+  assert.match(dSec.terms, /75% LTV · Value \$586,000 · Loan \$439,500/);
+  assert.match(dSec.terms, /Amortization/);
+  assert.match(dSec.terms, /Prepayment penalty/);
+  assert.match(dSec.terms, /Refi fees/);
+  assert.match(dSec.plan, /DSCR refinance plan/);
+  assert.match(dSec.whatIf, /75%/);
+  assert.match(dSec.whatIf, /80%/);
+  assert.doesNotMatch(dAll, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b|Number of extensions/i);
+  assert.doesNotMatch(dAll, /\d+%\s*LTV\s*\(\$/i);
+});
 
-  // Plan tab: Plan 1A leads ahead of short secondary Plan 1B.
-  const planHtml = html.slice(html.indexOf('id="sec-plan"'), html.indexOf('id="sec-what-if"'));
-  const idx1a = planHtml.indexOf('data-plan="1a"');
-  const idx1b = planHtml.indexOf('data-plan="1b"');
-  assert.ok(idx1a >= 0 && idx1b > idx1a, 'Plan 1A must precede secondary Plan 1B');
-  assert.match(planHtml, /Plan 1A · Bridge to refinance/);
-  assert.match(planHtml, /Repairs in draws/);
-  assert.match(planHtml, /2-mo deferred interest/);
-  assert.match(planHtml, /Refinance pays off bridge/);
-  assert.match(planHtml, /Plan 1B · Backup option/);
+test('Owner BuildingNumbers and DealPlanView include 75% and 80% LTV quick toggles', () => {
+  const offersSrc = read('src/views/Offers.jsx');
+  assert.match(offersSrc, /aria-label="Refinance LTV"/);
+  assert.match(offersSrc, /\[75, 80\]\.map/);
+  assert.match(offersSrc, /refiLtv: ltv/);
 
-  // What-if tab: uses LenderWhatIf (no seller-financing what-if inputs).
-  const whatIfHtml = html.slice(html.indexOf('id="sec-what-if"'), html.indexOf('id="sec-city-records"'));
-  assert.match(whatIfHtml, /Loan assumptions/);
-  assert.match(whatIfHtml, /Deferred interest/);
-  assert.doesNotMatch(whatIfHtml, /Seller financing|sellerAdvances|optionPrice/i);
+  const dealPlanSrc = read('src/views/DealPlan.jsx');
+  assert.match(dealPlanSrc, /aria-label="Refinance LTV"/);
+  assert.match(dealPlanSrc, /\[75, 80\]\.map/);
+  assert.match(dealPlanSrc, /refiLtv: ltv/);
+});
+
+test('rent range 780..1115 defaults to midpoint 948, never exceeds 1115, and As-is is 0 of 10 / $0', () => {
+  const rv = rentValue(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
+  assert.equal(rv.marketRange.low, 780);
+  assert.equal(rv.marketRange.high, 1115);
+  assert.equal(defaultMarketRent(rv.marketRange), 948);
+
+  const asis = rv.views.find((v) => v.key === 'asis');
+  assert.equal(asis.rented, 0);
+  assert.equal(asis.rentMo, 0);
+
+  const staleRv = { ...rv, views: [{ ...asis, rented: 1, rentMo: 0 }, ...rv.views.slice(1)] };
+  const cleanedViews = whatIfViews(staleRv, 948);
+  assert.equal(cleanedViews[0].rented, 0);
+  assert.equal(cleanedViews[0].rentMo, 0);
+
+  assert.ok(rv.grid.every((r) => r.rent <= 1115));
+  const wGrid = whatIfGrid(rv, 948);
+  assert.ok(wGrid.every((r) => r.rent <= 1115));
+  assert.ok(!wGrid.some((r) => r.rent === 1220));
+
+  const lifted = effectiveMarketRange({ low: 780, high: 1020 }, { marketRentHigh: 1115 });
+  assert.equal(lifted.high, 1115);
+  assert.equal(defaultMarketRent(lifted), 948);
 });
 
 test('seller, realtor, and shared What-if fields never expose bridge ask or lender rate details', () => {
@@ -276,12 +380,14 @@ test('seller, realtor, and shared What-if fields never expose bridge ask or lend
     'bridgeRate',
     'bridgeDeferredMonths',
     'bridgeTermMonths',
+    'privateRate',
+    'privateTermMonths',
     'privateMinParticipation',
   ]) {
     assert.equal(BASE_FIELDS.some(([k]) => k === field), false, `${field} must stay out of BASE_FIELDS`);
   }
   for (const file of ['src/views/Seller.jsx', 'src/views/Realtor.jsx', 'src/components/Switches.jsx']) {
     const src = read(file);
-    assert.doesNotMatch(src, /lenderModel|LenderWhatIf|Refinance check|Pays off bridge|bridgeProcessing|bridgePointsPct|bridgeRate|bridgeDeferredMonths|privateMinParticipation/i, file);
+    assert.doesNotMatch(src, /lenderModel|LenderWhatIf|Refinance check|Pays off bridge|bridgeProcessing|bridgePointsPct|bridgeRate|bridgeDeferredMonths|privateMinParticipation|non-Dutch/i, file);
   }
 });
