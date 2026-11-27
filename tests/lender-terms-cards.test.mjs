@@ -1,6 +1,7 @@
-// Lender "Your terms" ask-card redesign tests:
-// ask cards render full text, Change reveals empty input with placeholder,
-// Use ours restores, untouched submit sends our ask, no Not applicable button anywhere, preview name is blank.
+// Lender "Your terms" Round 2 redesign tests:
+// Bridge / Private / DSCR tabs, direct numeric/choice inputs (LTC/LTV, rate, points, term, deferred interest, extensions),
+// optional guarantee/prepayment/lockout, plain Yes/No collateral, read-only 10 units (no legal unit count input),
+// one-tap Change + Use ours with no prefilled deletable text, untouched asks submit cleanly, preview name blank.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -39,7 +40,7 @@ async function loadLenderTermsModule() {
     '../lib/mediaCoordinator.js': { mediaCoordinator: { acquire: () => ({ ok: true }), release: () => {} } },
   });
   const Card = ({ children }) => React.createElement('section', null, children);
-  const CardTitle = ({ children }) => React.createElement('h2', null, children);
+  const CardTitle = ({ children, aside }) => React.createElement('div', null, React.createElement('h2', null, children), aside);
   const Button = ({ children, kind: _kind, ...p }) => React.createElement('button', p, children);
   const Empty = ({ children }) => React.createElement('p', null, children);
   const noopQuery = {
@@ -64,14 +65,36 @@ async function loadLenderTermsModule() {
 
 const GUIDE = {
   costSummary: { total: 124050 },
+  bridge: {
+    purchase: 275000,
+    repairs: 124050,
+    closing: 5500,
+    processing: 1295,
+    pointsPct: 1,
+    ratePct: 13,
+    deferredMonths: 2,
+    termMonths: 12,
+    minParticipation: 20000,
+  },
   refi: {
+    estimatedValue: 586000,
     closingInLoan: 5500,
+    ltvPct: 75,
     ltvShownPct: 75,
-    renoCompare: { regularRate: 11, regularPointsPct: 2.5 },
   },
 };
 
 const BASE = {
+  purchasePrice: 275000,
+  rehab: 124050,
+  bridgeClosing: 5500,
+  bridgeProcessing: 1295,
+  bridgePointsPct: 1,
+  bridgeRate: 13,
+  bridgeDeferredMonths: 2,
+  bridgeTermMonths: 12,
+  privateMinParticipation: 20000,
+  value: 586000,
   refiRate: 7.25,
   refiYears: 30,
   refiLtv: 75,
@@ -79,10 +102,14 @@ const BASE = {
   strUnits: 0,
 };
 
-test('ask cards render full unwrapped text, Change button, required asterisks, and leave no-ask fields as empty inputs', async () => {
+test('redesigned Your terms renders Bridge/Private/DSCR tabs, read-only 10 units, no legal unit count input, and ask cards', async () => {
   const lt = await loadLenderTermsModule();
+  assert.deepEqual(Object.keys(lt.LENDER_PROGRAMS), ['bridge', 'private', 'dscr']);
+
   const asks = lt.wantedTerms('bridge', GUIDE, BASE);
-  assert.equal(Object.keys(asks).length, 5);
+  assert.equal(Object.keys(asks).length, 8);
+  assert.match(asks['Origination points'], /^1 point \(/);
+  assert.match(asks['Deferred interest'], /^2 months \(/);
 
   const html = renderToStaticMarkup(React.createElement(lt.default, {
     deal: { id: 'd1', slug: 'charlotte' },
@@ -92,181 +119,131 @@ test('ask cards render full unwrapped text, Change button, required asterisks, a
     base: BASE,
   }));
 
-  // All 5 bridge asks render in full on read-only cards with no raw text inside inputs.
-  for (const key of ['purchase_advances', 'rehab_draws', 'rates_fees', 'str_income', 'legal_units_code']) {
+  // Tab order: Bridge, Private, DSCR.
+  const tabPos = ['>Bridge<', '>Private<', '>DSCR<'].map((t) => html.indexOf(t));
+  assert.ok(tabPos[0] >= 0 && tabPos[1] > tabPos[0] && tabPos[2] > tabPos[1]);
+
+  // Read-only 10 units fact; NO legal unit count input anywhere.
+  assert.match(html, /10 units/);
+  assert.doesNotMatch(html, /legal unit count/i);
+
+  // All 8 bridge asks render as read-only ask cards with Change buttons; zero prefilled text inputs.
+  for (const key of ['ltc', 'ltv', 'rate', 'points', 'processing', 'term', 'deferred_interest', 'rehab_draws']) {
     assert.match(html, new RegExp(`data-ask-card="${key}"`));
   }
-  assert.ok(html.includes('$133,515 ($124,050 repair budget + $9,465 closing and fees)'));
-  assert.ok(html.includes('$124,050 repair budget, drawn as the work is done'));
-  assert.ok(html.includes('13% interest only ($1,446/mo), 2 points ($2,670), $1,295 processing'));
-  assert.match(html, /data-ask-card="str_income"[\s\S]*?>Not applicable<\/p>/);
-  assert.match(html, /data-ask-card="legal_units_code"[\s\S]*?>10 units<\/p>/);
-
-  assert.doesNotMatch(html, /<input[^>]*value="\$133,515/);
-  assert.doesNotMatch(html, /<input[^>]*value="\$124,050/);
-  assert.doesNotMatch(html, /<input[^>]*value="13% interest only/);
+  assert.equal((html.match(/>Change<\/button>/g) || []).length, 8);
   assert.doesNotMatch(html, /truncate|text-ellipsis|line-clamp/);
-
-  // 5 ask cards -> 5 Change buttons; remaining 7 no-ask bridge fields -> 7 empty inputs, zero Not applicable buttons.
-  assert.equal((html.match(/>Change<\/button>/g) || []).length, 5);
   assert.doesNotMatch(html, />Not applicable<\/button>/);
-  assert.doesNotMatch(html, /aria-pressed=/);
-  assert.equal((html.match(/>\*<\/span>/g) || []).length, 12);
-  assert.doesNotMatch(html, />Use ours<\/button>/);
 
-  // DSCR & Both programs resolve asks cleanly too; Plan 1A full bridge includes purchase + repairs + fees.
+  // Plain collateral question (Yes/No), extension options, and optional guarantee/prepayment/lockout choices.
+  assert.match(html, /Do you need both parcels, 23 and 27 Charlotte, as collateral\?/);
+  assert.match(html, /Number of extensions/);
+  assert.match(html, /Guarantee requirements/);
+  assert.match(html, /Prepayment penalty/);
+  assert.match(html, /Lockout/);
+
+  // Private & DSCR asks build cleanly too.
+  const privAsks = lt.wantedTerms('private', GUIDE, BASE);
+  assert.equal(Object.keys(privAsks).length, 5);
+  assert.match(privAsks['Your participation'], /\$20,000 min/);
   const dscrAsks = lt.wantedTerms('dscr', GUIDE, BASE);
-  assert.equal(Object.keys(dscrAsks).length, 8);
-  assert.match(dscrAsks['Refinance limits, cash-out caps and reserves'], /pays off the bridge loan/);
-  assert.doesNotMatch(dscrAsks['Refinance limits, cash-out caps and reserves'], /seller notes/);
-  assert.equal(Object.keys(lt.wantedTerms('both', GUIDE, BASE)).length, 9);
-
-  const plan1aAsks = lt.wantedTerms('bridge', GUIDE, { ...BASE, purchasePrice: 275000, bridgeRepairs: 140000, bridgeClosing: 5500 });
-  assert.match(plan1aAsks['Purchase advances and LTV/LTC caps'], /100% of cost \(\$0 down\): \$414,128 \(\$275,000 purchase \+ \$124,050 repairs \+ \$15,078 closing and fees\)/);
-  assert.match(plan1aAsks['Interest rate, origination points and fees'], /13% interest only \(\$4,486\/mo\), 2 points \(\$8,283\), \$1,295 processing/);
+  assert.equal(Object.keys(dscrAsks).length, 6);
+  assert.match(dscrAsks['Max LTV (% of value)'], /75% LTV/);
 });
 
-test('tapping Change opens an empty input with our ask as placeholder, mic, and Use ours link (no Not applicable button); Use ours restores the ask card', async () => {
+test('tapping Change opens an empty direct input (no prefilled deletable text) and Use ours restores the ask card', async () => {
   const lt = await loadLenderTermsModule();
-  const questions = lt.questionsForProgram('bridge');
-  const q = questions.find((x) => x.key === 'rates_fees');
+  const fields = lt.fieldsForProgram('bridge');
+  const fRate = fields.find((x) => x.key === 'rate');
+  const fDef = fields.find((x) => x.key === 'deferred_interest');
   const asks = lt.wantedTerms('bridge', GUIDE, BASE);
-  const ask = asks[q.label];
 
-  // Initial state: ask card visible, not countering.
-  assert.equal(lt.isTermCountering(q, ask, {}, {}), false);
-
-  // Tap Change -> empty input, countering true, form incomplete until filled or restored.
-  const opened = lt.openTermCounter({}, {}, 'bridge', q);
+  const opened = lt.openTermCounter({}, {}, 'bridge', fRate);
   const openedValues = lt.resolveTermValues(asks, opened.drafts.bridge);
-  assert.equal(lt.isTermCountering(q, ask, opened.drafts.bridge, opened.editing.bridge), true);
-  assert.equal(openedValues[q.label], '');
+  assert.equal(lt.isTermCountering(fRate, asks[fRate.label], opened.drafts.bridge, opened.editing.bridge), true);
+  assert.equal(openedValues[fRate.label], '');
 
-  const editorHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
-    question: q,
-    ask,
-    value: openedValues[q.label],
+  const rateHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
+    field: fRate,
+    program: 'bridge',
+    ask: asks[fRate.label],
+    value: openedValues[fRate.label],
     countering: true,
     preview: false,
     onOpenCounter: () => {},
     onRestoreAsk: () => {},
     onChange: () => {},
   }));
+  assert.match(rateHtml, /type="number"/);
+  assert.match(rateHtml, /value=""/);
+  assert.match(rateHtml, />Use ours</);
 
-  assert.doesNotMatch(editorHtml, /data-ask-card=/);
-  assert.match(editorHtml, new RegExp(`id="lt-${q.key}"`));
-  assert.match(editorHtml, /value=""/);
-  assert.match(editorHtml, /placeholder="13% interest only \(\$1,446\/mo\), 2 points \(\$2,670\), \$1,295 processing"/);
-  assert.match(editorHtml, /aria-label="Dictate Interest rate, origination points and fees"/);
-  assert.doesNotMatch(editorHtml, />Not applicable</);
-  assert.doesNotMatch(editorHtml, /aria-pressed=/);
-  assert.match(editorHtml, />Use ours</);
-  assert.match(editorHtml, />\*<\/span>/);
-
-  // Tap Use ours -> clears override and returns to read-only ask card with full ask restored.
-  const restored = lt.restoreTermAsk(opened.drafts, opened.editing, 'bridge', q);
-  const restoredValues = lt.resolveTermValues(asks, restored.drafts.bridge);
-  assert.equal(lt.isTermCountering(q, ask, restored.drafts.bridge, restored.editing.bridge), false);
-  assert.equal(restoredValues[q.label], ask);
-
-  const cardHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
-    question: q,
-    ask,
-    value: restoredValues[q.label],
-    countering: false,
+  // Choice field (deferred_interest) renders one-tap choice buttons, no free-text box.
+  const openedDef = lt.openTermCounter({}, {}, 'bridge', fDef);
+  const defHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
+    field: fDef,
+    program: 'bridge',
+    ask: asks[fDef.label],
+    value: '',
+    countering: true,
     preview: false,
     onOpenCounter: () => {},
     onRestoreAsk: () => {},
     onChange: () => {},
   }));
-  assert.match(cardHtml, /data-ask-card="rates_fees"/);
-  assert.match(cardHtml, /13% interest only \(\$1,446\/mo\), 2 points \(\$2,670\), \$1,295 processing/);
-  assert.match(cardHtml, />Change</);
-  assert.doesNotMatch(cardHtml, /<input/);
+  assert.doesNotMatch(defHtml, /<input/);
+  assert.match(defHtml, />2 months</);
+  assert.match(defHtml, />Use ours</);
+  void openedDef;
+
+  const restored = lt.restoreTermAsk(opened.drafts, opened.editing, 'bridge', fRate);
+  assert.equal(lt.isTermCountering(fRate, asks[fRate.label], restored.drafts.bridge, restored.editing.bridge), false);
+  assert.equal(lt.resolveTermValues(asks, restored.drafts.bridge)[fRate.label], asks[fRate.label]);
 });
 
-test('untouched asks submit as our ask in the exact existing data shape, and countering requires typed input', async () => {
+test('untouched asks submit verbatim and optional extensions/collateral/prepay/lockout never block submit', async () => {
   const lt = await loadLenderTermsModule();
-  const questions = lt.questionsForProgram('bridge');
+  const fields = lt.fieldsForProgram('bridge');
   const asks = lt.wantedTerms('bridge', GUIDE, BASE);
+  const values = lt.resolveTermValues(asks, {});
 
-  // Answer every no-ask field.
-  let drafts = {};
-  let editing = {};
-  for (const q of questions) {
-    if (!asks[q.label]) {
-      ({ drafts, editing } = lt.setTermAnswer(drafts, editing, 'bridge', q.label, `Custom ${q.key}`));
-    }
-  }
+  assert.equal(lt.isTermsFormComplete({ company: 'Apex Capital', name: 'Jordan Lee', fields, values }), true);
 
-  const values = lt.resolveTermValues(asks, drafts.bridge);
-  assert.equal(lt.isTermsFormComplete({ company: 'Apex Capital', name: 'Jordan Lee', questions, values }), true);
+  // Countering rate leaves form incomplete until entered.
+  const fRate = fields.find((x) => x.key === 'rate');
+  const opened = lt.openTermCounter({}, {}, 'bridge', fRate);
+  assert.equal(lt.isTermsFormComplete({
+    company: 'Apex Capital',
+    name: 'Jordan Lee',
+    fields,
+    values: lt.resolveTermValues(asks, opened.drafts.bridge),
+  }), false);
 
+  const countered = lt.setTermAnswer(opened.drafts, opened.editing, 'bridge', fRate.label, '11.5', fRate.key);
+  const withOpt = lt.setTermAnswer(countered.drafts, countered.editing, 'bridge', lt.COLLATERAL_QUESTION.label, 'Yes');
   const sub = lt.buildTermsSubmission({
     dealId: 'd1',
     lenderUid: 'l1',
     company: 'Apex Capital',
     name: 'Jordan Lee',
     program: 'bridge',
-    questions,
-    values,
-    existingTerms: { dscr: { 'Loan term and extension options': '30-year loan' } },
-    nowIso: '2026-11-27T20:00:00.000Z',
+    fields,
+    values: lt.resolveTermValues(asks, withOpt.drafts.bridge),
+    extensions: { count: '2', months: '3 mo', fee: '0.5%' },
+    existingTerms: { dscr: { 'Loan term': '30 years' } },
+    nowIso: '2026-11-27T21:00:00.000Z',
   });
 
-  // Untouched ask values are submitted verbatim inside terms.bridge and body.
-  assert.equal(
-    sub.terms.bridge['Purchase advances and LTV/LTC caps'],
-    '$133,515 ($124,050 repair budget + $9,465 closing and fees)',
-  );
-  assert.equal(sub.terms.bridge['Rehab holdbacks and draw process'], '$124,050 repair budget, drawn as the work is done');
-  assert.equal(sub.terms.bridge['Interest rate, origination points and fees'], '13% interest only ($1,446/mo), 2 points ($2,670), $1,295 processing');
-  assert.equal(sub.terms.bridge['Recourse and guarantor requirements'], 'Custom recourse');
+  assert.equal(sub.terms.bridge['Interest rate'], '11.5%');
+  assert.equal(sub.terms.bridge['Origination points'], asks['Origination points']);
+  assert.equal(sub.terms.bridge.Extensions, '2 × 3 mo at 0.5%');
+  assert.equal(sub.terms.bridge['Both parcels (23 & 27 Charlotte)'], 'Yes');
   assert.equal(sub.terms._contact, 'Jordan Lee');
-  assert.equal(sub.terms.dscr['Loan term and extension options'], '30-year loan');
-  assert.equal(sub.upsertRow.lender_type, 'bridge');
-  assert.equal(sub.upsertRow.company_name, 'Apex Capital');
-  assert.match(sub.body, /^Apex Capital, Jordan Lee · Bridge \/ Hard money \/ Private\n/);
-
-  // Countering an ask clears the field until the lender types a custom answer.
-  const qRate = questions.find((x) => x.key === 'rates_fees');
-  const opened = lt.openTermCounter(drafts, editing, 'bridge', qRate);
-  assert.equal(lt.isTermsFormComplete({
-    company: 'Apex Capital',
-    name: 'Jordan Lee',
-    questions,
-    values: lt.resolveTermValues(asks, opened.drafts.bridge),
-  }), false);
-
-  const countered = lt.setTermAnswer(opened.drafts, opened.editing, 'bridge', qRate.label, '10.25% IO, 2 pts', qRate.key);
-  const counteredValues = lt.resolveTermValues(asks, countered.drafts.bridge);
-  assert.equal(lt.isTermCountering(qRate, asks[qRate.label], countered.drafts.bridge, countered.editing.bridge), true);
-  assert.equal(counteredValues[qRate.label], '10.25% IO, 2 pts');
-
-  const counterHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
-    question: qRate,
-    ask: asks[qRate.label],
-    value: counteredValues[qRate.label],
-    countering: true,
-    preview: false,
-    onOpenCounter: () => {},
-    onRestoreAsk: () => {},
-    onChange: () => {},
-  }));
-  assert.doesNotMatch(counterHtml, />Not applicable</);
-  assert.match(counterHtml, /value="10\.25% IO, 2 pts"/);
-
-  // Saved Supabase terms matching our ask stay a card; saved counter values open as an input.
-  const qAdvance = questions.find((x) => x.key === 'purchase_advances');
-  const savedDraft = {
-    [qAdvance.label]: asks[qAdvance.label],
-    [qRate.label]: '10% IO, 2 pts',
-  };
-  assert.equal(lt.isTermCountering(qAdvance, asks[qAdvance.label], savedDraft, {}), false);
-  assert.equal(lt.isTermCountering(qRate, asks[qRate.label], savedDraft, {}), true);
+  assert.equal(sub.terms.dscr['Loan term'], '30 years');
+  assert.match(sub.body, /^Apex Capital, Jordan Lee · Bridge\n/);
 });
 
-test('owner preview leaves Your name blank instead of Preview, keeps Change clickable, and keeps inputs and submit disabled', async () => {
+test('owner preview leaves Your name blank instead of Preview and keeps Change clickable while inputs stay disabled', async () => {
   const lt = await loadLenderTermsModule();
   assert.equal(lt.initialLenderName({ email: '__preview__', name: 'Preview' }, true), '');
   assert.equal(lt.initialLenderName({ email: 'lender@bank.com', name: 'Alex Morgan' }, false), 'Alex Morgan');
@@ -279,29 +256,8 @@ test('owner preview leaves Your name blank instead of Preview, keeps Change clic
     base: BASE,
   }));
 
-  // Your name input is blank with placeholder="Your name" and never shows "Preview".
-  assert.match(html, /Your name<input[^>]*placeholder="Your name"[^>]*value=""/);
+  assert.match(html, /Your name[\s\S]*?<input[^>]*placeholder="Your name"[^>]*value=""/);
   assert.doesNotMatch(html, /value="Preview"/);
-
-  // Ask-card Change buttons remain clickable in preview; inputs and submit stay disabled; no Not applicable button.
   assert.doesNotMatch(html, /<button[^>]*disabled=""[^>]*>Change</);
-  assert.doesNotMatch(html, />Not applicable<\/button>/);
   assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""/);
-
-  // Countering state in preview keeps Use ours clickable while input and mic stay disabled; no Not applicable button.
-  const q = lt.questionsForProgram('bridge').find((x) => x.key === 'rates_fees');
-  const previewCounterHtml = renderToStaticMarkup(React.createElement(lt.LenderTermField, {
-    question: q,
-    ask: '11% interest only, 2.5 points',
-    value: '',
-    countering: true,
-    preview: true,
-    onOpenCounter: () => {},
-    onRestoreAsk: () => {},
-    onChange: () => {},
-  }));
-  assert.doesNotMatch(previewCounterHtml, /<button[^>]*disabled=""[^>]*>Use ours<\/button>/);
-  assert.match(previewCounterHtml, /<input[^>]*disabled=""/);
-  assert.match(previewCounterHtml, /<button[^>]*aria-label="Dictate Interest rate, origination points and fees"[^>]*disabled=""/);
-  assert.doesNotMatch(previewCounterHtml, />Not applicable<\/button>/);
 });

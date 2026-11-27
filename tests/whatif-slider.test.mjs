@@ -146,13 +146,21 @@ test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fi
   assert.doesNotMatch(withSlider, /min-w-\[480px\]/);
   assert.match(withSlider, /\$700<\/th>/);
   assert.match(withSlider, /\$900<\/th>/);
-  assert.match(withSlider, /\$1,100<\/th>/);
+  assert.match(withSlider, /\$1,020<\/th>/);
+  assert.doesNotMatch(withSlider, /\$1,100<\/th>|\$1,220<\/th>/);
   assert.doesNotMatch(withSlider, /<p[ >]/);
+
+  // Range 780..1115 starts at midpoint 948 and never shows a rent row above 1115
+  const range1115 = { ...rv, marketRange: { ...rv.marketRange, low: 780, high: 1115 } };
+  const grid1115 = whatIfGrid(range1115, 948);
+  assert.ok(grid1115.every((r) => r.rent <= 1115));
+  assert.equal(grid1115[grid1115.length - 1].rent, 1115);
 
   // Without slider (reviewer): keeps saved views/grid and applies min-w-[480px] when 3+ view columns exist
   const noSlider = renderToStaticMarkup(React.createElement(mod.default, { data: rv, showMarket: false }));
   assert.doesNotMatch(noSlider, /type="range"/);
   assert.match(noSlider, /min-w-\[480px\]/);
   assert.match(noSlider, /\$600<\/th>/);
-  assert.match(noSlider, /\$1,100<\/th>/);
+  assert.match(noSlider, /\$1,020<\/th>/);
+  assert.doesNotMatch(noSlider, /\$1,100<\/th>|\$1,220<\/th>/);
 });

@@ -48,7 +48,7 @@ test('shared views show only that the seller is paid back; buyer refi result sta
   assert.equal(s.headline.maxSellerAtRefi, null);
   assert.deepEqual(s.steps[0].lines.map((l) => l.label), ['Paid back in full']);
   assert.equal(s.steps[0].title, 'Seller paid back');
-  assert.match(read('src/views/Lender.jsx'), /<UnitsRentedGuide guide=\{effectiveGuide\} shared \/>/);
+  assert.match(read('src/views/Lender.jsx'), /data-plan="1a"/);
   assert.doesNotMatch(read('src/views/Lender.jsx'), />Left for you</);
   assert.match(read('src/components/UnitsRentedGuide.jsx'), /\{!shared && <li/);
 });

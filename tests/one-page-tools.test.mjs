@@ -181,14 +181,21 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   assert.match(viewerPreviewHtml, /Request access/);
   assert.match(viewerPreviewHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
 
+  const lenderWhatIfMod = loadJsx('src/components/LenderWhatIf.jsx', {
+    '../lib/people.js': { buyerName: () => 'Buyer' },
+    '../lib/dealmath.js': { money },
+    '../lib/lenderModel.js': { buildLenderPackage },
+    './Messages.jsx': { sendToOwner: async () => null },
+    './Shell.jsx': SHELL_MOCK,
+  });
+
   const lenderMod = loadJsx('src/views/Lender.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/supabase.js': { supabase: supabaseStub },
-    '../lib/dealmath.js': { buildLeadStory, evaluate, money, valueSummary },
+    '../lib/dealmath.js': { evaluate, money, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES },
     '../lib/rangeValue.js': { effectiveMarketRange },
     '../lib/plain.js': { plain },
-    '../lib/occupancy.js': { breakEvenCount },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: SAMPLE_OFFERS, base: SAMPLE_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => React.createElement('div', { 'data-mock': 'FileList' }) },
     '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [] },
@@ -196,11 +203,11 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../components/RentValue.jsx': { __esModule: true, default: () => null, isRentValue: () => false },
+    '../components/LenderWhatIf.jsx': lenderWhatIfMod,
     '../components/Shell.jsx': SHELL_MOCK,
     '../components/Messages.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Messages' }) },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
     './LenderTerms.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'LenderTerms' }) },
-    './Offers.jsx': offersMod,
     './CityRecords.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'CityRecords' }) },
   });
 
@@ -208,9 +215,8 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   assert.match(lenderHtml, /data-section="plan"/);
   assert.match(lenderHtml, /data-section="what-if"/);
   assert.match(lenderHtml, /data-section="terms"/);
-  assert.match(lenderHtml, /The numbers/);
-  assert.match(lenderHtml, /Building numbers/);
-  assert.match(lenderHtml, /Send to Buyer/);
+  assert.match(lenderHtml, /Plan 1A · Bridge to refinance/);
+  assert.match(lenderHtml, /Loan assumptions/);
   assert.match(lenderHtml, /data-mock="LenderTerms"/);
   assert.match(lenderHtml, /Supporting documents/);
   assert.match(lenderHtml, /data-mock="UnitGallery"/);
@@ -345,6 +351,7 @@ test('phone-first 390px tap targets and forbidden wording guards pass across upd
     'src/components/Shell.jsx',
     'src/components/Messages.jsx',
     'src/components/Switches.jsx',
+    'src/components/LenderWhatIf.jsx',
     'src/components/DealWorkspace.jsx',
     'src/components/Files.jsx',
     'src/components/UnitGallery.jsx',
@@ -353,6 +360,7 @@ test('phone-first 390px tap targets and forbidden wording guards pass across upd
     'src/views/Offers.jsx',
     'src/views/Reviewer.jsx',
     'src/views/Lender.jsx',
+    'src/views/LenderTerms.jsx',
     'src/views/Realtor.jsx',
     'src/views/Comps.jsx',
     'src/views/Tenants.jsx',

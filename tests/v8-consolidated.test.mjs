@@ -153,27 +153,23 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });
 
-  assert.deepEqual(Object.keys(ltMod.LENDER_PROGRAMS), ['bridge', 'dscr', 'both']);
-  assert.equal(ltMod.LENDER_QUESTIONS.length, 13);
-  assert.equal(ltMod.questionsForProgram('bridge').length, 12);
-  assert.equal(ltMod.questionsForProgram('dscr').length, 12);
-  assert.equal(ltMod.questionsForProgram('both').length, 13);
+  assert.deepEqual(Object.keys(ltMod.LENDER_PROGRAMS), ['bridge', 'private', 'dscr']);
+  assert.equal(ltMod.LENDER_FIELDS.length, 11);
+  assert.equal(ltMod.fieldsForProgram('bridge').length, 8);
+  assert.equal(ltMod.fieldsForProgram('private').length, 5);
+  assert.equal(ltMod.fieldsForProgram('dscr').length, 6);
 
   const ltHtml = renderToStaticMarkup(React.createElement(ltMod.default, {
     deal: { id: 'd1', slug: 'charlotte' },
     me: { uid: 'l1', email: 'lender@example.com' },
     preview: true,
   }));
-  assert.match(ltHtml, /Bridge \/ Hard money/);
-  assert.match(ltHtml, /Commercial DSCR/);
-  assert.match(ltHtml, /Both/);
-  // Default bridge asks ("Not applicable" for str_income and "10 units" for legal_units_code) render as read-only ask cards with Change;
-  // the remaining 10 no-ask questions render empty inputs with no "Not applicable" buttons.
-  assert.equal((ltHtml.match(/>Change<\/button>/g) || []).length, 2);
+  assert.match(ltHtml, />Bridge</);
+  assert.match(ltHtml, />Private</);
+  assert.match(ltHtml, />DSCR</);
+  assert.doesNotMatch(ltHtml, /legal unit count/i);
+  assert.match(ltHtml, /10 units/);
   assert.doesNotMatch(ltHtml, />Not applicable<\/button>/);
-  assert.match(ltHtml, /data-ask-card="str_income"[\s\S]*?>Not applicable<\/p>/);
-  assert.match(ltHtml, /data-ask-card="legal_units_code"[\s\S]*?>10 units<\/p>/);
-  assert.doesNotMatch(ltHtml, /value="10 units"/);
 });
 
 test('0018 grants private own-row strategy ideas to both realtor and reviewer', async () => {

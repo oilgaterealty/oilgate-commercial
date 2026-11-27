@@ -23,9 +23,12 @@ export const PLAN_DEFAULTS = {
   lenderRate: 0, // short-term lender, interest only, % per year
   lenderPoints: 0, // % of each draw
   bridgeRate: 13, // Plan 1A bridge rate, interest only, % per year
-  bridgePoints: 2, // Plan 1A bridge origination points (%)
+  bridgePoints: 1, // Plan 1A bridge origination points (%)
   bridgeProcessing: 1295, // Plan 1A bridge processing fee ($)
   bridgeClosing: 0, // Plan 1A bridge title/closing costs ($)
+  bridgeDeferredMonths: 2, // Plan 1A deferred interest cushion (months)
+  bridgeTermMonths: 12, // Plan 1A bridge loan term (months)
+  privateMinParticipation: 20000, // Minimum private pool participation ($)
   contingency: 0, // repair contingency ($)
   lenderSeasoningMonths: null, // months of stabilized operations required by lender, null until confirmed
   lenderEligibilityConfirmed: false, // whether a permanent lender has confirmed refinance eligibility
@@ -1443,7 +1446,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
     };
   };
 
-  const todayRented = units.filter((u) => u.occupied || (u.rentToday ?? 0) > 0);
+  const todayRented = units.filter((u) => (u.rentToday ?? 0) > 0);
   const todayGross = units.reduce((s, u) => s + (u.rentToday ?? 0), 0);
   const unknownToday = todayRented.filter((u) => u.rentToday === null).map((u) => u.id);
   const marketGross = units.reduce((s, u) => s + (u.marketRent ?? u.ourRent), 0);
@@ -1455,11 +1458,26 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
       units.map((u) => `Unit ${u.id}: ${money(u.marketRent ?? u.ourRent)}/mo${u.marketRent === null ? ' (our rent)' : ''}`)),
   ];
 
-  const step = 100;
-  const rents = [-4, -3, -2, -1, 0, 1].map((k) => ourRent + k * step).filter((r) => r > 0);
-  const caps = [capRate, capRate + 1, capRate + 2, capRate + 3];
   const fullCosts = costsFor(total).amount;
   const allInAfter = buyout + repairs;
+  // Market rent range per unit (lender and owner only; the reviewer's copy drops it) and the value range:
+  // the locked value is the floor, the high end is value by income after repairs.
+  const baseLowRent = optNum(baseIn?.marketRentLow);
+  const baseHighRent = optNum(baseIn?.marketRentHigh);
+  const lowRent = baseLowRent && baseLowRent > 0 ? baseLowRent : (plan.marketRent ? plan.marketRent.low : null);
+  const highRent = baseHighRent && baseHighRent > 0 ? baseHighRent : (plan.marketRent ? plan.marketRent.high : null);
+  const marketRange = lowRent !== null && highRent !== null && highRent >= lowRent && lowRent > 0
+    ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter }
+    : null;
+
+  const step = 100;
+  const maxGridRent = highRent !== null && highRent > 0 ? highRent : Infinity;
+  const rents = [...new Set(
+    [-4, -3, -2, -1, 0, 1]
+      .map((k) => Math.min(ourRent + k * step, maxGridRent))
+      .filter((r) => r > 0),
+  )].sort((a, b) => a - b);
+  const caps = [capRate, capRate + 1, capRate + 2, capRate + 3];
   const grid = rents.map((r) => {
     const rentMo = total * r * (1 - vacancyPct / 100);
     const netYr = (rentMo - fullCosts) * 12;
@@ -1483,15 +1501,6 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
     };
   });
 
-  // Market rent range per unit (lender and owner only; the reviewer's copy drops it) and the value range:
-  // the locked value is the floor, the high end is value by income after repairs.
-  const baseLowRent = optNum(baseIn?.marketRentLow);
-  const baseHighRent = optNum(baseIn?.marketRentHigh);
-  const lowRent = baseLowRent && baseLowRent > 0 ? baseLowRent : (plan.marketRent ? plan.marketRent.low : null);
-  const highRent = baseHighRent && baseHighRent > 0 ? baseHighRent : (plan.marketRent ? plan.marketRent.high : null);
-  const marketRange = lowRent !== null && highRent !== null && highRent >= lowRent && lowRent > 0
-    ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter }
-    : null;
   const floor = Math.max(0, num(baseIn?.value, 0));
   const top = views[1].value;
   const valueRange = floor > 0 && top > floor
@@ -1530,6 +1539,15 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
     ratePct: baseIn?.bridgeRate !== undefined && baseIn?.bridgeRate !== ''
       ? Math.max(0, num(baseIn.bridgeRate, 0))
       : Math.max(0, num(plan.bridgeRate, PLAN_DEFAULTS.bridgeRate)),
+    deferredMonths: baseIn?.bridgeDeferredMonths !== undefined && baseIn?.bridgeDeferredMonths !== ''
+      ? Math.max(0, num(baseIn.bridgeDeferredMonths, 0))
+      : Math.max(0, num(plan.bridgeDeferredMonths, PLAN_DEFAULTS.bridgeDeferredMonths)),
+    termMonths: baseIn?.bridgeTermMonths !== undefined && baseIn?.bridgeTermMonths !== ''
+      ? Math.max(0, num(baseIn.bridgeTermMonths, 0))
+      : Math.max(0, num(plan.bridgeTermMonths, PLAN_DEFAULTS.bridgeTermMonths)),
+    minParticipation: baseIn?.privateMinParticipation !== undefined && baseIn?.privateMinParticipation !== ''
+      ? Math.max(0, num(baseIn.privateMinParticipation, 0))
+      : Math.max(0, num(plan.privateMinParticipation, PLAN_DEFAULTS.privateMinParticipation)),
   };
   return {
     version: 2,

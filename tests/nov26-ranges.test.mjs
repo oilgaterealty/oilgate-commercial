@@ -57,7 +57,9 @@ test('lender page: no unit-by-unit table, identical views merge, terms before th
   assert.ok(lender.indexOf('id="sec-terms"') < lender.indexOf('id="sec-plan"'));
   assert.match(read('src/components/UnitsRentedGuide.jsx'), /\{!shared && <th scope="col" className="px-3 py-2.5">You net<\/th>\}/);
   assert.match(read('src/components/RentValue.jsx'), /export function mergeViews/);
-  assert.match(read('src/views/LenderTerms.jsx'), /Bridge \/ Hard money \/ Private/);
+  assert.match(read('src/views/LenderTerms.jsx'), />Bridge<|label:\s*'Bridge'/);
+  assert.match(read('src/views/LenderTerms.jsx'), /label:\s*'Private'/);
+  assert.match(read('src/views/LenderTerms.jsx'), /label:\s*'DSCR'/);
   assert.match(read('src/views/LenderTerms.jsx'), /Your name/);
   void mergeViews;
 });

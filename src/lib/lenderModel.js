@@ -3,8 +3,11 @@ import { BASE_DEFAULTS, money, moneyK } from './dealmath.js';
 // Pure Plan 1A lender package derivation. Imported only by Lender views and tests; never by Seller or Realtor.
 export const LENDER_DEFAULTS = {
   bridgeRate: 13,
-  bridgePointsPct: 2,
+  bridgePointsPct: 1,
   bridgeProcessing: 1295,
+  bridgeDeferredMonths: 2,
+  bridgeTermMonths: 12,
+  privateMinParticipation: 20000,
   refiLtv: 75,
   refiFeesPct: 2.1,
   refiFeesFlat: 5000,
@@ -20,6 +23,15 @@ export const LENDER_LENSES = {
     heroLabel: 'Total bridge loan',
     ctaLabel: 'Send bridge terms',
   },
+  private: {
+    key: 'private',
+    label: 'Private',
+    program: 'private',
+    title: 'Private pooled loan',
+    lead: 'Pooled first-position funding for purchase, repairs and fees',
+    heroLabel: 'Total funds needed',
+    ctaLabel: 'Send private terms',
+  },
   dscr: {
     key: 'dscr',
     label: 'DSCR',
@@ -28,15 +40,6 @@ export const LENDER_LENSES = {
     lead: 'Stabilized refinance at full occupancy pays off the bridge',
     heroLabel: 'Takeout refi loan',
     ctaLabel: 'Send DSCR terms',
-  },
-  private: {
-    key: 'private',
-    label: 'Private',
-    program: 'bridge',
-    title: 'Private first-position loan',
-    lead: 'Purchase + repairs + fees in one first-lien note, $0 down',
-    heroLabel: 'Total private loan',
-    ctaLabel: 'Send private terms',
   },
 };
 
@@ -56,7 +59,7 @@ const firstSet = (...vals) => {
 };
 
 export function buildLenderPackage({ base = {}, offer = null, guide = null, valSummary = null, lens = 'bridge' } = {}) {
-  const activeLens = LENDER_LENSES[lens] || LENDER_LENSES.bridge;
+  const baseLens = LENDER_LENSES[lens] || LENDER_LENSES.bridge;
   const x = offer?.inputs && typeof offer.inputs === 'object' ? offer.inputs : {};
   const rf = guide?.refi || {};
   const gb = guide?.bridge || {};
@@ -89,15 +92,25 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const processing = firstSet(base?.bridgeProcessing, gb.processing) ?? LENDER_DEFAULTS.bridgeProcessing;
   const pointsPct = firstSet(base?.bridgePointsPct, gb.pointsPct) ?? LENDER_DEFAULTS.bridgePointsPct;
   const ratePct = firstSet(base?.bridgeRate, gb.ratePct) ?? LENDER_DEFAULTS.bridgeRate;
+  const deferredMonths = firstSet(base?.bridgeDeferredMonths, gb.deferredMonths) ?? LENDER_DEFAULTS.bridgeDeferredMonths;
+  const termMonths = pos(base?.bridgeTermMonths, gb.termMonths, LENDER_DEFAULTS.bridgeTermMonths);
+  const minParticipation = pos(base?.privateMinParticipation, gb.minParticipation, LENDER_DEFAULTS.privateMinParticipation);
 
   const subtotal = purchase + repairs + closing + processing;
-  const factor = 1 - pointsPct / 100;
+  const pointsRate = pointsPct / 100;
+  const deferredRate = (deferredMonths * ratePct) / 100 / 12;
+  const factor = 1 - pointsRate - deferredRate;
   const totalLoan = factor > 0 ? subtotal / factor : subtotal;
-  const points = totalLoan - subtotal;
-  const feesTotal = closing + processing + points;
+  const points = totalLoan * pointsRate;
   const monthlyInterest = (totalLoan * ratePct) / 100 / 12;
+  const deferredInterest = monthlyInterest * deferredMonths;
+  const feesTotal = closing + processing + points + deferredInterest;
   const downPayment = 0;
   const ltcPct = totalLoan > 0 ? 100 : 0;
+
+  const activeLens = baseLens.key === 'private'
+    ? { ...baseLens, lead: `Pooled first-position funding, ${money(minParticipation)} minimum per lender` }
+    : baseLens;
 
   const value = pos(rf.estimatedValue, base?.value, valSummary?.income);
   const ltvPct = value > 0 && totalLoan > 0 ? (totalLoan / value) * 100 : 0;
@@ -113,6 +126,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const isGap = netAtRefi < 0;
 
   const firstLeaseStage = Math.min(6, units);
+  const pointsWord = pointsPct === 1 ? 'point' : 'points';
   const steps = [
     {
       num: '01',
@@ -131,8 +145,9 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       figure: `${firstLeaseStage} units → ${units}`,
       overlay: [
         repairs > 0 ? `${money(repairs)} repair budget released in draws as work finishes.` : 'Repairs funded in draws as work finishes.',
+        deferredMonths > 0 ? `${deferredMonths}-month deferred interest cushion (${money(deferredInterest)}) covers initial lease-up.` : null,
         `Lease ${firstLeaseStage} units first, then stabilize all ${units} units.`,
-      ],
+      ].filter(Boolean),
     },
     {
       num: '03',
@@ -190,22 +205,40 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     {
       key: 'points',
-      label: `${pointsPct} points`,
+      label: `${pointsPct} ${pointsWord}`,
       value: points,
       display: money(points),
       overlay: [
-        `${pointsPct}% origination rolled into the ${money(totalLoan)} loan (${money(subtotal)} net before points).`,
-        'Based on past bridge loan terms; counter in Your terms.',
+        `${pointsPct}% origination rolled into the ${money(totalLoan)} loan (${money(subtotal)} net before points and deferred interest).`,
+        'Counter points in Your terms.',
       ],
     },
+    ...(deferredMonths > 0
+      ? [{
+          key: 'deferredInterest',
+          label: `${deferredMonths} mo deferred interest`,
+          value: deferredInterest,
+          display: money(deferredInterest),
+          overlay: [
+            `${deferredMonths} months interest-only lease-up cushion (${deferredMonths} × ${money(monthlyInterest)}/mo = ${money(deferredInterest)}) rolled into the loan.`,
+          ],
+        }]
+      : []),
     {
       key: 'total',
-      label: 'Total loan ($0 down)',
+      label: activeLens.key === 'private' ? 'Total funds needed ($0 down)' : 'Total loan ($0 down)',
       value: totalLoan,
       display: money(totalLoan),
       emphasis: 'total',
       overlay: [
-        `${money(purchase)} purchase + ${money(repairs)} repairs + ${money(closing)} closing + ${money(processing)} processing + ${money(points)} points = ${money(totalLoan)}.`,
+        [
+          `${money(purchase)} purchase`,
+          `${money(repairs)} repairs`,
+          `${money(closing)} closing`,
+          `${money(processing)} processing`,
+          `${money(points)} points`,
+          deferredMonths > 0 ? `${money(deferredInterest)} deferred interest` : null,
+        ].filter(Boolean).join(' + ') + ` = ${money(totalLoan)}.`,
         value > 0 ? `${Math.round(ltvPct)}% of ${money(value)} stabilized value; ${ltcPct}% of cost.` : null,
       ].filter(Boolean),
     },
@@ -217,7 +250,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       emphasis: 'accent',
       overlay: [
         `${money(totalLoan)} × ${ratePct}% ÷ 12 = ${money(monthlyInterest)}/mo interest-only (full drawn balance).`,
-        'Past bridge terms; counter your rate and draw interest in Your terms.',
+        deferredMonths > 0 ? `First ${deferredMonths} months deferred in loan; counter rate or deferred months in Your terms.` : 'Counter rate and draw interest in Your terms.',
       ],
     },
   ];
@@ -272,6 +305,53 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
   ];
 
+  const participantCap = minParticipation > 0 && totalLoan > 0 ? Math.max(1, Math.floor(totalLoan / minParticipation)) : 1;
+  const privatePoolRows = [
+    {
+      key: 'totalFunds',
+      label: 'Total funds needed',
+      value: totalLoan,
+      display: money(totalLoan),
+      overlay: [
+        `${money(purchase)} purchase + ${money(repairs)} repairs + ${money(feesTotal)} closing, points, processing, and ${deferredMonths}-mo deferred interest.`,
+      ],
+    },
+    {
+      key: 'minParticipation',
+      label: 'Minimum participation',
+      value: minParticipation,
+      display: money(minParticipation),
+      overlay: [
+        `Pooled private money: several lenders can combine at ${money(minParticipation)} minimum each to fill the ${money(totalLoan)} total.`,
+      ],
+    },
+    {
+      key: 'poolStructure',
+      label: 'Pool structure',
+      value: participantCap,
+      display: 'First-lien pool',
+      overlay: [
+        `Up to ${participantCap} lenders at ${money(minParticipation)} minimum, or fewer with larger shares.`,
+        `${ratePct}% IO, ${deferredMonths} months deferred interest, ${termMonths}-month term.`,
+      ],
+    },
+    {
+      key: 'surplus',
+      label: isGap ? 'Gap at refinance' : 'Left over at refinance',
+      value: netAtRefi,
+      display: isGap ? money(Math.abs(netAtRefi)) : money(netAtRefi),
+      tone: isGap ? 'warn' : 'good',
+      emphasis: 'total',
+      overlay: isGap
+        ? [
+            `${money(newLoan)} takeout refi − ${money(totalLoan)} payoff − ${money(refiFeesTotal)} refi fees = ${money(Math.abs(netAtRefi))} gap at ${money(value)} value.`,
+          ]
+        : [
+            `${money(newLoan)} takeout refi − ${money(totalLoan)} payoff − ${money(refiFeesTotal)} refi fees = ${money(netAtRefi)} left over at refinance.`,
+          ],
+    },
+  ];
+
   const hasSellerFinancingOption = offer?.structure === 'wrap';
 
   return {
@@ -284,6 +364,10 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     pointsPct,
     points,
     ratePct,
+    deferredMonths,
+    deferredInterest,
+    termMonths,
+    minParticipation,
     feesTotal,
     subtotal,
     totalLoan,
@@ -294,6 +378,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     ltvPct,
     steps,
     loanAskRows,
+    privatePoolRows,
     refiCheck: {
       refiLtv,
       newLoan,
@@ -323,14 +408,23 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
   const taxesMo = Math.max(0, num(base?.taxes, 0)) / 12;
   const insuranceMo = Math.max(0, num(base?.insurance, 0)) / 12;
   const waterMo = Math.max(0, num(base?.waterMo, 0));
+  const emptyUnitUtilMo = Math.max(0, num(base?.emptyUnitUtilMo, 0));
   const reservesMo = (unitsCount * Math.max(0, num(base?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit))) / 12;
   const costsMo = taxesMo + insuranceMo + waterMo + reservesMo;
+  const asisCostsMo = taxesMo + insuranceMo + waterMo + unitsCount * emptyUnitUtilMo;
   const allIn = pkg?.totalLoan || (pkg?.purchase || 0) + (pkg?.repairs || 0);
   const rentMoAfter = unitsCount * ourRent * (1 - vacancyPct / 100);
   const netYrAfter = (rentMoAfter - costsMo) * 12;
   const valueAfter = Math.max(0, netYrAfter / (capRate / 100));
+  const asisNetYr = (0 - asisCostsMo) * 12;
   const caps = [capRate, capRate + 1, capRate + 2, capRate + 3];
-  const rents = [-2, -1, 0, 1, 2].map((k) => ourRent + k * 100).filter((r) => r > 0);
+  const maxRent = high > 0 ? high : Infinity;
+  const cappedBase = Math.min(ourRent, maxRent);
+  const rents = [...new Set(
+    [-2, -1, 0, 1, 2]
+      .map((k) => Math.min(cappedBase + k * 100, maxRent))
+      .filter((r) => r > 0),
+  )].sort((a, b) => a - b);
   return {
     version: 1,
     ourRent,
@@ -349,6 +443,22 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
       note: '',
     })),
     views: [
+      {
+        key: 'asis',
+        label: 'As is',
+        rented: 0,
+        total: unitsCount,
+        rentMo: 0,
+        costsMo: asisCostsMo,
+        netYr: asisNetYr,
+        value: 0,
+        allIn: pkg?.purchase || 0,
+        rentOverlay: [`0 of ${unitsCount} rented today`],
+        costsOverlay: [`Operating costs: ${money(asisCostsMo)}/mo`],
+        netOverlay: [`($0 − ${money(asisCostsMo)}) × 12 = ${money(asisNetYr)}/yr`],
+        valueOverlay: ['$0/yr'],
+        allInOverlay: [`Purchase: ${money(pkg?.purchase || 0)}`],
+      },
       {
         key: 'after',
         label: 'After repairs',
@@ -378,7 +488,7 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
             cap: c,
             value: v,
             clears: v >= allIn,
-            stabilized: r === ourRent && c === capRate,
+            stabilized: r === cappedBase && c === capRate,
             overlay: [`${unitsCount} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rMo)}/mo`, `Less costs: ${money(costsMo)}/mo`, `${money(nYr)}/yr ÷ ${c}% = ${money(v)}`, `All in: ${money(allIn)}`],
           };
         }),

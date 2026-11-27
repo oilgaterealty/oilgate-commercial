@@ -39,6 +39,13 @@ export function whatIfViews(data, rent) {
   if (!mr || !Number.isFinite(r) || !Array.isArray(data?.views)) return data?.views;
   const capRate = mr.capRate > 0 ? mr.capRate : data.capRate;
   return data.views.map((v) => {
+    if (v.key === 'asis') {
+      const hasPayingUnit = Array.isArray(data?.units) && data.units.some((u) => (u.rentToday ?? 0) > 0);
+      if (v.rented > 0 && (v.rentMo <= 0 || !hasPayingUnit)) {
+        return { ...v, rented: 0, rentMo: 0, rentOverlay: [`0 of ${v.total} rented today`] };
+      }
+      return v;
+    }
     if (v.key !== 'after' && v.key !== 'market') return v;
     const units = mr.units || v.total;
     const gross = units * r;
@@ -71,7 +78,13 @@ export function whatIfGrid(data, rent) {
   const caps = Array.isArray(data.caps) ? data.caps : [];
   const allIn = data.allIn ?? mr.allIn;
   const baseCap = data.capRate ?? mr.capRate;
-  const rents = [-2, -1, 0, 1, 2].map((k) => baseRent + k * 100).filter((r) => r > 0);
+  const maxRent = mr.high > 0 ? mr.high : Infinity;
+  const clampedBase = Math.min(baseRent, maxRent);
+  const rents = [...new Set(
+    [-2, -1, 0, 1, 2]
+      .map((k) => Math.min(clampedBase + k * 100, maxRent))
+      .filter((r) => r > 0),
+  )].sort((a, b) => a - b);
   return rents.map((r) => {
     const rentMo = units * r * (1 - vacancyPct / 100);
     const netYr = (rentMo - fullCosts) * 12;
@@ -83,7 +96,7 @@ export function whatIfGrid(data, rent) {
           cap: c,
           value,
           clears: value >= allIn,
-          stabilized: r === baseRent && c === baseCap,
+          stabilized: r === clampedBase && c === baseCap,
           overlay: [
             `${units} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rentMo)}/mo`,
             `Less costs: ${money(fullCosts)}/mo`,

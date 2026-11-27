@@ -82,8 +82,8 @@ test('offers are readable only by the owner, or a reviewer/lender it was shared 
 
 test('lender page shows the plan and local what-if only: no saving, no editing owner records or repair costs', () => {
   const src = readFileSync(new URL('../src/views/Lender.jsx', import.meta.url), 'utf8');
-  for (const t of ['owner_notes', 'deal_private', 'canSave={true}', 'setBase', 'tenthUnitRepair', 'Try different terms', '.update(', '.insert(']) assert.ok(!src.includes(t), t);
-  assert.match(src, /<Offers\b[^>]*canSave=\{false\}/);
+  for (const t of ['owner_notes', 'deal_private', 'canSave={true}', 'setBase', 'tenthUnitRepair', 'Try different terms', '<Offers', '.update(', '.insert(', '.upsert(']) assert.ok(!src.includes(t), t);
+  assert.match(src, /<LenderWhatIf\b/);
 });
 
 test('messages are fixed by role: nobody picks people by hand, and research boards are gone', () => {

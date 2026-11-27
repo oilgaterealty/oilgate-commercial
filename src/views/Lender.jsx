@@ -1,30 +1,24 @@
 import { buyerName } from '../lib/people.js';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { buildLeadStory, evaluate, money, valueSummary } from '../lib/dealmath.js';
+import { evaluate, money, valueSummary } from '../lib/dealmath.js';
 import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES } from '../lib/lenderModel.js';
 import { effectiveMarketRange } from '../lib/rangeValue.js';
 import { plain } from '../lib/plain.js';
-import { breakEvenCount } from '../lib/occupancy.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import CostSummary from '../components/CostSummary.jsx';
-import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
+import { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 import RentValue, { isRentValue } from '../components/RentValue.jsx';
+import LenderWhatIf from '../components/LenderWhatIf.jsx';
 import { Card, CardTitle, Empty, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
 import { seenBy } from '../lib/visibility.js';
 import LenderTerms from './LenderTerms.jsx';
-import Offers from './Offers.jsx';
 
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
-
-// Pills never show a month guess: "1st Unit 9 · month 1" reads "1st Unit 9".
-const noMonth = (s) => (typeof s === 'string' ? s.replace(/\s*·\s*months?\s+\d+(\s*[–-]\s*\d+)?/gi, '').replace(/\s*\(month \d+ refi\)/gi, '') : s);
-const debtOf = (e) => e.operating.cashFlow / 12 - e.keepMonthly;
-const times = (v) => (Number.isFinite(v) ? `${v.toFixed(2)}x` : 'No payment');
 
 function Stat({ label, value, overlay }) {
   return (
@@ -47,9 +41,7 @@ function LedgerRows({ rows }) {
           ? 'text-good'
           : row.tone === 'warn'
             ? 'text-amber-800'
-            : isTotal
-              ? 'text-ink'
-              : 'text-ink';
+            : 'text-ink';
         return (
           <div
             key={row.key}
@@ -79,7 +71,7 @@ const SECTIONS = [
   ['messages', 'Messages'],
 ];
 
-// The lender's one-page workspace: whiteboard overview (ask, 4-step strip, loan ask, refi check, rent plan), terms, plan, what-if, records, docs, photos, messages.
+// The lender's one-page workspace: whiteboard overview (Bridge / Private / DSCR), terms, Plan 1A + 1B, bridge/refi what-if, records, docs, photos, messages.
 export default function Lender({ deal, me, preview, tab }) {
   const root = preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { offers: 'what-if' });
@@ -107,7 +99,6 @@ export default function Lender({ deal, me, preview, tab }) {
   const e = plan && evaluate(plan.structure, plan.inputs, b);
   const o = e?.operating;
   const val = o ? valueSummary({ base: b, noi: o.noi, units: 10 }) : null;
-  const story = e ? buildLeadStory(plan.structure, e, { base: b }) : null;
   const rawGuide = isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null);
   const liftedRentValue = rawGuide?.rentValue
     ? { ...rawGuide.rentValue, marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, b) }
@@ -119,8 +110,6 @@ export default function Lender({ deal, me, preview, tab }) {
   const guideCostSummary = guide?.costSummary || (guide?.cost?.length
     ? { heading: guide.costHeading, headingOverlay: guide.costHeadingOverlay || [], lines: guide.cost }
     : null);
-  const steps = guide?.steps?.length ? guide.steps : story?.steps;
-  const repairBudget = guideCostSummary?.total ?? o?.b?.rehab;
 
   const pkg = buildLenderPackage({
     base: b,
@@ -135,6 +124,46 @@ export default function Lender({ deal, me, preview, tab }) {
     ? pkg.refiCheckRows[0]?.overlay || []
     : pkg.loanAskRows.find((r) => r.key === 'total')?.overlay || [];
 
+  const pointsWord = pkg.pointsPct === 1 ? 'point' : 'points';
+  const stabilizedRentMo = o ? o.egi / 12 : 0;
+  const stabilizedNoiMo = o ? o.noi / 12 : 0;
+  const plan1aSteps = [
+    {
+      num: 1,
+      title: 'Close',
+      value: `${money(pkg.totalLoan)} · $0 down`,
+      overlay: [
+        `Lender pays off the seller's loan (${money(pkg.purchase)}) and rolls ${money(pkg.closing)} title/closing, ${money(pkg.processing)} processing, ${pkg.pointsPct} ${pointsWord} (${money(pkg.points)}), and ${pkg.deferredMonths} mo deferred interest (${money(pkg.deferredInterest)}) into one ${money(pkg.totalLoan)} loan.`,
+      ],
+    },
+    {
+      num: 2,
+      title: 'Repairs in draws',
+      value: money(pkg.repairs),
+      overlay: guideCostSummary?.lines?.length
+        ? guideCostSummary.lines.map((l) => l.label).filter(Boolean)
+        : [`${money(pkg.repairs)} repair budget released in inspection draws as work completes.`],
+    },
+    {
+      num: 3,
+      title: `Lease-up (${pkg.deferredMonths}-mo deferred interest)`,
+      value: `${money(pkg.deferredInterest)} cushion · ${pkg.units} units`,
+      overlay: [
+        `${pkg.deferredMonths} months deferred interest (${money(pkg.deferredInterest)}) covers initial lease-up at ${pkg.ratePct}% IO (${money(pkg.monthlyInterest)}/mo).`,
+        stabilizedRentMo > 0 ? `Stabilized rent ${money(stabilizedRentMo)}/mo, NOI ${money(stabilizedNoiMo)}/mo across ${pkg.units} units.` : null,
+      ].filter(Boolean),
+    },
+    {
+      num: 4,
+      title: 'Refinance pays off bridge',
+      value: `${money(pkg.refiCheck.newLoan)} (${pkg.refiCheck.refiLtv}% LTV)`,
+      overlay: [
+        `${pkg.refiCheck.refiLtv}% of ${money(pkg.value)} stabilized value = ${money(pkg.refiCheck.newLoan)}.`,
+        `Pays off ${money(pkg.totalLoan)} bridge loan and ${money(pkg.refiCheck.refiFeesTotal)} refi fees, leaving ${pkg.refiCheck.isGap ? `${money(Math.abs(pkg.refiCheck.netAtRefi))} gap` : `${money(pkg.refiCheck.netAtRefi)} left over`}.`,
+      ],
+    },
+  ];
+
   return (
     <div className="space-y-8 pb-20">
       <JumpNav sections={SECTIONS} active={activeSection} onJump={jumpTo} base={root} preview={preview} />
@@ -144,7 +173,7 @@ export default function Lender({ deal, me, preview, tab }) {
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
           <>
-            {/* 1. Title + one line + lender-type switch + hero ask metric */}
+            {/* 1. Title + one line + lender-type switch (Bridge, Private, DSCR) + hero ask metric */}
             <section data-wb="hero" className="rounded-2xl border border-ink border-t-2 border-t-warm bg-ink p-5 text-white sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div role="tablist" aria-label="Lender type" className="inline-flex rounded-xl border border-white/15 bg-white/5 p-1">
@@ -189,28 +218,57 @@ export default function Lender({ deal, me, preview, tab }) {
                 </div>
               </div>
 
-              <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 tabular-nums">
-                <div>
-                  <dt className="text-xs text-white/65">Cash down</dt>
-                  <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">{money(pkg.downPayment)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-white/65">Loan vs value</dt>
-                  <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                    <OverlayTrigger lines={[`${money(pkg.totalLoan)} of ${money(pkg.value)} stabilized value`]} className="text-white">
-                      {pkg.ltvPct > 0 ? `${Math.round(pkg.ltvPct)}% LTV` : '—'}
-                    </OverlayTrigger>
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-white/65">Exit refi ({pkg.refiCheck.refiLtv}%)</dt>
-                  <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                    <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-white">
-                      {money(pkg.refiCheck.newLoan)}
-                    </OverlayTrigger>
-                  </dd>
-                </div>
-              </dl>
+              {lenderLens === 'private' ? (
+                <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 tabular-nums">
+                  <div>
+                    <dt className="text-xs text-white/65">Minimum participation</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.privatePoolRows[1]?.overlay || []} className="text-white">
+                        {money(pkg.minParticipation)}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">Loan vs value</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={[`${money(pkg.totalLoan)} of ${money(pkg.value)} stabilized value`]} className="text-white">
+                        {pkg.ltvPct > 0 ? `${Math.round(pkg.ltvPct)}% LTV` : '—'}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">{pkg.refiCheck.isGap ? 'Gap at refinance' : 'Left over at refinance'}</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.privatePoolRows[3]?.overlay || []} className="text-white">
+                        {money(Math.abs(pkg.refiCheck.netAtRefi))}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <dl className="mt-6 grid grid-cols-3 gap-3 border-t border-white/15 pt-4 tabular-nums">
+                  <div>
+                    <dt className="text-xs text-white/65">Cash down</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">{money(pkg.downPayment)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">Loan vs value</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={[`${money(pkg.totalLoan)} of ${money(pkg.value)} stabilized value`]} className="text-white">
+                        {pkg.ltvPct > 0 ? `${Math.round(pkg.ltvPct)}% LTV` : '—'}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-white/65">Exit refi ({pkg.refiCheck.refiLtv}%)</dt>
+                    <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
+                      <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-white">
+                        {money(pkg.refiCheck.newLoan)}
+                      </OverlayTrigger>
+                    </dd>
+                  </div>
+                </dl>
+              )}
 
               <div className="mt-5 flex flex-wrap gap-3 text-sm">
                 <a
@@ -247,7 +305,7 @@ export default function Lender({ deal, me, preview, tab }) {
               </ol>
             </section>
 
-            {/* 3. Loan ask table + 4. Refinance check table */}
+            {/* 3. Loan ask / Total funds needed + 4. Refinance check or Private pool */}
             <div className="grid gap-5 lg:grid-cols-2">
               <Card data-wb="loan-ask">
                 <CardTitle
@@ -261,27 +319,44 @@ export default function Lender({ deal, me, preview, tab }) {
                     </a>
                   }
                 >
-                  Loan ask
+                  {lenderLens === 'private' ? 'Total funds needed' : 'Loan ask'}
                 </CardTitle>
                 <div data-wb="loan-ask-body">
                   <LedgerRows rows={pkg.loanAskRows} />
                 </div>
               </Card>
 
-              <Card data-wb="refi-check">
-                <CardTitle
-                  aside={
-                    <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-sm font-medium text-ink-soft">
-                      {money(pkg.value)} value
-                    </OverlayTrigger>
-                  }
-                >
-                  Refinance check
-                </CardTitle>
-                <div data-wb="refi-check-body">
-                  <LedgerRows rows={pkg.refiCheckRows} />
-                </div>
-              </Card>
+              {lenderLens === 'private' ? (
+                <Card data-wb="private-pool">
+                  <CardTitle
+                    aside={
+                      <OverlayTrigger lines={pkg.privatePoolRows[1]?.overlay || []} className="text-sm font-medium text-ink-soft">
+                        {money(pkg.minParticipation)} min
+                      </OverlayTrigger>
+                    }
+                  >
+                    Private pool
+                  </CardTitle>
+                  <div data-wb="private-pool-body">
+                    <LedgerRows rows={pkg.privatePoolRows} />
+                  </div>
+                </Card>
+              ) : (
+                <Card data-wb="refi-check">
+                  <CardTitle
+                    aside={
+                      <OverlayTrigger lines={pkg.refiCheckRows[0]?.overlay || []} className="text-sm font-medium text-ink-soft">
+                        {money(pkg.value)} value
+                      </OverlayTrigger>
+                    }
+                  >
+                    Refinance check
+                  </CardTitle>
+                  <div data-wb="refi-check-body">
+                    <LedgerRows rows={pkg.refiCheckRows} />
+                  </div>
+                </Card>
+              )}
             </div>
 
             {/* 5. Rent plan */}
@@ -300,70 +375,55 @@ export default function Lender({ deal, me, preview, tab }) {
         <LenderTerms deal={deal} me={me} preview={preview} guide={effectiveGuide} base={b} offer={plan} lenderLens={lenderLens} />
       </section>
 
-      <section id="sec-plan" data-section="plan" className="scroll-mt-20 space-y-4">
+      <section id="sec-plan" data-section="plan" className="scroll-mt-20 space-y-5">
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
           <>
-            <Card>
-              <CardTitle>The numbers</CardTitle>
-              {effectiveGuide ? (
-                <UnitsRentedGuide guide={effectiveGuide} shared />
-              ) : (
-                <>
-                  <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <Stat label="Units" value={10} />
-                    <Stat label="Rent per unit" value={`${money(o.b.rent)}/mo`} />
-                    <Stat label="Yearly profit before payments" value={money(o.noi)} />
-                    <Stat label="Monthly payment" value={money(debtOf(e))} />
-                    <Stat label="Value" value={money(pkg.value || o.b.value || val?.income)} overlay={val?.incomeOverlay} />
-                    <Stat label="Repair budget" value={money(repairBudget ?? o.b.rehab)} />
-                    <Stat label="Total cost" value={money(e.allIn)} overlay={(pkg.value || o.b.value) ? [`${Math.round((e.allIn / (pkg.value || o.b.value)) * 100)}% of value`] : []} />
-                    <Stat label="Rented units to break even" value={breakEvenCount(e)} />
-                  </dl>
-                  {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
-                  {steps && (
-                    <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                      {steps.map((step, idx) => (
-                        <li key={step.num || idx} className="flex gap-3">
-                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">{idx + 1}</span>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="text-sm font-semibold text-ink">{step.title}</div>
-                            {step.pills && (
-                              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                {step.pills.map((pill, pIdx) => (
-                                  <OverlayTrigger key={pIdx} lines={pill.overlay} className="rounded-full border border-line bg-paper px-2.5 py-0.5 text-xs font-medium text-ink">
-                                    {noMonth(pill.label)}
-                                  </OverlayTrigger>
-                                ))}
-                              </div>
-                            )}
-                            {step.lines?.map((line, lIdx) => (
-                              <div key={lIdx} className={line.big ? `font-display text-xl font-semibold ${line.tone === 'pass' ? 'text-good' : line.tone === 'fail' ? 'text-red-700' : ''}` : 'flex flex-wrap justify-between gap-2 text-sm'}>
-                                {line.big ? (
-                                  <OverlayTrigger lines={line.overlay}>{line.label}</OverlayTrigger>
-                                ) : line.value ? (
-                                  <>
-                                    <span className="text-ink-soft">{line.label}</span>
-                                    <OverlayTrigger lines={line.overlay} className="font-semibold text-ink">{line.value}</OverlayTrigger>
-                                  </>
-                                ) : (
-                                  <OverlayTrigger lines={line.overlay}>{line.label}</OverlayTrigger>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </>
-              )}
+            <Card data-plan="1a">
+              <CardTitle
+                aside={
+                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                    Primary path
+                  </span>
+                }
+              >
+                Plan 1A · Bridge to refinance
+              </CardTitle>
+
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
+                <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
+                <Stat label={`${pkg.deferredMonths}-mo deferred interest`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
+                <Stat label={`Takeout refi (${pkg.refiCheck.refiLtv}%)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.refiCheckRows[0]?.overlay} />
+              </dl>
+
+              {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
+
+              <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                {plan1aSteps.map((step) => (
+                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                      {step.num}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-ink">{step.title}</span>
+                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                        {step.value}
+                      </OverlayTrigger>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              <div className="mt-5 border-t border-line pt-4">
+                <LedgerRows rows={pkg.refiCheckRows} />
+              </div>
             </Card>
 
             {pkg.hasSellerFinancingOption && (
-              <Card>
-                <CardTitle aside={<span className="rounded-full bg-paper px-2.5 py-0.5 text-xs font-medium text-ink-soft">Plan 1B</span>}>
-                  Seller financing option
+              <Card data-plan="1b">
+                <CardTitle aside={<span className="rounded-full bg-paper px-2.5 py-0.5 text-xs font-medium text-ink-soft">Plan 1B · Backup option</span>}>
+                  Seller financing
                 </CardTitle>
                 <dl className="divide-y divide-line">
                   <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
@@ -371,10 +431,14 @@ export default function Lender({ deal, me, preview, tab }) {
                     <dd className="text-sm font-semibold tabular-nums text-ink">Plan 1A · {money(pkg.totalLoan)}</dd>
                   </div>
                   <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
-                    <dt className="text-sm text-ink-soft">Alternate structure</dt>
+                    <dt className="text-sm text-ink-soft">Backup structure</dt>
                     <dd className="text-sm font-medium text-ink">
                       <OverlayTrigger lines={[plain(plan.structure, e).glance]}>Seller carry note</OverlayTrigger>
                     </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                    <dt className="text-sm text-ink-soft">Repair budget</dt>
+                    <dd className="text-sm font-semibold tabular-nums text-ink">{money(pkg.repairs)}</dd>
                   </div>
                 </dl>
               </Card>
@@ -385,7 +449,18 @@ export default function Lender({ deal, me, preview, tab }) {
 
       <section id="sec-what-if" data-section="what-if" className="scroll-mt-20">
         <h2 className="mb-3 font-display text-2xl font-semibold">What-if</h2>
-        <Offers deal={deal} canSave={false} onlyShared={preview ? 'lender' : undefined} me={me} role="lender" preview={preview} leadGuide={effectiveGuide} />
+        {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
+          <LenderWhatIf
+            deal={deal}
+            me={me}
+            preview={preview}
+            pkg={pkg}
+            base={b}
+            offer={plan}
+            guide={effectiveGuide}
+            lens={lenderLens}
+          />
+        )}
       </section>
 
       <section id="sec-city-records" data-section="city-records" className="scroll-mt-20">
