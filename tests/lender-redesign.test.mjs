@@ -88,22 +88,22 @@ test('buildLenderPackage derives Plan 1A bridge and refinance check from model/o
   const pkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'bridge' });
 
   assert.equal(pkg.purchase, 275000);
-  assert.equal(pkg.repairs, 140000);
+  assert.equal(pkg.repairs, 124050);
   assert.equal(pkg.closing, 5500);
   assert.equal(pkg.processing, 1295);
   assert.equal(pkg.pointsPct, 2);
   assert.equal(pkg.ratePct, 13);
   assert.equal(pkg.downPayment, 0);
   assert.equal(pkg.ltcPct, 100);
-  assert.equal(Math.round(pkg.points), 8608);
-  assert.equal(Math.round(pkg.totalLoan), 430403);
-  assert.equal(Math.round(pkg.monthlyInterest), 4663);
+  assert.equal(Math.round(pkg.points), 8283);
+  assert.equal(Math.round(pkg.totalLoan), 414128);
+  assert.equal(Math.round(pkg.monthlyInterest), 4486);
 
   assert.equal(pkg.value, 586000);
   assert.equal(pkg.refiCheck.newLoan, 439500);
   assert.equal(Math.round(pkg.refiCheck.refiFeesTotal), 14230);
-  assert.equal(Math.round(pkg.refiCheck.netAtRefi), -5133);
-  assert.equal(pkg.refiCheck.isGap, true);
+  assert.equal(Math.round(pkg.refiCheck.netAtRefi), 11143);
+  assert.equal(pkg.refiCheck.isGap, false);
   assert.equal(pkg.hasSellerFinancingOption, true);
 
   // Switch lenses change framing only, never core property facts.
@@ -181,12 +181,13 @@ test('Lender.jsx renders whiteboard 5-part order, Plan 1A headline, zero subtext
   assert.doesNotMatch(overviewHtml, /Seller financing/i);
   assert.match(overviewHtml, /Bridge loan/);
   assert.match(overviewHtml, /Purchase \+ repairs \+ fees in one loan, \$0 down/);
-  assert.match(overviewHtml, /\$430,403/);
+  assert.match(overviewHtml, /\$414,128/);
   assert.match(overviewHtml, /\$275,000/);
-  assert.match(overviewHtml, /\$140,000/);
+  assert.match(overviewHtml, /\$124,050/);
+  assert.doesNotMatch(overviewHtml, /\$140,000/);
   assert.match(overviewHtml, /\$5,500/);
   assert.match(overviewHtml, /\$1,295/);
-  assert.match(overviewHtml, /\$4,663\/mo/);
+  assert.match(overviewHtml, /\$4,486\/mo/);
   assert.match(overviewHtml, /\$439,500/);
   assert.match(overviewHtml, /type="range"[^>]*min="780"[^>]*max="1150"[^>]*value="965"/);
 

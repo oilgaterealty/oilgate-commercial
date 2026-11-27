@@ -122,8 +122,8 @@ test('ask cards render full unwrapped text, Change button, required asterisks, a
   assert.equal(Object.keys(lt.wantedTerms('both', GUIDE, BASE)).length, 9);
 
   const plan1aAsks = lt.wantedTerms('bridge', GUIDE, { ...BASE, purchasePrice: 275000, bridgeRepairs: 140000, bridgeClosing: 5500 });
-  assert.match(plan1aAsks['Purchase advances and LTV/LTC caps'], /100% of cost \(\$0 down\): \$430,403 \(\$275,000 purchase \+ \$140,000 repairs \+ \$15,403 closing and fees\)/);
-  assert.match(plan1aAsks['Interest rate, origination points and fees'], /13% interest only \(\$4,663\/mo\), 2 points \(\$8,608\), \$1,295 processing/);
+  assert.match(plan1aAsks['Purchase advances and LTV/LTC caps'], /100% of cost \(\$0 down\): \$414,128 \(\$275,000 purchase \+ \$124,050 repairs \+ \$15,078 closing and fees\)/);
+  assert.match(plan1aAsks['Interest rate, origination points and fees'], /13% interest only \(\$4,486\/mo\), 2 points \(\$8,283\), \$1,295 processing/);
 });
 
 test('tapping Change opens an empty input with our ask as placeholder, mic, and Use ours link (no Not applicable button); Use ours restores the ask card', async () => {

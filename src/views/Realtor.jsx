@@ -76,7 +76,7 @@ function RealtorOverview({ deal, root, onJump }) {
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Repair budget</dt>
-            <dd className="mt-1 font-display text-xl font-semibold">{base ? money(+(base.rehab || 0)) : '…'}</dd>
+            <dd className="mt-1 font-display text-xl font-semibold">{base ? money(+(summary?.stepBudgets?.total || summary?.guide?.costSummary?.total || base.rehab || 0)) : '…'}</dd>
           </div>
           <div className="rounded-2xl bg-ink p-3 text-white">
             <dt className="text-xs text-warm">Lead offer</dt>

@@ -73,10 +73,10 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     rf.sellerPayoff,
   );
   const repairs = pos(
-    base?.bridgeRepairs,
-    gb.repairs,
     guide?.costSummary?.total,
+    gb.repairs,
     base?.rehab,
+    base?.bridgeRepairs,
   );
   const closing = pos(
     base?.bridgeClosing,
@@ -106,7 +106,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const loanByDscr = num(rf.loanByDscr, 0);
 
   const refiFeesFlat = firstSet(base?.refiFeesFlat, rf.feesFlat) ?? LENDER_DEFAULTS.refiFeesFlat;
-  const refiFeesPct = firstSet(base?.refiFeesPct) ?? LENDER_DEFAULTS.refiFeesPct;
+  const refiFeesPct = firstSet(base?.refiFeesPct, rf.feesPct) ?? LENDER_DEFAULTS.refiFeesPct;
   const refiFeesPctAmt = (newLoan * refiFeesPct) / 100;
   const refiFeesTotal = refiFeesFlat + refiFeesPctAmt;
   const netAtRefi = newLoan - totalLoan - refiFeesTotal;
@@ -170,11 +170,9 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Repairs',
       value: repairs,
       display: money(repairs),
-      overlay: [
-        guide?.costSummary?.total > 0 && guide.costSummary.total !== repairs
-          ? `Owner plan budget: ${money(repairs)} (unit schedule + contingency: ${money(guide.costSummary.total)}).`
-          : 'Unit-by-unit rehab scope released in inspection draws.',
-      ],
+      overlay: guide?.costSummary?.lines?.length
+        ? guide.costSummary.lines.map((l) => l.label).filter(Boolean)
+        : ['Unit-by-unit rehab scope released in inspection draws.'],
     },
     {
       key: 'closing',

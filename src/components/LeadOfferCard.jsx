@@ -49,22 +49,110 @@ export function normalizeLeadOffer(content = {}) {
   };
 }
 
-export function normalizeExecutionSteps(content = {}) {
+const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
+
+const DOLLAR_TOKEN = '\\$\\s?\\d[\\d,]*(?:\\.\\d+)?(?:\\s*[kKmM])?(?:\\s*\\/\\s*(?:mo|yr|unit))?';
+const DOLLAR_RANGE = `${DOLLAR_TOKEN}(?:\\s*(?:to|–|—|-)\\s*${DOLLAR_TOKEN})?`;
+const DOLLAR_QUALIFIER = '(?:(?:likely|about|around|roughly|approx\\.?|approximately|up\\s+to|budget|cost)\\s*:?\\s*|~\\s*)?';
+const DOLLAR_PARENS_RE = new RegExp(`\\(\\s*${DOLLAR_QUALIFIER}${DOLLAR_RANGE}\\s*\\)`, 'gi');
+const DOLLAR_PHRASE_RE = new RegExp(`${DOLLAR_QUALIFIER}${DOLLAR_RANGE}`, 'gi');
+
+export function stripHardcodedDollars(text) {
+  const raw = String(text || '').trim();
+  if (!raw || !raw.includes('$')) return raw;
+  let cleaned = raw
+    .replace(DOLLAR_PARENS_RE, '')
+    .replace(DOLLAR_PHRASE_RE, '')
+    .replace(/\(\s*[,;:\-–—\s]*\)/g, '')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([,;:])\s*(?=[,.;:])/g, '')
+    .replace(/^\s*[,;:\-–—]+\s*/, '')
+    .replace(/\s*[,;:\-–—]+\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  if (/^[a-z]/.test(cleaned) && !/^[a-z]/.test(raw)) {
+    cleaned = cleaned[0].toUpperCase() + cleaned.slice(1);
+  }
+  return cleaned;
+}
+
+export function resolveStepBudgets(source) {
+  if (!source || typeof source !== 'object') return null;
+  const direct = source.stepBudgets || source.guide?.costSummary?.stepBudgets || source.costSummary?.stepBudgets;
+  if (direct && typeof direct === 'object' && typeof direct.units === 'number') {
+    return {
+      units: Math.max(0, +direct.units || 0),
+      security: Math.max(0, +direct.security || 0),
+      safetyRecords: Math.max(0, +direct.safetyRecords || 0),
+      total: Math.max(0, +direct.total || 0),
+    };
+  }
+  if (Array.isArray(source.units) || Array.isArray(source.costs)) {
+    const units = (Array.isArray(source.units) ? source.units : []).reduce((s, u) => s + Math.max(0, +u?.rehab || 0), 0);
+    const costs = Array.isArray(source.costs) ? source.costs : [];
+    const sumGroups = (...groups) => costs
+      .filter((c) => groups.includes(String(c?.group || '').toLowerCase()) && (+c?.cost || 0) > 0)
+      .reduce((s, c) => s + (+c.cost || 0), 0);
+    const security = sumGroups('security');
+    const safetyRecords = sumGroups('diligence', 'permits');
+    const allCosts = costs.reduce((s, c) => s + Math.max(0, +c?.cost || 0), 0);
+    const contingency = Math.max(0, +source.contingency || 0);
+    return { units, security, safetyRecords, total: units + allCosts + contingency };
+  }
+  return null;
+}
+
+export function classifyExecutionStep(step = {}) {
+  const title = String(step?.title || '');
+  const body = `${String(step?.detail || '')} ${(Array.isArray(step?.items) ? step.items : []).join(' ')}`;
+  const match = (text) => {
+    if (/\b(secur\w*|cameras?|locks?|lighting|access control)\b/i.test(text)) return 'security';
+    if (/\b(safety|records?|diligence|permits?|check the building|inspect\w*|zoning|registration)\b/i.test(text)) return 'safety_records';
+    if (/\b(fix|rehab|repair|renovat\w*)\b.*\bunits?\b|\bunits?\b.*\b(fix|rehab|repair|renovat\w*)\b|\bfix[- ]?up\b|\brenovation\b|\brehab\b|\brepairs?\b|\bgetting the property ready\b/i.test(text)) return 'fix_units';
+    return null;
+  };
+  return match(title) || match(body);
+}
+
+export function normalizeExecutionSteps(content = {}, planOrBudgets = null) {
+  const budgets = resolveStepBudgets(planOrBudgets);
   if (Array.isArray(content?.execution_steps)) {
     const steps = content.execution_steps
-      .map((step, i) => ({
-        key: `step-${i}`,
-        title: String(step?.title || '').trim(),
-        detail: String(step?.detail || '').trim(),
-        items: Array.isArray(step?.items) ? step.items.map((x) => String(x || '').trim()).filter(Boolean) : [],
-      }))
-      .filter((step) => step.title && (step.detail || step.items.length));
+      .map((step, i) => {
+        const title = String(step?.title || '').trim();
+        const rawDetail = String(step?.detail || '').trim();
+        const rawItems = Array.isArray(step?.items) ? step.items.map((x) => String(x || '').trim()).filter(Boolean) : [];
+        const cleanDetail = stripHardcodedDollars(rawDetail);
+        const items = rawItems.map(stripHardcodedDollars).filter(Boolean);
+        const category = classifyExecutionStep({ title, detail: rawDetail, items: rawItems });
+        const planAmount = category === 'fix_units'
+          ? budgets?.units
+          : category === 'security'
+            ? budgets?.security
+            : category === 'safety_records'
+              ? budgets?.safetyRecords
+              : null;
+        const detail = Number.isFinite(planAmount) && planAmount > 0
+          ? (cleanDetail ? `${fmtDollars(planAmount)}. ${cleanDetail}` : fmtDollars(planAmount))
+          : cleanDetail;
+        const hadContent = Boolean(rawDetail || rawItems.length);
+        return {
+          key: `step-${i}`,
+          title,
+          detail,
+          items,
+          _hadContent: hadContent,
+        };
+      })
+      .filter((step) => step.title && (step.detail || step.items.length || step._hadContent))
+      .map(({ _hadContent, ...step }) => step);
     if (steps.length) return steps;
   }
   const raw = content?.execution && typeof content.execution === 'object' ? content.execution : {};
   return DEFAULT_EXECUTION_PLAN.map((step) => ({
     ...step,
-    detail: String(raw[step.key] || '').trim() || step.detail,
+    detail: stripHardcodedDollars(String(raw[step.key] || '').trim()) || step.detail,
     items: [],
   }));
 }
@@ -80,7 +168,6 @@ export function validProofItems(content = {}) {
 }
 
 export const coveredWord = (c) => (c === 'yes' ? 'covered' : c);
-const fmtDollars = (v) => (Number.isFinite(+v) ? (+v < 0 ? '−$' : '$') + Math.round(Math.abs(+v)).toLocaleString('en-US') : '—');
 
 // Single plain-English offer card shown to the seller. Never renders multiple options.
 export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false, coveredLabel = 'Your costs covered' }) {
@@ -239,7 +326,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
 }
 
 // "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
-export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
+export function ExecutionPlanCard({ content, summary, sellerOnly = false, plan = null, stepBudgets = null }) {
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
   if (sellerOnly && !hasSummarySteps) return null;
   const toLines = (v) => (Array.isArray(v) ? v : v ? String(v).split('\n') : []).map((x) => String(x || '').trim()).filter(Boolean);
@@ -251,7 +338,7 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false }) {
         overlay: toLines(s?.overlay),
         items: [],
       })).filter((s) => s.title)
-    : normalizeExecutionSteps(content).map((s) => ({ ...s, overlay: [] }));
+    : normalizeExecutionSteps(content, stepBudgets || plan || summary).map((s) => ({ ...s, overlay: [] }));
   const proof = validProofItems(content);
   return (
     <Card>

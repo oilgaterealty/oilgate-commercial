@@ -508,13 +508,15 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   };
 
   const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
-  const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, base)])), [sortedOffers, base]);
+  const planRehab = loadPlanLib && canPlan && planState.lib && planState.plan ? planState.lib.overallRepairBudget(planState.plan) : 0;
+  const effectiveBase = planRehab > 0 ? { ...base, rehab: planRehab } : base;
+  const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, effectiveBase)])), [sortedOffers, effectiveBase]);
   const useStaticGuide = owner || !model.touched;
   const stories = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => {
     if (loadPlanLib && canPlan && planState.lib && planState.plan) {
-      return [o.id, planState.lib.offerPlanStory(o, base, planState.plan, comps)];
+      return [o.id, planState.lib.offerPlanStory(o, effectiveBase, planState.plan, comps)];
     }
-    const baseStory = buildLeadStory(o.structure, evals[o.id], { base, comps });
+    const baseStory = buildLeadStory(o.structure, evals[o.id], { base: effectiveBase, comps });
     if (useStaticGuide) {
       const g = (leadGuideProp && isUnitsGuide(leadGuideProp) ? leadGuideProp : null)
         || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
@@ -536,7 +538,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   if (offers === null) return <Empty>Loading…</Empty>;
   const cur = sortedOffers.find((o) => o.id === active) || sortedOffers[0];
   const r = cur && evals[cur.id];
-  const o = evaluate('cash', {}, base).operating;
+  const o = evaluate('cash', {}, effectiveBase).operating;
   const showEdit = view === 'edit';
   const planHrefOf = (x) => (role === 'owner' && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) ? `#/d/${deal.slug}/plans/${x.structure}` : null);
 
@@ -642,7 +644,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
           )}
         </>
       )}
-      <BuildingNumbers base={base} setBase={setBase} o={o} owner={owner} comps={comps} />
+      <BuildingNumbers base={effectiveBase} setBase={setBase} o={o} owner={owner} comps={comps} />
     </div>
   );
 }

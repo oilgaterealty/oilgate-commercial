@@ -103,6 +103,18 @@ export function overallRepairBudget(planIn = {}) {
   return unitsTotal + costsTotal + Math.max(0, num(plan.contingency, 0));
 }
 
+export function planStepBudgets(planIn = {}) {
+  const plan = normalizePlan(planIn);
+  const units = plan.units.reduce((s, u) => s + Math.max(0, num(u.rehab, 0)), 0);
+  const sumGroups = (...groups) => plan.costs
+    .filter((c) => groups.includes(String(c.group || '').toLowerCase()) && c.cost > 0)
+    .reduce((s, c) => s + c.cost, 0);
+  const security = sumGroups('security');
+  const safetyRecords = sumGroups('diligence', 'permits');
+  const total = overallRepairBudget(plan);
+  return { units, security, safetyRecords, total };
+}
+
 // Owner-only helper so Offers never embeds the deal_plan settings key in public/seller builds.
 export async function loadDealPlan(supabase, slug) {
   const { data: row, error } = await supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${slug}`).maybeSingle();
@@ -207,7 +219,7 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
   ];
   const partSummaries = lines.map((l) => l.label);
   const oneLine = partSummaries.length ? `${heading} — ${partSummaries.join(', ')}` : heading;
-  return { total: wholeTotal, rehabTotal, contingency, heading, headingOverlay, oneLine, lines };
+  return { total: wholeTotal, rehabTotal, contingency, heading, headingOverlay, oneLine, lines, stepBudgets: planStepBudgets(plan) };
 }
 
 export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) {
@@ -903,7 +915,8 @@ function repairLoanNumbers(baseIn = {}, planIn = {}, offerIn = {}) {
   const lenderPointsPct = Math.max(0, num(plan.lenderPoints, 0));
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : (offerIn || {});
   const shortCarry = Math.max(0, num(x.shortCarry, 0));
-  const closingAll = Math.max(0, x.exerciseClosing !== undefined && x.exerciseClosing !== '' ? num(x.exerciseClosing) : num(x.closing, 0));
+  const closingFromOffer = Math.max(0, x.exerciseClosing !== undefined && x.exerciseClosing !== '' ? num(x.exerciseClosing) : num(x.closing, 0));
+  const closingAll = closingFromOffer || Math.max(0, num(baseIn?.bridgeClosing, 0)) || Math.max(0, num(plan.bridgeClosing, 0));
   // Seller financing: the closing cost is rolled into the repair loan, so nothing is paid at closing.
   const closingInLoan = offerIn?.structure === 'wrap' ? closingAll : 0;
   const closing = closingAll - closingInLoan;
@@ -1117,6 +1130,7 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
     ltvPct: refiLtv,
     ltvShownPct,
     loanOverlay,
+    feesPct: refiFeesPct,
     feesPctAmt,
     feesFlat: refiFeesFlat,
     reserve: refiReserve,
@@ -1371,7 +1385,13 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   const reservesPerUnit = Math.max(0, num(baseIn?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit));
   const capRate = num(baseIn?.valueCapRate, 9) > 0 ? num(baseIn?.valueCapRate, 9) : 9;
   const noteInfo = sellerNote(offerIn, plan);
-  const buyout = noteInfo.isNote ? noteInfo.note : Math.max(0, num(plan.sellerLoanBalance, 0));
+  const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
+  const buyout = Math.max(0, num(baseIn?.purchasePrice, 0))
+    || (noteInfo.isNote ? noteInfo.note : 0)
+    || Math.max(0, num(x.optionPrice, 0))
+    || Math.max(0, num(x.buyout, 0))
+    || Math.max(0, num(x.price, 0))
+    || Math.max(0, num(plan.sellerLoanBalance, 0));
   const buyoutWord = noteInfo.isNote ? 'Seller’s note' : 'Buyout';
   const repairs = rehabBudget + contingency;
 
@@ -1467,9 +1487,8 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   // the locked value is the floor, the high end is value by income after repairs.
   const baseLowRent = optNum(baseIn?.marketRentLow);
   const baseHighRent = optNum(baseIn?.marketRentHigh);
-  const lowRent = plan.marketRent ? plan.marketRent.low : (baseLowRent && baseLowRent > 0 ? baseLowRent : null);
-  const rawHighRent = plan.marketRent ? plan.marketRent.high : (baseHighRent && baseHighRent > 0 ? baseHighRent : null);
-  const highRent = rawHighRent !== null && baseHighRent && baseHighRent > rawHighRent ? baseHighRent : rawHighRent;
+  const lowRent = baseLowRent && baseLowRent > 0 ? baseLowRent : (plan.marketRent ? plan.marketRent.low : null);
+  const highRent = baseHighRent && baseHighRent > 0 ? baseHighRent : (plan.marketRent ? plan.marketRent.high : null);
   const marketRange = lowRent !== null && highRent !== null && highRent >= lowRent && lowRent > 0
     ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter }
     : null;
@@ -1494,9 +1513,9 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
       || Math.max(0, num(x.buyout, 0))
       || Math.max(0, num(x.price, 0))
       || Math.max(0, num(plan.sellerLoanBalance, 0)),
-    repairs: Math.max(0, num(baseIn?.bridgeRepairs, 0))
-      || cs.total
-      || Math.max(0, num(baseIn?.rehab, 0)),
+    repairs: cs.total
+      || Math.max(0, num(baseIn?.rehab, 0))
+      || Math.max(0, num(baseIn?.bridgeRepairs, 0)),
     closing: Math.max(0, num(baseIn?.bridgeClosing, 0))
       || Math.max(0, num(plan.bridgeClosing, 0))
       || Math.max(0, num(x.exerciseClosing, 0))
@@ -1594,6 +1613,7 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
     refiLine,
     terms,
     steps,
+    stepBudgets: costSummary.stepBudgets,
     guide,
   };
 }
@@ -1700,6 +1720,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
       refiLine: `Your payments grow as units are rented, up to ${money(notePay + renoPay)} a month, then you are paid back in full: ${totalText}.`,
       terms,
       steps,
+      stepBudgets: costSummary.stepBudgets,
       guide,
     };
   }
@@ -1737,6 +1758,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
         : `Once all ${unitsCount} are rented, the buyer refinances and pays off your note: ${payoffText}.`,
       terms,
       steps,
+      stepBudgets: costSummary.stepBudgets,
       guide,
     };
   }
@@ -1765,6 +1787,7 @@ function sellerNoteSummary({ title, table, guide, costSummary, unitsCount }) {
     refiLine: `Once all ${unitsCount} are rented, the buyer refinances and pays off your note: ${payoffText}.`,
     terms,
     steps,
+    stepBudgets: costSummary.stepBudgets,
     guide,
   };
 }

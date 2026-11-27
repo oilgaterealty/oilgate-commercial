@@ -60,12 +60,14 @@ export function whatIfMessage(original, base, offers = []) {
     const o = operating({ ...base, units: 10 });
     const was = operating({ ...original.base, units: 10 });
     const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: 10 });
+    const valueUnchanged = original.base?.rent === base.rent && original.base?.valueCapRate === base.valueCapRate && original.base?.vacancyPct === base.vacancyPct && original.base?.taxes === base.taxes && original.base?.insurance === base.insurance && original.base?.waterMo === base.waterMo && original.base?.reservesPerUnit === base.reservesPerUnit;
+    const shownValue = o.b.value > 0 && valueUnchanged ? o.b.value : (val.income ?? o.b.value);
     lines.push(
       '',
       'Building summary:',
       `- Rent per unit / month: ${money(o.b.rent)} (was ${money(was.b.rent)})`,
       `- Yearly profit before payments: ${money(o.noi)} (was ${money(was.noi)})`,
-      `- Value after repairs: ${money(val.income ?? o.b.value)}`,
+      `- Value after repairs: ${money(shownValue)}`,
       `- Repair budget: ${money(o.b.rehab)}`,
     );
   }
@@ -100,6 +102,8 @@ export function WhatIfNumbers({ deal, me, role, preview }) {
   const [open, setOpen] = useState(false);
   const o = operating({ ...base, units: 10 });
   const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: 10 });
+  const valueChanged = base.value !== model.original?.base?.value;
+  const shownValue = o.b.value > 0 && (!model.touched || valueChanged) ? o.b.value : (val.income ?? o.b.value);
   return (
     <>
       <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />
@@ -116,7 +120,7 @@ export function WhatIfNumbers({ deal, me, role, preview }) {
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Value after repairs</dt>
-            <dd className="mt-1 font-display text-xl font-semibold">{money(val.income ?? o.b.value)}</dd>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(shownValue)}</dd>
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Repair budget</dt>

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { evaluate, money } from '../lib/dealmath.js';
+import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { Card, CardTitle } from '../components/Shell.jsx';
 import { useUploads } from '../components/Files.jsx';
@@ -6,6 +8,12 @@ import { Cover, photosOf } from '../components/Photos.jsx';
 import { WorkBoard } from '../components/DealWorkspace.jsx';
 import { seenBy } from '../lib/visibility.js';
 import { SellerPulse } from '../components/Pulse.jsx';
+
+// Owner-only dynamic import so public and seller builds never bundle dealplan or deal_plan data.
+const loadPlanLib =
+  import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller'
+    ? null
+    : () => import('../lib/dealplan.js');
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
 
@@ -42,11 +50,30 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
   const [rows] = useUploads(deal);
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
   const { offers, base, setBase } = model;
+  const [planRepairBudget, setPlanRepairBudget] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    if (!owner || !loadPlanLib) {
+      setPlanRepairBudget(0);
+      return () => { alive = false; };
+    }
+    (async () => {
+      try {
+        const lib = await loadPlanLib();
+        const plan = await lib.loadDealPlan(supabase, deal.slug);
+        if (alive) setPlanRepairBudget(plan ? lib.overallRepairBudget(plan) : 0);
+      } catch {
+        if (alive) setPlanRepairBudget(0);
+      }
+    })();
+    return () => { alive = false; };
+  }, [deal.slug, owner]);
   const visible = preview ? seenBy(role, rows) : rows || [];
   const photos = photosOf(visible);
-  const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, base) }));
+  const effectiveBase = planRepairBudget > 0 ? { ...base, rehab: planRepairBudget } : base;
+  const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, effectiveBase) }));
   const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);
-  const o = evaluate('cash', {}, base).operating;
+  const o = evaluate('cash', {}, effectiveBase).operating;
   const ready = offers !== null;
 
   return (
