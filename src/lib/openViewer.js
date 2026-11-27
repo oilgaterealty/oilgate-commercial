@@ -1,4 +1,6 @@
 // Pure helpers for the unauthenticated open viewer link, view counter, and lender/reviewer request form.
+export { getOpenViewerFacts } from './openViewerFacts.js';
+
 export const OPEN_REQUEST_ROLES = [
   ['lender', 'Lender'],
   ['reviewer', 'Reviewer'],
@@ -170,5 +172,27 @@ export function mergeOpenViewerPhotoUrls(snapshot, signed) {
     ...snapshot,
     photos: mergePhotoUrlsById(snapshot.photos, signed.photos),
     walkthroughPhotos: mergePhotoUrlsById(snapshot.walkthroughPhotos, signed.walkthrough_photos),
+  };
+}
+
+/**
+ * Picks the featured cover photo once signed URLs are loaded, falling back to the first loaded photo.
+ */
+export function selectFeaturedPhoto(photos = [], walkthroughPhotos = []) {
+  const coverCandidates = (Array.isArray(photos) ? photos : []).filter(
+    (p) => p && typeof p === 'object' && (!p.kind || p.kind === 'photo') && typeof p.url === 'string' && p.url.trim(),
+  );
+  const pick =
+    coverCandidates.find((p) => Boolean(p.featured)) ||
+    coverCandidates[0] ||
+    (Array.isArray(walkthroughPhotos) ? walkthroughPhotos : []).find(
+      (p) => p && typeof p === 'object' && typeof p.url === 'string' && p.url.trim(),
+    ) ||
+    null;
+  if (!pick) return null;
+  return {
+    id: String(pick.id || pick.storage_path || pick.url),
+    url: pick.url.trim(),
+    alt: String(pick.note || '').trim() || 'Property photo',
   };
 }

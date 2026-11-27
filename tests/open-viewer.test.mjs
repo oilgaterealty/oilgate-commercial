@@ -6,12 +6,15 @@ import { fileURLToPath } from 'node:url';
 import {
   OPEN_REQUEST_ROLES,
   filterOpenViewerSnapshot,
+  getOpenViewerFacts,
   getOrCreateVisitorId,
   mergeOpenViewerPhotoUrls,
   mergePhotoUrlsById,
+  selectFeaturedPhoto,
   summarizeOpenViews,
   validateAccessRequest,
 } from '../src/lib/openViewer.js';
+import { ALLOWED_FACT_KEYS, OPEN_VIEWER_FACTS } from '../src/lib/openViewerFacts.js';
 import { parseHash } from '../src/lib/useHashRoute.js';
 import {
   GUEST_SITE,
@@ -351,4 +354,185 @@ test('open-viewer-photos edge function reads key only from Deno.env, validates t
   assert.match(ov, /mergeOpenViewerPhotoUrls/);
   assert.doesNotMatch(ov, /createSignedUrls/);
   assert.doesNotMatch(ov, /setInterval/);
+});
+
+test('openViewerFacts allows only verified keys for charlotte and matches exact stat tiles', () => {
+  assert.deepEqual(Object.keys(OPEN_VIEWER_FACTS), ['charlotte']);
+  assert.deepEqual([...ALLOWED_FACT_KEYS], ['building', 'neighborhood', 'schools', 'nearby', 'map']);
+  const c = OPEN_VIEWER_FACTS.charlotte;
+  assert.deepEqual(Object.keys(c).sort(), ['building', 'map', 'nearby', 'neighborhood', 'schools']);
+  assert.deepEqual(Object.keys(c.building).sort(), ['sources', 'stats']);
+  assert.equal(c.building.style, undefined);
+  assert.deepEqual(Object.keys(c.neighborhood).sort(), ['highlight', 'name', 'sources', 'transitScore', 'walkScore']);
+  assert.deepEqual(Object.keys(c.schools).sort(), ['district', 'list', 'sources']);
+  assert.equal(c.building.stats.length, 4);
+  assert.deepEqual(
+    c.building.stats.map((s) => s.value),
+    ['1919', '10,800 sq ft', '10 apartments', '~810 sq ft avg'],
+  );
+  assert.equal(c.neighborhood.name, 'Highland Square, Akron');
+  assert.equal(c.neighborhood.walkScore.value, 79);
+  assert.equal(c.neighborhood.transitScore.value, 35);
+  assert.equal(c.schools.district, 'Akron Public Schools');
+  assert.deepEqual(c.schools.list, [
+    'King Community Learning Center (K-5)',
+    'Litchfield Community Learning Center',
+    'Firestone High School',
+  ]);
+});
+
+test('openViewerFacts nearby list and transit routes match exact verified values', () => {
+  const { nearby } = OPEN_VIEWER_FACTS.charlotte;
+  assert.deepEqual(nearby.walk, [
+    { name: "Frank's Place on Market", distance: '0.1 mi', time: '2 min walk' },
+    { name: 'House Three Thirty and Buckets', distance: '0.2 mi', time: '4 min walk' },
+    { name: 'I Promise School', distance: '0.4 mi', time: '8 min walk' },
+    { name: 'Highland Theatre', distance: '0.5 mi', time: '10 min walk' },
+    { name: 'Mustard Seed Market', distance: '0.6 mi', time: '12 min walk' },
+  ]);
+  assert.deepEqual(nearby.drive, [
+    { name: "Dr. Bob's Home", distance: '1.0 mi', time: '3 min drive' },
+    { name: 'Cleveland Clinic Akron General', distance: '1.3 mi', time: '3 min drive' },
+    { name: 'Downtown Akron (Lock 3)', distance: '1.6 mi', time: '4 min drive' },
+    { name: 'University of Akron', distance: '2.0 mi', time: '5 min drive' },
+    { name: 'Stan Hywet Hall & Gardens', distance: '2.3 mi', time: '6 min drive' },
+    { name: 'Summa Akron City Hospital', distance: '2.4 mi', time: '7 min drive' },
+  ]);
+  assert.deepEqual(nearby.sources, [
+    'Route distance from OpenStreetMap (OSRM), measured Nov 26, 2026',
+  ]);
+  assert.deepEqual(nearby.transit, {
+    label: 'METRO RTA',
+    routes: ['1 West Market', '28 Merriman Valley'],
+    sources: ['walkscore.com'],
+  });
+});
+
+test('openViewerFacts map embed and Get directions link exist only for charlotte and are rendered safely', () => {
+  const { map } = OPEN_VIEWER_FACTS.charlotte;
+  assert.equal(
+    map.embedUrl,
+    'https://www.openstreetmap.org/export/embed.html?bbox=-81.5458,41.0893,-81.5258,41.0993&layer=mapnik&marker=41.0943012,-81.5358543',
+  );
+  assert.equal(
+    map.directionsUrl,
+    'https://www.google.com/maps/dir/?api=1&destination=23-27+Charlotte+St+Akron+OH+44303',
+  );
+  assert.equal(getOpenViewerFacts('charlotte').map, map);
+  assert.equal(getOpenViewerFacts('other-deal'), null);
+
+  const ov = read('src/views/OpenViewer.jsx');
+  assert.equal(ov.includes('openstreetmap.org'), false, 'map embed URL must live only in openViewerFacts.js');
+  assert.equal(ov.includes('google.com/maps'), false, 'directions URL must live only in openViewerFacts.js');
+  assert.match(ov, /<iframe[\s\S]*src=\{facts\.map\.embedUrl\}[\s\S]*title="Map"[\s\S]*loading="lazy"[\s\S]*referrerPolicy="no-referrer"/);
+  assert.match(ov, /<a[\s\S]*href=\{facts\.map\.directionsUrl\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"[\s\S]*Get directions/);
+
+  const html = read('index.html');
+  assert.match(html, /frame-src[^;]*https:\/\/www\.openstreetmap\.org/);
+});
+
+test('openViewerFacts and OpenViewer contain no banned words, no brick, and no site hostname', () => {
+  const strings = [];
+  const collect = (val) => {
+    if (typeof val === 'string') strings.push(val);
+    else if (Array.isArray(val)) val.forEach(collect);
+    else if (val && typeof val === 'object') Object.values(val).forEach(collect);
+  };
+  collect(OPEN_VIEWER_FACTS);
+
+  const factsSrc = read('src/lib/openViewerFacts.js');
+  const ovSrc = read('src/views/OpenViewer.jsx');
+  const banned = /\b(owner|llc|sale|price|rent|mortgage|bank|code\s+case|tenant|brick)\b/i;
+  const siteHost = new URL(GUEST_SITE).hostname;
+
+  for (const s of [...strings, factsSrc]) {
+    assert.doesNotMatch(s, banned);
+    assert.equal(s.includes('$'), false);
+    assert.equal(s.includes(siteHost), false);
+  }
+  assert.doesNotMatch(ovSrc, /\bbrick\b/i);
+  assert.equal(ovSrc.includes(siteHost), false);
+});
+
+test('openViewerFacts overlays carry exact verified sources and OpenViewer renders sources only in OverlayTrigger', () => {
+  const c = OPEN_VIEWER_FACTS.charlotte;
+  assert.deepEqual(c.building.sources, ['Summit County Fiscal Office commercial property card, parcel 6801234']);
+  assert.deepEqual(c.neighborhood.sources, ['walkscore.com', 'Highland Square neighborhood listings']);
+  assert.deepEqual(c.schools.sources, ['Zillow school assignment for 23-27 Charlotte St']);
+  assert.deepEqual(c.nearby.sources, ['Route distance from OpenStreetMap (OSRM), measured Nov 26, 2026']);
+  assert.deepEqual(c.nearby.transit.sources, ['walkscore.com']);
+
+  const ov = read('src/views/OpenViewer.jsx');
+  assert.match(ov, /import\s+[\s\S]*\bOverlayTrigger\b[\s\S]*from\s+'\.\.\/components\/Shell\.jsx'/);
+  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.building\.sources\}/);
+  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.neighborhood\.sources\}/);
+  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.schools\.sources\}/);
+  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.sources\}/);
+  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.transit\.sources\}/);
+  assert.match(ov, /tabular-nums/);
+
+  // Source strings must never appear hardcoded as visible text in OpenViewer.jsx
+  for (const srcLine of [
+    ...c.building.sources,
+    ...c.neighborhood.sources,
+    ...c.schools.sources,
+    ...c.nearby.sources,
+    ...c.nearby.transit.sources,
+  ]) {
+    assert.equal(ov.includes(srcLine), false, `source line should only live in openViewerFacts.js: ${srcLine}`);
+  }
+
+  // Verify section order: hero -> 4 stat tiles -> Neighborhood -> Schools -> Nearby -> Map -> photo gallery -> Request access
+  const idxHero = ov.indexOf('aria-label="Property hero"');
+  const idxStats = ov.indexOf('facts.building.stats');
+  const idxNeighborhood = ov.search(/>\s*Neighborhood\s*</);
+  const idxSchools = ov.search(/>\s*Schools\s*</);
+  const idxNearby = ov.search(/>\s*Nearby\s*</);
+  const idxMap = ov.search(/>\s*Map\s*</);
+  const idxPhotos = ov.indexOf('<UnitGallery');
+  const idxRequest = ov.indexOf('aria-label="Request access"');
+  assert.ok(
+    idxHero > 0 &&
+    idxStats > idxHero &&
+    idxNeighborhood > idxStats &&
+    idxSchools > idxNeighborhood &&
+    idxNearby > idxSchools &&
+    idxMap > idxNearby &&
+    idxPhotos > idxMap &&
+    idxRequest > idxPhotos,
+  );
+});
+
+test('getOpenViewerFacts returns facts for charlotte and null for unknown or prototype slugs', () => {
+  assert.equal(getOpenViewerFacts('charlotte'), OPEN_VIEWER_FACTS.charlotte);
+  assert.equal(getOpenViewerFacts('  Charlotte  '), OPEN_VIEWER_FACTS.charlotte);
+  for (const bad of ['unknown', '', null, undefined, 'quayle', '__proto__', 'constructor', 'toString']) {
+    assert.equal(getOpenViewerFacts(bad), null);
+  }
+});
+
+test('selectFeaturedPhoto prefers featured cover photo, falls back to cover then walkthrough', () => {
+  assert.equal(selectFeaturedPhoto([], []), null);
+  assert.equal(selectFeaturedPhoto([{ id: 'p1', kind: 'photo', url: '' }], []), null);
+
+  const featured = selectFeaturedPhoto(
+    [
+      { id: 'p1', kind: 'photo', url: 'https://signed.example/p1.jpg', featured: false, note: 'Side' },
+      { id: 'p2', kind: 'photo', url: ' https://signed.example/p2.jpg ', featured: true, note: 'Front' },
+    ],
+    [{ id: 'w1', url: 'https://signed.example/w1.jpg' }],
+  );
+  assert.deepEqual(featured, { id: 'p2', url: 'https://signed.example/p2.jpg', alt: 'Front' });
+
+  const firstCover = selectFeaturedPhoto(
+    [{ id: 'p1', kind: 'photo', url: 'https://signed.example/p1.jpg', featured: false }],
+    [{ id: 'w1', url: 'https://signed.example/w1.jpg' }],
+  );
+  assert.deepEqual(firstCover, { id: 'p1', url: 'https://signed.example/p1.jpg', alt: 'Property photo' });
+
+  const walkFallback = selectFeaturedPhoto(
+    [{ id: 'p1', kind: 'photo', url: '' }],
+    [{ id: 'w1', unit_number: 1, room: 'kitchen', url: 'https://signed.example/w1.jpg' }],
+  );
+  assert.deepEqual(walkFallback, { id: 'w1', url: 'https://signed.example/w1.jpg', alt: 'Property photo' });
 });
