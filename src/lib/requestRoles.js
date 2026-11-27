@@ -5,6 +5,12 @@ export const REQUEST_ROLES = [
   ['viewer', 'Viewer'],
 ];
 
+// Roles a signed-in viewer can request an upgrade to.
+export const VIEWER_REQUEST_ROLES = [
+  ['lender', 'Lender'],
+  ['reviewer', 'Reviewer'],
+];
+
 const KEY = 'requestRole';
 const valid = (r) => REQUEST_ROLES.some(([k]) => k === r);
 

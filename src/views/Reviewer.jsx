@@ -5,17 +5,117 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { evaluate, operating, money, pct, valueSummary } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
-import { Button, Card, CardTitle, Empty, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
+import { Button, Card, CardTitle, Empty, Field, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import { DictatedField } from '../components/Dictation.jsx';
 import Messages, { sendToOwner } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
+import PropertyFacts from '../components/PropertyFacts.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import { seenBy } from '../lib/visibility.js';
 import { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 import RentValue, { isRentValue } from '../components/RentValue.jsx';
+import { VIEWER_REQUEST_ROLES } from '../lib/requestRoles.js';
 
 const OPINIONS = ['Looks good', 'Needs changes', 'Pass'];
+const VIEWER_REQUEST_LABEL = {
+  idle: 'Request access',
+  sending: 'Sending…',
+  sent: 'Request sent',
+  denied: 'Not approved',
+  error: 'Try again',
+};
+
+function ViewerAccessRequest({ deal, preview }) {
+  const [requestedRole, setRequestedRole] = useState('lender');
+  const [company, setCompany] = useState('');
+  const [note, setNote] = useState('');
+  const [submitState, setSubmitState] = useState('idle');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (preview || submitState === 'sending' || submitState === 'sent' || submitState === 'denied') return;
+    if (!VIEWER_REQUEST_ROLES.some(([k]) => k === requestedRole)) return;
+    setSubmitState('sending');
+    try {
+      const { data, error } = await supabase.rpc('commercial_request_viewer_access', {
+        p_deal: deal.id,
+        p_requested_role: requestedRole,
+        p_company: company.trim().slice(0, 120),
+        p_note: note.trim().slice(0, 1000),
+      });
+      if (error) {
+        setSubmitState('error');
+      } else if (data === 'pending') {
+        setSubmitState('sent');
+      } else if (data === 'denied') {
+        setSubmitState('denied');
+      } else {
+        setSubmitState('error');
+      }
+    } catch {
+      setSubmitState('error');
+    }
+  };
+
+  const locked = submitState === 'sending' || submitState === 'sent' || submitState === 'denied';
+
+  return (
+    <Card>
+      <CardTitle>Request access</CardTitle>
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
+        <div role="radiogroup" aria-label="Requested role" className="grid grid-cols-2 gap-2 sm:col-span-2">
+          {VIEWER_REQUEST_ROLES.map(([k, label]) => {
+            const on = requestedRole === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={locked}
+                onClick={() => {
+                  setRequestedRole(k);
+                  if (submitState === 'error') setSubmitState('idle');
+                }}
+                className={`min-h-[44px] rounded-xl border px-3 py-2 text-sm font-medium transition ${on ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink hover:border-ink'}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <Field
+          maxLength={120}
+          aria-label="Company"
+          placeholder="Company (optional)"
+          disabled={locked}
+          value={company}
+          onChange={(e) => {
+            setCompany(e.target.value);
+            if (submitState === 'error') setSubmitState('idle');
+          }}
+        />
+        <Field
+          maxLength={1000}
+          aria-label="Note"
+          placeholder="Note (optional)"
+          disabled={locked}
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value);
+            if (submitState === 'error') setSubmitState('idle');
+          }}
+        />
+        <div className="sm:col-span-2">
+          <Button type="submit" disabled={preview || locked || !requestedRole}>
+            {VIEWER_REQUEST_LABEL[submitState] || 'Request access'}
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
 
 function QuickOpinion({ deal, me, role, preview }) {
   const [pick, setPick] = useState('');
@@ -107,23 +207,18 @@ export default function Reviewer({ deal, me, role, preview, tab }) {
   const refiGuide = leadGuide?.refi || null;
   const shownValue = refiGuide?.estimatedValue ?? val.income ?? o.b.value;
   const shownRepair = leadGuide?.costSummary?.total ?? o.b.rehab;
-  const propertySummary = String(deal.seller_content?.summary || '').trim() || '10-unit residential property.';
 
   return (
     <div className={viewer ? 'space-y-6' : 'space-y-8 pb-20'}>
       {sections.length > 1 && <JumpNav sections={sections} active={activeSection} onJump={jumpTo} base={basePath} preview={preview} />}
 
-      <section id="sec-overview" data-section="overview" className="scroll-mt-20 space-y-4">
-        <Cover rows={photos} compact />
+      <section id="sec-overview" data-section="overview" className={`scroll-mt-20 ${viewer ? 'space-y-6' : 'space-y-4'}`}>
+        <Cover rows={photos} compact={!viewer} />
         {viewer ? (
-          <Card>
-            <CardTitle>The property</CardTitle>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
-              <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">10</dd></div>
-              <div className="sm:col-span-2"><dt className="text-ink-soft">Summary</dt><dd className="font-medium leading-relaxed">{propertySummary}</dd></div>
-            </dl>
-          </Card>
+          <>
+            <PropertyFacts slug={deal.slug} />
+            <ViewerAccessRequest deal={deal} preview={preview} />
+          </>
         ) : (
           <>
             <Card>

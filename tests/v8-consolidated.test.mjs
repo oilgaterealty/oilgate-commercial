@@ -104,13 +104,14 @@ test('0018 enforces recipient-bound, expiring, single-use, revocable links and r
   assert.match(joinSrc, /already used/);
 });
 
-test('lead_guest role is removed from UI; viewer gets photos + property info only', async () => {
+test('lead_guest role is removed from UI; viewer gets photos + property facts only', async () => {
   const dealRoomSrc = read('src/views/DealRoom.jsx');
   assert.doesNotMatch(dealRoomSrc, /lead_guest|LeadGuest/);
 
   const reviewerSrc = read('src/views/Reviewer.jsx');
   assert.match(reviewerSrc, /The property/);
-  assert.match(reviewerSrc, /10-unit residential property/);
+  assert.match(reviewerSrc, /<PropertyFacts\b/);
+  assert.doesNotMatch(reviewerSrc, /10-unit residential property/);
   assert.doesNotMatch(reviewerSrc, /lead_guest/);
 });
 

@@ -140,10 +140,12 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
       FileList: () => React.createElement('div', { 'data-mock': 'FileList' }),
     },
     '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [] },
+    '../components/PropertyFacts.jsx': { __esModule: true, default: ({ slug }) => React.createElement('div', { 'data-mock': 'PropertyFacts', 'data-slug': slug }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'UnitGallery' }) },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../components/RentValue.jsx': { __esModule: true, default: () => null, isRentValue: () => false },
+    '../lib/requestRoles.js': { VIEWER_REQUEST_ROLES: [['lender', 'Lender'], ['reviewer', 'Reviewer']] },
   });
 
   const revHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'reviewer', preview: false }));
@@ -165,9 +167,17 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
 
   const viewerHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'viewer', preview: false }));
   assert.match(viewerHtml, /data-mock="Cover"/);
+  assert.match(viewerHtml, /data-mock="PropertyFacts"/);
+  assert.match(viewerHtml, /data-slug="charlotte"/);
   assert.match(viewerHtml, /data-mock="UnitGallery"/);
-  assert.match(viewerHtml, /The property/);
-  assert.doesNotMatch(viewerHtml, /Building numbers|Send to Buyer|Quick opinion|data-section="offers"|data-section="messages"/);
+  assert.match(viewerHtml, /Request access/);
+  assert.match(viewerHtml, /Lender/);
+  assert.match(viewerHtml, /Reviewer/);
+  assert.doesNotMatch(viewerHtml, /The property|10-unit residential property|Building numbers|Send to Buyer|Quick opinion|data-section="offers"|data-section="messages"/);
+
+  const viewerPreviewHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'viewer', preview: true }));
+  assert.match(viewerPreviewHtml, /Request access/);
+  assert.match(viewerPreviewHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
 
   const lenderMod = loadJsx('src/views/Lender.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },

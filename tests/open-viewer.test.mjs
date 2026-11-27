@@ -1,8 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { transformSync } from 'esbuild';
 import {
   OPEN_REQUEST_ROLES,
   filterOpenViewerSnapshot,
@@ -23,8 +27,23 @@ import {
   openViewerUrl,
 } from '../src/lib/site.js';
 
+const require = createRequire(import.meta.url);
+const jsxRuntime = require('react/jsx-runtime');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (p) => readFileSync(join(root, p), 'utf8');
+
+function loadJsx(file, mocks) {
+  const code = transformSync(read(file), { loader: 'jsx', format: 'cjs', jsx: 'automatic' }).code;
+  const mod = { exports: {} };
+  const localRequire = (spec) => {
+    if (spec === 'react') return React;
+    if (spec === 'react/jsx-runtime') return jsxRuntime;
+    if (spec in mocks) return mocks[spec];
+    return require(spec);
+  };
+  new Function('module', 'exports', 'require', code)(mod, mod.exports, localRequire);
+  return mod.exports;
+}
 
 test('filterOpenViewerSnapshot keeps only viewer fields and strips sensitive or extraneous keys', () => {
   assert.equal(filterOpenViewerSnapshot(null), null);
@@ -421,17 +440,21 @@ test('openViewerFacts map embed and Get directions link exist only for charlotte
   assert.equal(getOpenViewerFacts('charlotte').map, map);
   assert.equal(getOpenViewerFacts('other-deal'), null);
 
+  const pf = read('src/components/PropertyFacts.jsx');
   const ov = read('src/views/OpenViewer.jsx');
+  assert.equal(pf.includes('openstreetmap.org'), false, 'map embed URL must live only in openViewerFacts.js');
+  assert.equal(pf.includes('google.com/maps'), false, 'directions URL must live only in openViewerFacts.js');
   assert.equal(ov.includes('openstreetmap.org'), false, 'map embed URL must live only in openViewerFacts.js');
   assert.equal(ov.includes('google.com/maps'), false, 'directions URL must live only in openViewerFacts.js');
-  assert.match(ov, /<iframe[\s\S]*src=\{facts\.map\.embedUrl\}[\s\S]*title="Map"[\s\S]*loading="lazy"[\s\S]*referrerPolicy="no-referrer"/);
-  assert.match(ov, /<a[\s\S]*href=\{facts\.map\.directionsUrl\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"[\s\S]*Get directions/);
+  assert.match(pf, /<iframe[\s\S]*src=\{facts\.map\.embedUrl\}[\s\S]*title="Map"[\s\S]*loading="lazy"[\s\S]*referrerPolicy="no-referrer"/);
+  assert.match(pf, /<a[\s\S]*href=\{facts\.map\.directionsUrl\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"[\s\S]*Get directions/);
+  assert.match(ov, /<PropertyFacts\s+slug=\{deal\.slug\}\s*\/>/);
 
   const html = read('index.html');
   assert.match(html, /frame-src[^;]*https:\/\/www\.openstreetmap\.org/);
 });
 
-test('openViewerFacts and OpenViewer contain no banned words, no brick, and no site hostname', () => {
+test('openViewerFacts, PropertyFacts, and OpenViewer contain no banned words, no brick, and no site hostname', () => {
   const strings = [];
   const collect = (val) => {
     if (typeof val === 'string') strings.push(val);
@@ -441,6 +464,7 @@ test('openViewerFacts and OpenViewer contain no banned words, no brick, and no s
   collect(OPEN_VIEWER_FACTS);
 
   const factsSrc = read('src/lib/openViewerFacts.js');
+  const pfSrc = read('src/components/PropertyFacts.jsx');
   const ovSrc = read('src/views/OpenViewer.jsx');
   const banned = /\b(owner|llc|sale|price|rent|mortgage|bank|code\s+case|tenant|brick)\b/i;
   const siteHost = new URL(GUEST_SITE).hostname;
@@ -450,11 +474,13 @@ test('openViewerFacts and OpenViewer contain no banned words, no brick, and no s
     assert.equal(s.includes('$'), false);
     assert.equal(s.includes(siteHost), false);
   }
+  assert.doesNotMatch(pfSrc, /\bbrick\b/i);
+  assert.equal(pfSrc.includes(siteHost), false);
   assert.doesNotMatch(ovSrc, /\bbrick\b/i);
   assert.equal(ovSrc.includes(siteHost), false);
 });
 
-test('openViewerFacts overlays carry exact verified sources and OpenViewer renders sources only in OverlayTrigger', () => {
+test('PropertyFacts renders sources only in OverlayTrigger and shares exact layout across OpenViewer and Reviewer viewer mode', () => {
   const c = OPEN_VIEWER_FACTS.charlotte;
   assert.deepEqual(c.building.sources, ['Summit County Fiscal Office commercial property card, parcel 6801234']);
   assert.deepEqual(c.neighborhood.sources, ['walkscore.com', 'Highland Square neighborhood listings']);
@@ -462,16 +488,17 @@ test('openViewerFacts overlays carry exact verified sources and OpenViewer rende
   assert.deepEqual(c.nearby.sources, ['Route distance from OpenStreetMap (OSRM), measured Nov 26, 2026']);
   assert.deepEqual(c.nearby.transit.sources, ['walkscore.com']);
 
-  const ov = read('src/views/OpenViewer.jsx');
-  assert.match(ov, /import\s+[\s\S]*\bOverlayTrigger\b[\s\S]*from\s+'\.\.\/components\/Shell\.jsx'/);
-  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.building\.sources\}/);
-  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.neighborhood\.sources\}/);
-  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.schools\.sources\}/);
-  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.sources\}/);
-  assert.match(ov, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.transit\.sources\}/);
-  assert.match(ov, /tabular-nums/);
+  const pf = read('src/components/PropertyFacts.jsx');
+  assert.match(pf, /import\s+[\s\S]*\bOverlayTrigger\b[\s\S]*from\s+'\.\/Shell\.jsx'/);
+  assert.match(pf, /<OverlayTrigger[\s\S]*lines=\{facts\.building\.sources\}/);
+  assert.match(pf, /<OverlayTrigger[\s\S]*lines=\{facts\.neighborhood\.sources\}/);
+  assert.match(pf, /<OverlayTrigger[\s\S]*lines=\{facts\.schools\.sources\}/);
+  assert.match(pf, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.sources\}/);
+  assert.match(pf, /<OverlayTrigger[\s\S]*lines=\{facts\.nearby\.transit\.sources\}/);
+  assert.match(pf, /tabular-nums/);
 
-  // Source strings must never appear hardcoded as visible text in OpenViewer.jsx
+  // Source strings must never appear hardcoded as visible text in PropertyFacts.jsx or OpenViewer.jsx
+  const ov = read('src/views/OpenViewer.jsx');
   for (const srcLine of [
     ...c.building.sources,
     ...c.neighborhood.sources,
@@ -479,28 +506,73 @@ test('openViewerFacts overlays carry exact verified sources and OpenViewer rende
     ...c.nearby.sources,
     ...c.nearby.transit.sources,
   ]) {
+    assert.equal(pf.includes(srcLine), false, `source line should only live in openViewerFacts.js: ${srcLine}`);
     assert.equal(ov.includes(srcLine), false, `source line should only live in openViewerFacts.js: ${srcLine}`);
   }
 
-  // Verify section order: hero -> 4 stat tiles -> Neighborhood -> Schools -> Nearby -> Map -> photo gallery -> Request access
+  // Verify section order in PropertyFacts: 4 stat tiles -> Neighborhood -> Schools -> Nearby -> Map
+  const pfStats = pf.indexOf('facts.building.stats');
+  const pfNeighborhood = pf.search(/>\s*Neighborhood\s*</);
+  const pfSchools = pf.search(/>\s*Schools\s*</);
+  const pfNearby = pf.search(/>\s*Nearby\s*</);
+  const pfMap = pf.search(/>\s*Map\s*</);
+  assert.ok(pfStats > 0 && pfNeighborhood > pfStats && pfSchools > pfNeighborhood && pfNearby > pfSchools && pfMap > pfNearby);
+
+  // Verify section order in OpenViewer: hero -> PropertyFacts -> photo gallery -> Request access
   const idxHero = ov.indexOf('aria-label="Property hero"');
-  const idxStats = ov.indexOf('facts.building.stats');
-  const idxNeighborhood = ov.search(/>\s*Neighborhood\s*</);
-  const idxSchools = ov.search(/>\s*Schools\s*</);
-  const idxNearby = ov.search(/>\s*Nearby\s*</);
-  const idxMap = ov.search(/>\s*Map\s*</);
+  const idxFacts = ov.indexOf('<PropertyFacts');
   const idxPhotos = ov.indexOf('<UnitGallery');
   const idxRequest = ov.indexOf('aria-label="Request access"');
-  assert.ok(
-    idxHero > 0 &&
-    idxStats > idxHero &&
-    idxNeighborhood > idxStats &&
-    idxSchools > idxNeighborhood &&
-    idxNearby > idxSchools &&
-    idxMap > idxNearby &&
-    idxPhotos > idxMap &&
-    idxRequest > idxPhotos,
+  assert.ok(idxHero > 0 && idxFacts > idxHero && idxPhotos > idxFacts && idxRequest > idxPhotos);
+
+  // Render PropertyFacts directly for charlotte and unknown slugs.
+  const pfMod = loadJsx('src/components/PropertyFacts.jsx', {
+    '../lib/openViewerFacts.js': { getOpenViewerFacts },
+    './Shell.jsx': {
+      Card: ({ children, className }) => React.createElement('section', { className }, children),
+      CardTitle: ({ children, aside }) => React.createElement('div', null, React.createElement('h2', null, children), aside),
+      OverlayTrigger: ({ children, lines }) => React.createElement('span', { 'data-sources': (lines || []).join(' | ') }, children),
+    },
+  });
+  const charlotteHtml = renderToStaticMarkup(React.createElement(pfMod.default, { slug: 'charlotte' }));
+  assert.match(charlotteHtml, /10,800 sq ft/);
+  assert.match(charlotteHtml, /Highland Square, Akron/);
+  assert.match(charlotteHtml, /Akron Public Schools/);
+  assert.match(charlotteHtml, /METRO RTA/);
+  assert.match(charlotteHtml, /Get directions/);
+  assert.equal(renderToStaticMarkup(React.createElement(pfMod.default, { slug: 'unknown' })), '');
+});
+
+test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and supports Lender/Reviewer request form disabled in preview', () => {
+  const revSrc = read('src/views/Reviewer.jsx');
+  const viewerReqBlock = revSrc.slice(
+    revSrc.indexOf('function ViewerAccessRequest'),
+    revSrc.indexOf('function QuickOpinion'),
   );
+  assert.match(revSrc, /import\s+PropertyFacts\s+from\s+'\.\.\/components\/PropertyFacts\.jsx'/);
+  assert.match(revSrc, /import\s+\{\s*VIEWER_REQUEST_ROLES\s*\}\s+from\s+'\.\.\/lib\/requestRoles\.js'/);
+  assert.match(revSrc, /\{viewer\s*\?\s*\(\s*<>\s*<PropertyFacts\s+slug=\{deal\.slug\}\s*\/>\s*<ViewerAccessRequest\s+deal=\{deal\}\s+preview=\{preview\}\s*\/>\s*<\/>\s*\)/);
+  assert.match(viewerReqBlock, /commercial_request_viewer_access/);
+  assert.doesNotMatch(viewerReqBlock, /role="status"/);
+  assert.doesNotMatch(revSrc, /10-unit residential property/);
+
+  const rolesSrc = read('src/lib/requestRoles.js');
+  assert.match(rolesSrc, /VIEWER_REQUEST_ROLES\s*=\s*\[\s*\['lender',\s*'Lender'\],\s*\['reviewer',\s*'Reviewer'\]/);
+});
+
+test('0028 migration adds authenticated viewer upgrade RPC without anon grants or non-viewer overwrites', () => {
+  const sql = read('supabase/migrations/0028_viewer_access_upgrade.sql');
+  assert.match(sql, /^[\s\S]*begin;/i);
+  assert.match(sql, /notify pgrst,\s*'reload schema';/);
+  assert.match(sql, /commit;\s*$/i);
+  assert.doesNotMatch(sql, /\b(drop table|drop column|truncate|delete from|net\.http_post|ntfy)\b/i);
+  assert.doesNotMatch(sql, /grant\s+[^;]*\bto\s+[^;]*\b(public|anon)\b/i);
+  assert.match(sql, /grant execute on function public\.commercial_request_viewer_access\(uuid, text, text, text\) to authenticated/i);
+  assert.match(sql, /request_viewer_access[\s\S]*security definer set search_path = ''/i);
+  assert.match(sql, /v_role not in \('viewer', 'guest'\)/i);
+  assert.match(sql, /v_req_role not in \('lender', 'reviewer'\)/i);
+  assert.match(sql, /decide_request[\s\S]*and role in \('viewer', 'guest'\)/i);
+  assert.match(sql, /req\.source = 'signed_in'/i);
 });
 
 test('getOpenViewerFacts returns facts for charlotte and null for unknown or prototype slugs', () => {
