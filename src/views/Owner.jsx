@@ -8,6 +8,14 @@ import { LenderBoard } from './LenderTerms.jsx';
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when, roleLabel } from '../lib/format.js';
+import {
+  annotateSignins,
+  formatPhoenixDate,
+  formatPhoenixDateTime,
+  latestSigninByEmail,
+  signinActionLabel,
+  signinRoleLabel,
+} from '../lib/signinActivity.js';
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, roleLinkUrl, siteRules } from '../lib/site.js';
 import { summarizeOpenViews } from '../lib/openViewer.js';
 import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
@@ -48,13 +56,60 @@ const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller'];
 
 const topic = () => 'ogdeal-' + crypto.randomUUID().replaceAll('-', '');
 
-function People({ deal }) {
+export function SignInsCard({ rows }) {
+  const items = annotateSignins(rows || []);
+  return (
+    <Card className="lg:col-span-2">
+      <CardTitle>Sign-ins</CardTitle>
+      {rows === null ? (
+        <Empty>Loading…</Empty>
+      ) : items.length === 0 ? (
+        <Empty>No sign-ins yet.</Empty>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.map((item, idx) => {
+            const label = (item.display_name || '').trim() || item.email;
+            return (
+              <li
+                key={`${item.email}:${item.action}:${item.at}:${idx}`}
+                data-latest={item.isLatest ? 'true' : undefined}
+                className={`flex flex-wrap items-center justify-between gap-3 py-2.5 ${item.isLatest ? '-mx-3 rounded-xl border-l-2 border-good bg-good/5 px-3' : ''}`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <OverlayTrigger label={`Email for ${label}`} lines={[item.email]}>
+                    <span className="font-medium">{label}</span>
+                  </OverlayTrigger>
+                  <span className="rounded-full bg-warm-soft px-2 py-0.5 text-xs">{signinRoleLabel(item.role)}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.isLatest ? 'bg-good/10 text-good' : 'bg-paper text-ink-soft'}`}>
+                    {signinActionLabel(item.action)}
+                  </span>
+                </div>
+                <time dateTime={item.at} className="shrink-0 tabular-nums text-xs text-ink-soft">
+                  {formatPhoenixDateTime(item.at)}
+                </time>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+export function People({ deal }) {
   const [rows, setRows] = useState(null);
   const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
   const [seen, setSeen] = useState({});
-  const load = () => supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
+  const [signins, setSignins] = useState(null);
+  const loadSignins = () => supabase
+    .rpc('commercial_signin_activity', { p_deal: deal.id, p_limit: 200 })
+    .then(({ data, error }) => setSignins(error ? [] : data || []));
+  const load = () => {
+    supabase.from('commercial_members').select('*').eq('deal_id', deal.id).order('created_at').then(({ data }) => setRows(data || []));
+    loadSignins();
+  };
   useEffect(() => { load(); }, [deal.id]);
   // Who has actually opened their page: one view is logged per person per hour when they open the deal.
   useEffect(() => {
@@ -70,6 +125,23 @@ function People({ deal }) {
         setSeen(m);
       });
   }, [deal.id]);
+  const latestByEmail = latestSigninByEmail(signins || []);
+  const signinChip = (r) => {
+    const s = latestByEmail[(r.email || '').toLowerCase()];
+    return s
+      ? (
+        <OverlayTrigger lines={[`${signinActionLabel(s.action)} ${formatPhoenixDateTime(s.at)}`]}>
+          <span className="whitespace-nowrap rounded-full bg-good/10 px-2 py-0.5 text-xs font-medium text-good">
+            Signed in {formatPhoenixDate(s.at)}
+          </span>
+        </OverlayTrigger>
+      )
+      : (
+        <span className="whitespace-nowrap rounded-full bg-warm-soft px-2 py-0.5 text-xs font-medium text-ink-soft">
+          Never signed in
+        </span>
+      );
+  };
   const seenChip = (r) => {
     const s = seen[(r.email || '').toLowerCase()];
     if (r.status !== 'active') return null;
@@ -105,8 +177,9 @@ function People({ deal }) {
           <ul className="divide-y divide-line">
             {rows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium">{r.display_name || r.email} <span className="ml-1 rounded-full bg-warm-soft px-2 py-0.5 text-xs">{roleLabel[r.role]}</span></p>
+                  {signinChip(r)}
                   {seenChip(r)}
                   <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
                     r.invited_by_email && <>Invited by {r.invited_by_email}</>,
@@ -147,6 +220,7 @@ function People({ deal }) {
             className="min-h-[40px] w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
         </form>
       </Card>
+      <SignInsCard rows={signins} />
       <OpenViewerLink deal={deal} />
       <RoleLinks deal={deal} onJoined={load} />
     </div>

@@ -33,6 +33,10 @@ test('no Drive folder id or secrets committed in source', () => {
       assert.doesNotMatch(s, /sb_secret_|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, f);
       const withoutEnvRead = s.replace(/Deno\.env\.get\(\s*['"]SUPABASE_SERVICE_ROLE_KEY['"]\s*\)/g, '');
       assert.doesNotMatch(withoutEnvRead, /service_role/i, f);
+    } else if (/[\\/]supabase[\\/]migrations[\\/]0029_owner_signin_activity\.sql$/.test(f)) {
+      assert.doesNotMatch(s, /sb_secret_|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, f);
+      const withoutRoleGuard = s.replace(/<>\s*'service_role'/gi, '');
+      assert.doesNotMatch(withoutRoleGuard, /service_role/i, f);
     } else {
       assert.doesNotMatch(s, /service_role|sb_secret_/i, f);
     }
