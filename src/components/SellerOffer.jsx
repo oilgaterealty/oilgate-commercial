@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { Button, Card, CardTitle, Empty, Field } from './Shell.jsx';
 import { PUBLIC_SITE } from '../lib/site.js';
-import { ExecutionPlanCard, LeadOfferCard } from './LeadOfferCard.jsx';
+import { ExecutionPlanCard, LeadOfferCard, SellerProtectionsCard } from './LeadOfferCard.jsx';
 
 export const coveredLabelOf = (structure) => (structure === 'wrap' ? 'Your note covered' : 'Your costs covered');
 
@@ -82,13 +82,14 @@ export function InviteSeller({ deal, preview, inline = false, onInvited }) {
 export default function SellerOffer({ deal, preview, onAsk, canInvite = false }) {
   const { loaded, row, summary } = useSellerOffer(deal);
   if (!loaded) return null;
-  const invite = canInvite ? <InviteSeller deal={deal} preview={preview} /> : null;
-  if (!summary) return <div className="space-y-5"><Card><CardTitle>The offer</CardTitle><Empty>No offer yet.</Empty></Card>{invite}</div>;
   const c = deal.seller_content || {};
+  const invite = canInvite ? <InviteSeller deal={deal} preview={preview} /> : null;
+  if (!summary) return <div className="space-y-5"><Card><CardTitle>The offer</CardTitle><Empty>No offer yet.</Empty></Card><SellerProtectionsCard content={c} />{invite}</div>;
   return (
     <div className="space-y-5">
       {invite}
       <LeadOfferCard deal={deal} content={c} summary={summary} preview={preview} sellerOnly coveredLabel={coveredLabelOf(row?.structure)} onAsk={onAsk} />
+      <SellerProtectionsCard content={c} />
       <ExecutionPlanCard content={c} summary={summary} sellerOnly />
     </div>
   );

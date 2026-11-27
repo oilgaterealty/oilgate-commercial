@@ -30,6 +30,8 @@ import OwnerRentValue from '../components/OwnerRentValue.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
 import Activity from '../components/Activity.jsx';
 
+const ProtectionsEditor = lazy(() => import('../components/ProtectionsEditor.jsx'));
+
 const CityRecords = lazy(() => import('./CityRecords.jsx'));
 const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./DealPlan.jsx'));
 
@@ -480,6 +482,9 @@ export default function Owner({ deal: initial, me, tab }) {
             <Settings deal={deal} onSaved={setDeal} />
             <OwnerAlerts />
           </div>
+          <Suspense fallback={null}>
+            <ProtectionsEditor deal={deal} onSaved={setDeal} />
+          </Suspense>
           <Notes deal={deal} me={me} />
         </section>
       )}

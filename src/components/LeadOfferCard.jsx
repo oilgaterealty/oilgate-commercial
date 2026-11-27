@@ -167,6 +167,29 @@ export function validProofItems(content = {}) {
     .filter((item) => item.title || item.detail);
 }
 
+export function normalizeProtections(content = {}) {
+  if (!Array.isArray(content?.protections)) return [];
+  return content.protections.map((item) => String(item ?? '').trim()).filter(Boolean);
+}
+
+export function SellerProtectionsCard({ content }) {
+  const items = normalizeProtections(content);
+  if (items.length === 0) return null;
+  return (
+    <Card>
+      <CardTitle>Your protections</CardTitle>
+      <ul aria-label="Your protections" className="space-y-2.5 text-sm leading-relaxed text-ink">
+        {items.map((item, idx) => (
+          <li key={idx} className="flex items-start gap-2.5">
+            <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export const coveredWord = (c) => (c === 'yes' ? 'covered' : c);
 
 // Single plain-English offer card shown to the seller. Never renders multiple options.
