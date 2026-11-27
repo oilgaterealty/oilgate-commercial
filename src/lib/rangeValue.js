@@ -1,5 +1,25 @@
 import { money } from './dealmath.js';
 
+export function defaultMarketRent(mr) {
+  if (!mr) return 0;
+  const low = +mr.low;
+  const high = +mr.high;
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return 0;
+  if (high <= low) return Math.round(low);
+  return Math.round((low + high) / 2);
+}
+
+export function effectiveMarketRange(mr, base = null) {
+  if (!mr) return null;
+  const baseLow = +base?.marketRentLow;
+  const baseHigh = +base?.marketRentHigh;
+  const low = Number.isFinite(+mr.low) && +mr.low > 0 ? +mr.low : (Number.isFinite(baseLow) && baseLow > 0 ? baseLow : 0);
+  const rawHigh = Number.isFinite(+mr.high) && +mr.high > 0 ? +mr.high : 0;
+  const high = Number.isFinite(baseHigh) && baseHigh > rawHigh ? baseHigh : rawHigh;
+  if (!(low > 0) || !(high >= low)) return mr;
+  return { ...mr, low, high };
+}
+
 export function rangeValue(mr, rent) {
   if (!mr || !(mr.capRate > 0)) return 0;
   const rentMo = mr.units * rent * (1 - mr.vacancyPct / 100);

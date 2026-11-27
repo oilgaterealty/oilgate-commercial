@@ -5,6 +5,7 @@ import { when } from '../lib/format.js';
 import { lenderBoard } from '../lib/v63.js';
 import { Card, CardTitle, Button, Empty } from '../components/Shell.jsx';
 import { money } from '../lib/dealmath.js';
+import { buildLenderPackage, LENDER_LENSES } from '../lib/lenderModel.js';
 import { sendToOwner } from '../components/Messages.jsx';
 
 export const LENDER_PROGRAMS = {
@@ -39,36 +40,38 @@ export const LENDER_QUESTIONS = [
 
 export const questionsForProgram = (program) => LENDER_QUESTIONS.filter((q) => q.programs.includes(program));
 
-// The buyer's wanted terms, filled in from the plan numbers only. The lender can change any of them.
+// The buyer's wanted terms, derived from the Plan 1A bridge + refi model numbers. The lender can counter any field.
 // Fields the plan says nothing about (prepayment, recourse, seller seconds, both parcels) stay blank for the lender.
-export function wantedTerms(program, guide, base) {
-  const rf = guide?.refi || {};
-  const rc = rf.renoCompare || null;
-  const budget = +(guide?.costSummary?.total ?? 0);
-  const closing = +(rf.closingInLoan ?? 0);
-  const ltv = rf.ltvShownPct || base?.refiLtv;
-  const units = 10;
-  const repair = budget > 0 ? {
-    purchase_advances: `Repairs only: ${money(budget + closing)} (${money(budget)} repair budget plus ${money(closing)} closing). The seller finances the purchase.`,
-    rehab_draws: `${money(budget)} repair budget, drawn as the work is done`,
-    ...(rc ? { rates_fees: `${rc.regularRate}% interest only, ${rc.regularPointsPct} points` } : {}),
+export function wantedTerms(program, guide, base, offer = null) {
+  const pkg = buildLenderPackage({ base, offer, guide });
+  const units = pkg.units;
+  const hasBridgeDeal = pkg.purchase > 0 || pkg.repairs > 0;
+  const bridge = hasBridgeDeal ? {
+    purchase_advances: pkg.purchase > 0
+      ? `100% of cost ($0 down): ${money(pkg.totalLoan)} (${money(pkg.purchase)} purchase + ${money(pkg.repairs)} repairs + ${money(pkg.feesTotal)} closing and fees)`
+      : `${money(pkg.totalLoan)} (${money(pkg.repairs)} repair budget + ${money(pkg.feesTotal)} closing and fees)`,
+    rehab_draws: `${money(pkg.repairs)} repair budget, drawn as the work is done`,
+    rates_fees: `${pkg.ratePct}% interest only (${money(pkg.monthlyInterest)}/mo), ${pkg.pointsPct} points (${money(pkg.points)})${pkg.processing > 0 ? `, ${money(pkg.processing)} processing` : ''}`,
   } : {};
-  const refi = {
+  const ltv = pkg.refiCheck.refiLtv;
+  const newLoan = pkg.refiCheck.newLoan;
+  const hasRefiDeal = Boolean(guide?.refi || base?.value || base?.refiRate || base?.refiYears || base?.refiDscr);
+  const refi = hasRefiDeal ? {
     ...(ltv ? { purchase_advances: `${ltv}% of value at the refinance` } : {}),
     ...(base?.refiRate ? { rates_fees: `${base.refiRate}%` } : {}),
     ...(base?.refiYears ? { term_extensions: `${base.refiYears}-year loan` } : {}),
     ...(base?.refiDscr ? { coverage_income: `${base.refiDscr}x DSCR at full occupancy` } : {}),
     occupancy_seasoning: `Refinance once all ${units} units are rented`,
-    ...(ltv ? { refinance_limits: `${ltv}% of value; pays off both seller notes` } : {}),
-  };
+    ...(ltv ? { refinance_limits: `${ltv}% of value${newLoan > 0 ? ` (${money(newLoan)})` : ''}; pays off the bridge loan` } : {}),
+  } : {};
   const shared = { str_income: +(base?.strUnits ?? 0) > 0 ? '' : 'Not applicable', legal_units_code: `${units} units` };
   let byKey;
-  if (program === 'bridge') byKey = { ...repair, ...shared };
+  if (program === 'bridge') byKey = { ...bridge, ...shared };
   else if (program === 'dscr') byKey = { ...refi, ...shared };
   else byKey = {
-    ...repair, ...refi, ...shared,
-    ...(repair.purchase_advances && refi.purchase_advances ? { purchase_advances: `Repair loan: ${repair.purchase_advances} Refinance: ${refi.purchase_advances}.` } : {}),
-    ...(repair.rates_fees && refi.rates_fees ? { rates_fees: `Repair loan: ${repair.rates_fees}. Refinance: ${refi.rates_fees}.` } : {}),
+    ...bridge, ...refi, ...shared,
+    ...(bridge.purchase_advances && refi.purchase_advances ? { purchase_advances: `Bridge loan: ${bridge.purchase_advances}. Takeout refi: ${refi.purchase_advances}.` } : {}),
+    ...(bridge.rates_fees && refi.rates_fees ? { rates_fees: `Bridge loan: ${bridge.rates_fees}. Takeout refi: ${refi.rates_fees}.` } : {}),
   };
   const out = {};
   for (const q of questionsForProgram(program)) if (byKey[q.key]) out[q.label] = byKey[q.key];
@@ -256,8 +259,9 @@ export function LenderTermField({ question, ask, value, countering, preview, onO
   );
 }
 
-export default function LenderTerms({ deal, me, preview, guide = null, base = null }) {
-  const [program, setProgram] = useState('bridge');
+export default function LenderTerms({ deal, me, preview, guide = null, base = null, offer = null, lenderLens = null }) {
+  const [program, setProgram] = useState(() => (lenderLens && LENDER_LENSES[lenderLens]?.program) || 'bridge');
+  const [savedType, setSavedType] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [editing, setEditing] = useState({});
   const [company, setCompany] = useState('');
@@ -267,8 +271,14 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
 
+  useEffect(() => {
+    if (!savedType && lenderLens && LENDER_LENSES[lenderLens]?.program) {
+      setProgram(LENDER_LENSES[lenderLens].program);
+    }
+  }, [lenderLens, savedType]);
+
   const questions = questionsForProgram(program);
-  const asks = wantedTerms(program, guide, base);
+  const asks = wantedTerms(program, guide, base, offer);
   const progDraft = drafts[program] || {};
   const progEditing = editing[program] || {};
   const values = resolveTermValues(asks, progDraft);
@@ -280,7 +290,10 @@ export default function LenderTerms({ deal, me, preview, guide = null, base = nu
       setMine(data);
       setCompany(data.company_name || '');
       if (data.terms?._contact) setName(data.terms._contact);
-      if (LENDER_PROGRAMS[data.lender_type]) setProgram(data.lender_type);
+      if (LENDER_PROGRAMS[data.lender_type]) {
+        setSavedType(data.lender_type);
+        setProgram(data.lender_type);
+      }
       setDrafts(data.terms || {});
     });
   }, [deal.id, me?.uid, preview]);

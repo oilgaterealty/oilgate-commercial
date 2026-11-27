@@ -148,6 +148,7 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
     '../lib/format.js': formatMod,
     '../lib/v63.js': v63Mod,
     '../lib/dealmath.js': await import('../src/lib/dealmath.js'),
+    '../lib/lenderModel.js': await import('../src/lib/lenderModel.js'),
     '../components/Shell.jsx': { Card, CardTitle, Button, Empty },
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });

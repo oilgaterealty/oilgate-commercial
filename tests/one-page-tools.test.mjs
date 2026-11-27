@@ -14,6 +14,8 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
+import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES } from '../src/lib/lenderModel.js';
+import { effectiveMarketRange } from '../src/lib/rangeValue.js';
 import { plain } from '../src/lib/plain.js';
 import { breakEvenCount } from '../src/lib/occupancy.js';
 
@@ -183,6 +185,8 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/supabase.js': { supabase: supabaseStub },
     '../lib/dealmath.js': { buildLeadStory, evaluate, money, valueSummary },
+    '../lib/lenderModel.js': { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES },
+    '../lib/rangeValue.js': { effectiveMarketRange },
     '../lib/plain.js': { plain },
     '../lib/occupancy.js': { breakEvenCount },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: SAMPLE_OFFERS, base: SAMPLE_BASE, error: '' }) },

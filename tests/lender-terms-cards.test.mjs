@@ -56,6 +56,7 @@ async function loadLenderTermsModule() {
     '../lib/format.js': formatMod,
     '../lib/v63.js': v63Mod,
     '../lib/dealmath.js': dealmathMod,
+    '../lib/lenderModel.js': await import('../src/lib/lenderModel.js'),
     '../components/Shell.jsx': { Card, CardTitle, Button, Empty },
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });
@@ -95,15 +96,15 @@ test('ask cards render full unwrapped text, Change button, required asterisks, a
   for (const key of ['purchase_advances', 'rehab_draws', 'rates_fees', 'str_income', 'legal_units_code']) {
     assert.match(html, new RegExp(`data-ask-card="${key}"`));
   }
-  assert.ok(html.includes('Repairs only: $129,550 ($124,050 repair budget plus $5,500 closing). The seller finances the purchase.'));
+  assert.ok(html.includes('$133,515 ($124,050 repair budget + $9,465 closing and fees)'));
   assert.ok(html.includes('$124,050 repair budget, drawn as the work is done'));
-  assert.ok(html.includes('11% interest only, 2.5 points'));
+  assert.ok(html.includes('13% interest only ($1,446/mo), 2 points ($2,670), $1,295 processing'));
   assert.match(html, /data-ask-card="str_income"[\s\S]*?>Not applicable<\/p>/);
   assert.match(html, /data-ask-card="legal_units_code"[\s\S]*?>10 units<\/p>/);
 
-  assert.doesNotMatch(html, /<input[^>]*value="Repairs only:/);
+  assert.doesNotMatch(html, /<input[^>]*value="\$133,515/);
   assert.doesNotMatch(html, /<input[^>]*value="\$124,050/);
-  assert.doesNotMatch(html, /<input[^>]*value="11% interest only/);
+  assert.doesNotMatch(html, /<input[^>]*value="13% interest only/);
   assert.doesNotMatch(html, /truncate|text-ellipsis|line-clamp/);
 
   // 5 ask cards -> 5 Change buttons; remaining 7 no-ask bridge fields -> 7 empty inputs, zero Not applicable buttons.
@@ -113,9 +114,16 @@ test('ask cards render full unwrapped text, Change button, required asterisks, a
   assert.equal((html.match(/>\*<\/span>/g) || []).length, 12);
   assert.doesNotMatch(html, />Use ours<\/button>/);
 
-  // DSCR & Both programs resolve asks cleanly too.
-  assert.equal(Object.keys(lt.wantedTerms('dscr', GUIDE, BASE)).length, 8);
+  // DSCR & Both programs resolve asks cleanly too; Plan 1A full bridge includes purchase + repairs + fees.
+  const dscrAsks = lt.wantedTerms('dscr', GUIDE, BASE);
+  assert.equal(Object.keys(dscrAsks).length, 8);
+  assert.match(dscrAsks['Refinance limits, cash-out caps and reserves'], /pays off the bridge loan/);
+  assert.doesNotMatch(dscrAsks['Refinance limits, cash-out caps and reserves'], /seller notes/);
   assert.equal(Object.keys(lt.wantedTerms('both', GUIDE, BASE)).length, 9);
+
+  const plan1aAsks = lt.wantedTerms('bridge', GUIDE, { ...BASE, purchasePrice: 275000, bridgeRepairs: 140000, bridgeClosing: 5500 });
+  assert.match(plan1aAsks['Purchase advances and LTV/LTC caps'], /100% of cost \(\$0 down\): \$430,403 \(\$275,000 purchase \+ \$140,000 repairs \+ \$15,403 closing and fees\)/);
+  assert.match(plan1aAsks['Interest rate, origination points and fees'], /13% interest only \(\$4,663\/mo\), 2 points \(\$8,608\), \$1,295 processing/);
 });
 
 test('tapping Change opens an empty input with our ask as placeholder, mic, and Use ours link (no Not applicable button); Use ours restores the ask card', async () => {
@@ -148,7 +156,7 @@ test('tapping Change opens an empty input with our ask as placeholder, mic, and 
   assert.doesNotMatch(editorHtml, /data-ask-card=/);
   assert.match(editorHtml, new RegExp(`id="lt-${q.key}"`));
   assert.match(editorHtml, /value=""/);
-  assert.match(editorHtml, /placeholder="11% interest only, 2\.5 points"/);
+  assert.match(editorHtml, /placeholder="13% interest only \(\$1,446\/mo\), 2 points \(\$2,670\), \$1,295 processing"/);
   assert.match(editorHtml, /aria-label="Dictate Interest rate, origination points and fees"/);
   assert.doesNotMatch(editorHtml, />Not applicable</);
   assert.doesNotMatch(editorHtml, /aria-pressed=/);
@@ -172,7 +180,7 @@ test('tapping Change opens an empty input with our ask as placeholder, mic, and 
     onChange: () => {},
   }));
   assert.match(cardHtml, /data-ask-card="rates_fees"/);
-  assert.match(cardHtml, /11% interest only, 2\.5 points/);
+  assert.match(cardHtml, /13% interest only \(\$1,446\/mo\), 2 points \(\$2,670\), \$1,295 processing/);
   assert.match(cardHtml, />Change</);
   assert.doesNotMatch(cardHtml, /<input/);
 });
@@ -209,10 +217,10 @@ test('untouched asks submit as our ask in the exact existing data shape, and cou
   // Untouched ask values are submitted verbatim inside terms.bridge and body.
   assert.equal(
     sub.terms.bridge['Purchase advances and LTV/LTC caps'],
-    'Repairs only: $129,550 ($124,050 repair budget plus $5,500 closing). The seller finances the purchase.',
+    '$133,515 ($124,050 repair budget + $9,465 closing and fees)',
   );
   assert.equal(sub.terms.bridge['Rehab holdbacks and draw process'], '$124,050 repair budget, drawn as the work is done');
-  assert.equal(sub.terms.bridge['Interest rate, origination points and fees'], '11% interest only, 2.5 points');
+  assert.equal(sub.terms.bridge['Interest rate, origination points and fees'], '13% interest only ($1,446/mo), 2 points ($2,670), $1,295 processing');
   assert.equal(sub.terms.bridge['Recourse and guarantor requirements'], 'Custom recourse');
   assert.equal(sub.terms._contact, 'Jordan Lee');
   assert.equal(sub.terms.dscr['Loan term and extension options'], '30-year loan');

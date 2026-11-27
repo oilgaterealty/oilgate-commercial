@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Card, CardTitle, Button, OverlayTrigger } from './Shell.jsx';
 import { money, moneyK } from '../lib/dealmath.js';
-import { rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
+import { defaultMarketRent, rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
+
+const midRent = (mr) => (
+  typeof defaultMarketRent === 'function'
+    ? defaultMarketRent(mr)
+    : mr && Number.isFinite(+mr.low) && Number.isFinite(+mr.high)
+      ? Math.round((+mr.low + +mr.high) / 2)
+      : 0
+);
 
 export { whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
 
@@ -53,6 +61,13 @@ function Ranges({ data, showMarket, sourceLines, Trigger, rent, setRent }) {
             <span className="tabular-nums">{money(rent)}</span>
           </label>
           <input id="market-rent-what-if" type="range" min={mr.low} max={mr.high} step={1} value={rent} onChange={(e) => setRent(+e.target.value)} className="mt-2 w-full accent-ink" />
+          <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-ink-soft">
+            <span>{money(mr.low)}</span>
+            <button type="button" onClick={() => setRent(midRent(mr))} className="underline decoration-dotted underline-offset-4 hover:text-ink">
+              {money(midRent(mr))}
+            </button>
+            <span>{money(mr.high)}</span>
+          </div>
           <dl className="mt-2 grid grid-cols-2 gap-2 text-sm tabular-nums">
             <div>
               <dt className="text-ink-soft">Rent in /mo</dt>
@@ -86,9 +101,9 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
   const mr = showMarket && data?.marketRange ? data.marketRange : null;
-  const [rent, setRent] = useState(mr ? mr.low : 0);
+  const [rent, setRent] = useState(mr ? midRent(mr) : 0);
   useEffect(() => { setDraft({}); }, [data]);
-  useEffect(() => { if (mr) setRent(mr.low); }, [mr?.low, mr?.high]);
+  useEffect(() => { if (mr) setRent(midRent(mr)); }, [mr?.low, mr?.high]);
   if (!isRentValue(data)) return null;
 
   const val = (u, k) => (draft[u.id] && k in draft[u.id] ? draft[u.id][k] : u[k] ?? '');

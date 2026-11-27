@@ -135,18 +135,18 @@ test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fi
   const { mergeViews } = mod;
   assert.equal(mergeViews(whatIfViews(rv, 780)).length, 2);
 
-  // With slider (showMarket + marketRange): starts at mr.low = 780
+  // With slider (showMarket + marketRange): defaults to midpoint of mr.low..mr.high = 900
   const withSlider = renderToStaticMarkup(React.createElement(mod.default, { data: rv, showMarket: true, hideUnits: true }));
-  const expectedAfterVac = money(10 * 780 * (1 - 7 / 100)); // $7,254
+  const expectedAfterVac = money(10 * 900 * (1 - 7 / 100)); // $8,370
   assert.match(withSlider, new RegExp(`Rent in /mo</dt><dd[^>]*><span>${expectedAfterVac.replace('$', '\\$')}</span>`));
-  assert.doesNotMatch(withSlider, /Rent in \/mo<\/dt><dd[^>]*>(?:<span>)?\$7,800/);
-  const rentInOverlay = overlays.find((o) => o.text === expectedAfterVac && o.lines.some((l) => /10 × \$780\/mo = \$7,800\/mo/.test(l)));
+  assert.doesNotMatch(withSlider, /Rent in \/mo<\/dt><dd[^>]*>(?:<span>)?\$9,000/);
+  const rentInOverlay = overlays.find((o) => o.text === expectedAfterVac && o.lines.some((l) => /10 × \$900\/mo = \$9,000\/mo/.test(l)));
   assert.ok(rentInOverlay, 'Rent in /mo trigger has gross and vacancy overlay');
-  assert.ok(rentInOverlay.lines.some((l) => /Less 7% vacancy: \$7,254\/mo/.test(l)));
+  assert.ok(rentInOverlay.lines.some((l) => /Less 7% vacancy: \$8,370\/mo/.test(l)));
   assert.doesNotMatch(withSlider, /min-w-\[480px\]/);
-  assert.match(withSlider, /\$580<\/th>/);
-  assert.match(withSlider, /\$780<\/th>/);
-  assert.match(withSlider, /\$980<\/th>/);
+  assert.match(withSlider, /\$700<\/th>/);
+  assert.match(withSlider, /\$900<\/th>/);
+  assert.match(withSlider, /\$1,100<\/th>/);
   assert.doesNotMatch(withSlider, /<p[ >]/);
 
   // Without slider (reviewer): keeps saved views/grid and applies min-w-[480px] when 3+ view columns exist

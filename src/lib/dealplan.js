@@ -22,6 +22,10 @@ export const PLAN_DEFAULTS = {
   rehabStartWeek: 0, // when unit work begins
   lenderRate: 0, // short-term lender, interest only, % per year
   lenderPoints: 0, // % of each draw
+  bridgeRate: 13, // Plan 1A bridge rate, interest only, % per year
+  bridgePoints: 2, // Plan 1A bridge origination points (%)
+  bridgeProcessing: 1295, // Plan 1A bridge processing fee ($)
+  bridgeClosing: 0, // Plan 1A bridge title/closing costs ($)
   contingency: 0, // repair contingency ($)
   lenderSeasoningMonths: null, // months of stabilized operations required by lender, null until confirmed
   lenderEligibilityConfirmed: false, // whether a permanent lender has confirmed refinance eligibility
@@ -1461,8 +1465,11 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
 
   // Market rent range per unit (lender and owner only; the reviewer's copy drops it) and the value range:
   // the locked value is the floor, the high end is value by income after repairs.
-  const lowRent = plan.marketRent ? plan.marketRent.low : null;
-  const highRent = plan.marketRent ? plan.marketRent.high : null;
+  const baseLowRent = optNum(baseIn?.marketRentLow);
+  const baseHighRent = optNum(baseIn?.marketRentHigh);
+  const lowRent = plan.marketRent ? plan.marketRent.low : (baseLowRent && baseLowRent > 0 ? baseLowRent : null);
+  const rawHighRent = plan.marketRent ? plan.marketRent.high : (baseHighRent && baseHighRent > 0 ? baseHighRent : null);
+  const highRent = rawHighRent !== null && baseHighRent && baseHighRent > rawHighRent ? baseHighRent : rawHighRent;
   const marketRange = lowRent !== null && highRent !== null && highRent >= lowRent && lowRent > 0
     ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter }
     : null;
@@ -1476,8 +1483,35 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
 }
 
 export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = []) {
-  const cs = buildCostSummary(baseIn, planIn);
-  const table = unitsRentedTable(baseIn, planIn, offerIn);
+  const plan = normalizePlan(planIn);
+  const cs = buildCostSummary(baseIn, plan);
+  const table = unitsRentedTable(baseIn, plan, offerIn);
+  const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
+  const bridge = {
+    purchase: Math.max(0, num(baseIn?.purchasePrice, 0))
+      || Math.max(0, num(x.note, 0))
+      || Math.max(0, num(x.optionPrice, 0))
+      || Math.max(0, num(x.buyout, 0))
+      || Math.max(0, num(x.price, 0))
+      || Math.max(0, num(plan.sellerLoanBalance, 0)),
+    repairs: Math.max(0, num(baseIn?.bridgeRepairs, 0))
+      || cs.total
+      || Math.max(0, num(baseIn?.rehab, 0)),
+    closing: Math.max(0, num(baseIn?.bridgeClosing, 0))
+      || Math.max(0, num(plan.bridgeClosing, 0))
+      || Math.max(0, num(x.exerciseClosing, 0))
+      || Math.max(0, num(x.closing, 0))
+      || Math.max(0, num(table.refi?.closingInLoan, 0)),
+    processing: baseIn?.bridgeProcessing !== undefined && baseIn?.bridgeProcessing !== ''
+      ? Math.max(0, num(baseIn.bridgeProcessing, 0))
+      : Math.max(0, num(plan.bridgeProcessing, PLAN_DEFAULTS.bridgeProcessing)),
+    pointsPct: baseIn?.bridgePointsPct !== undefined && baseIn?.bridgePointsPct !== ''
+      ? Math.max(0, num(baseIn.bridgePointsPct, 0))
+      : Math.max(0, num(plan.bridgePoints, PLAN_DEFAULTS.bridgePoints)),
+    ratePct: baseIn?.bridgeRate !== undefined && baseIn?.bridgeRate !== ''
+      ? Math.max(0, num(baseIn.bridgeRate, 0))
+      : Math.max(0, num(plan.bridgeRate, PLAN_DEFAULTS.bridgeRate)),
+  };
   return {
     version: 2,
     model: 'units_rented',
@@ -1496,7 +1530,8 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
     oneBudget: table.oneBudget,
     renoFromSeller: table.renoFromSeller,
     refi: table.refi,
-    rentValue: rentValue(baseIn, planIn, offerIn),
+    bridge,
+    rentValue: rentValue(baseIn, plan, offerIn),
   };
 }
 

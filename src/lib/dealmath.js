@@ -29,6 +29,8 @@ export const BASE_DEFAULTS = {
   units: 10, rent: 0, vacancyPct: 7,
   taxes: 0, insurance: 0, waterMo: 0, emptyUnitUtilMo: 0, utilities: 0, admin: 0, turns: 0,
   mgmtPct: 0, reservesPerUnit: 300, value: 0, rehab: 0,
+  purchasePrice: 0, bridgeRepairs: 0, bridgeClosing: 0, bridgeProcessing: 1295, bridgePointsPct: 2, bridgeRate: 13,
+  marketRentLow: 0, marketRentHigh: 0,
   refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
 };
 
