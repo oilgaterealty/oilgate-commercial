@@ -114,3 +114,8 @@ or send as one. Unconfirmed loan details remain blank until the owner enters the
 ### Charlotte lease-up
 
 Migration 0009 adds private tenant, walkthrough, realtor media, valuation and owner-only sections. It does not change the auth configuration or existing records. Dictation downloads Whisper on first use and transcribes on-device; only explicitly saved walkthrough recordings and data are uploaded to the existing private Supabase project. The owner’s units switch controls access to a tenth walkthrough and tenant assignment. The comp calculator does not change the underlying underwriting model.
+
+## Database migrations ship themselves
+
+Put a numbered `.sql` file in `supabase/migrations/` (for example `0030_description.sql`) and push to `main`. GitHub Actions (`.github/workflows/db-migrate.yml`) runs `npm test` and then executes `scripts/apply-migrations.mjs` to apply any pending migrations in filename order through the Supabase Management API. The `SUPABASE_ACCESS_TOKEN` secret is already set on the repo, so no manual approval or database password is needed. You can also trigger the workflow manually via `workflow_dispatch`, or preview pending files locally with `node scripts/apply-migrations.mjs --dry-run`.
+Migrations numbered `<= baseline` in `supabase/migrations-baseline.json` are treated as already applied; bump `baseline` only on purpose.
