@@ -4,6 +4,7 @@ import { roleLabel } from '../lib/format.js';
 import { setDealNames, buyerName } from '../lib/people.js';
 import Shell, { Card, Empty, PropertyHead } from '../components/Shell.jsx';
 import { PUBLIC_SITE, SITE_KIND, roleAllowedHere } from '../lib/site.js';
+import { normalizeLenderLens } from '../lib/lenderLens.js';
 
 const Owner = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Owner.jsx'));
 const Realtor = import.meta.env.VITE_SITE_KIND === 'seller' ? null : lazy(() => import('./Realtor.jsx'));
@@ -22,7 +23,7 @@ function Page({ role, ...p }) {
   return null;
 }
 
-export default function DealRoom({ slug, tab, sub, session }) {
+export default function DealRoom({ slug, tab, sub, session, urlLens = '' }) {
   const [state, setState] = useState({ loading: true });
   const viewing = tab === 'view';
 
@@ -34,7 +35,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
         supabase.from('commercial_deals').select('*').eq('slug', slug).maybeSingle(),
       ]);
       if (!alive) return;
-      const { data: member } = await supabase.from('commercial_members').select('display_name,ntfy_topic,role').eq('deal_id', deal?.id ?? '00000000-0000-0000-0000-000000000000').eq('email', session.user.email.toLowerCase()).maybeSingle();
+      const { data: member } = await supabase.from('commercial_members').select('display_name,company,default_lens,ntfy_topic,role').eq('deal_id', deal?.id ?? '00000000-0000-0000-0000-000000000000').eq('email', session.user.email.toLowerCase()).maybeSingle();
       if (!alive) return;
       setState({ loading: false, role, deal, member });
       if (deal && role && role !== 'owner' && roleAllowedHere(SITE_KIND, role)) {
@@ -50,7 +51,14 @@ export default function DealRoom({ slug, tab, sub, session }) {
 
   // Names follow who is looking: the seller (and "See as seller") never gets the buyer's name.
   setDealNames(state.deal, viewing && state.role === 'owner' && PREVIEWABLE.includes(sub) ? sub : state.role);
-  const me = { uid: session.user.id, email: session.user.email.toLowerCase(), name: state.member?.display_name || (state.role === 'owner' && state.deal ? buyerName(state.deal) : '') };
+  const me = {
+    uid: session.user.id,
+    email: session.user.email.toLowerCase(),
+    name: state.member?.display_name || (state.role === 'owner' && state.deal ? buyerName(state.deal) : ''),
+    company: state.member?.company || '',
+  };
+  const cleanUrlLens = normalizeLenderLens(urlLens);
+  const initialLens = cleanUrlLens || normalizeLenderLens(state.member?.default_lens) || 'bridge';
 
   if (state.loading) return <Shell session={session}><Empty>Loading…</Empty></Shell>;
   if (!state.deal || !state.role) {
@@ -81,7 +89,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
         </div>
         <Shell head={<PropertyHead deal={state.deal} role={sub} />} wide={sub === 'seller'}>
           <Suspense fallback={<Empty>Loading…</Empty>}>
-            <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview' }} preview tab={innerTab} />
+            <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview', company: '' }} preview tab={innerTab} initialLens={cleanUrlLens || 'bridge'} urlLens={cleanUrlLens} />
           </Suspense>
         </Shell>
       </div>
@@ -91,7 +99,7 @@ export default function DealRoom({ slug, tab, sub, session }) {
   return (
     <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} role={state.role} />} wide={state.role === 'seller' || state.role === 'owner'}>
       <Suspense fallback={<Empty>Loading…</Empty>}>
-        <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} />
+        <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} initialLens={initialLens} urlLens={cleanUrlLens} />
       </Suspense>
     </Shell>
   );

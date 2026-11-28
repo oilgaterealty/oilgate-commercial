@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { slugify } from '../lib/format.js';
 import Shell, { Card, CardTitle, Button, Field, Empty } from '../components/Shell.jsx';
+import { appendLensToHash, normalizeLenderLens, readStoredLenderLens } from '../lib/lenderLens.js';
 
-export default function Home({ session }) {
+export default function Home({ session, urlLens = '' }) {
+  const activeLens = normalizeLenderLens(urlLens) || readStoredLenderLens();
   const [deals, setDeals] = useState(null);
   const [owner, setOwner] = useState(false);
   const [form, setForm] = useState({ title: '', address: '', slug: '', folder: '' });
@@ -37,9 +39,9 @@ export default function Home({ session }) {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="grid gap-4 sm:grid-cols-2">
           {deals === null && <Empty>Loading…</Empty>}
-          {deals?.length === 0 && <Card><Empty>{owner ? 'No deals yet. Add the first one.' : 'You haven’t been added to a property yet. Ask the person who invited you to add this email.'}</Empty>{!owner && <a className="mt-3 inline-flex rounded-xl border border-line px-4 py-2 text-sm font-medium hover:bg-warm-soft" href="#/request-access">Request access</a>}</Card>}
+          {deals?.length === 0 && <Card><Empty>{owner ? 'No deals yet. Add the first one.' : 'You haven’t been added to a property yet. Ask the person who invited you to add this email.'}</Empty>{!owner && <a className="mt-3 inline-flex rounded-xl border border-line px-4 py-2 text-sm font-medium hover:bg-warm-soft" href={appendLensToHash('#/request-access', activeLens)}>Request access</a>}</Card>}
           {deals?.map((d) => (
-            <a key={d.id} href={`#/d/${d.slug}`} className="group rounded-2xl border border-line bg-white p-5 transition hover:border-ink">
+            <a key={d.id} href={appendLensToHash(`#/d/${d.slug}`, activeLens)} className="group rounded-2xl border border-line bg-white p-5 transition hover:border-ink">
               <p className="text-xs uppercase tracking-wider text-warm">{d.status === 'active' ? 'Active' : d.status}</p>
               <h3 className="mt-1 font-display text-2xl font-semibold group-hover:underline">{d.title}</h3>
               <p className="mt-1 text-sm text-ink">{d.address}</p>

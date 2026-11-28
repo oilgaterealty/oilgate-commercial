@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { isLinkToken } from '../lib/site.js';
+import { appendLensToHash, normalizeLenderLens, readStoredLenderLens } from '../lib/lenderLens.js';
 import Shell, { Card, Empty } from '../components/Shell.jsx';
 
 // Opens a role link the owner shared. The token is checked by the database; this page only passes it on.
-export default function Join({ token, session }) {
+export default function Join({ token, session, urlLens = '' }) {
+  const activeLens = normalizeLenderLens(urlLens) || readStoredLenderLens();
   const [msg, setMsg] = useState('Opening your page…');
 
   useEffect(() => {
@@ -26,9 +28,9 @@ export default function Join({ token, session }) {
         );
         return;
       }
-      window.location.replace(`${window.location.pathname}#/d/${slug}`);
+      window.location.replace(`${window.location.pathname}${appendLensToHash(`#/d/${slug}`, activeLens)}`);
     })();
-  }, [token]);
+  }, [token, activeLens]);
 
   return (
     <Shell session={session} head={<h1 className="font-display text-3xl font-semibold">Welcome</h1>}>

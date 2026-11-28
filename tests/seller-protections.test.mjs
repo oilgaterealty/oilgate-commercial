@@ -18,9 +18,17 @@ const read = (p) => readFileSync(join(root, p), 'utf8');
 const EXPECTED_BULLETS = [
   'Your bank gets paid first. A neutral payment company pays your mortgage every month, and you see every payment.',
   'The building comes back to you if payments stop. A signed deed waits at the title company.',
-  "You control the repair money. It's released only as work is finished.",
   '15-day grace, then default.',
   "You're named on the insurance.",
+  'Monthly updates here: rents, leases and repair photos.',
+  'Extra collateral: one of my other rentals backs this loan too.',
+];
+
+const EXPECTED_PRIVATE_LENDER_BULLETS = [
+  'Your money is secured by a recorded first-lien mortgage on 23 & 27 Charlotte.',
+  'A neutral payment company pays you every month, and you see every payment.',
+  "You're named on the insurance.",
+  '15-day grace, then default.',
   'Monthly updates here: rents, leases and repair photos.',
   'Extra collateral: one of my other rentals backs this loan too.',
 ];
@@ -93,13 +101,13 @@ test('Owner.jsx wires ProtectionsEditor in Settings without SellerEditor or hard
   });
   for (const file of walk('src')) {
     const text = read(file);
-    for (const bullet of EXPECTED_BULLETS) {
+    for (const bullet of [...EXPECTED_BULLETS, ...EXPECTED_PRIVATE_LENDER_BULLETS]) {
       assert.ok(!text.includes(bullet), `${file} must not hardcode Charlotte bullet: ${bullet}`);
     }
   }
 });
 
-test('migration 0031_seller_protections.sql seeds the exact 7 bullets idempotently for charlotte only', () => {
+test('migration 0031_seller_protections.sql seeds the exact 6 bullets idempotently for charlotte only', () => {
   const sql = read('supabase/migrations/0031_seller_protections.sql');
   const sqlBody = sql.split(/\r?\n/).filter((line) => !line.trim().startsWith('--')).join('\n');
   assert.match(sqlBody, /update public\.commercial_deals/);
@@ -107,7 +115,24 @@ test('migration 0031_seller_protections.sql seeds the exact 7 bullets idempotent
   assert.match(sqlBody, /not \(coalesce\(seller_content, '\{\}'::jsonb\) \? 'protections'\)/);
   assert.doesNotMatch(sql, /service_role|sb_secret_|payment[- ]reserve|cushion|personal guarantee|lender|points|refi\b/i);
   const unescaped = sqlBody.replace(/''/g, "'");
+  assert.equal(EXPECTED_BULLETS.length, 6);
   for (const bullet of EXPECTED_BULLETS) {
     assert.ok(unescaped.includes(bullet), `Migration missing exact bullet: ${bullet}`);
   }
+  assert.ok(!unescaped.includes('You control the repair money'), 'Repair-money bullet must be removed');
+});
+
+test('migration 0032_lender_polish.sql cleans seller repair-money bullet and seeds 6 Private lender protections in commercial_settings', () => {
+  const sql = read('supabase/migrations/0032_lender_polish.sql');
+  const sqlBody = sql.split(/\r?\n/).filter((line) => !line.trim().startsWith('--')).join('\n');
+  const unescaped = sqlBody.replace(/''/g, "'");
+  assert.match(sqlBody, /You control the repair money/);
+  assert.match(sqlBody, /settings_lender_protections on public\.commercial_settings/);
+  assert.match(sqlBody, /key like 'lender_protections:%'/);
+  assert.match(sqlBody, /lender_protections:charlotte/);
+  assert.equal(EXPECTED_PRIVATE_LENDER_BULLETS.length, 6);
+  for (const bullet of EXPECTED_PRIVATE_LENDER_BULLETS) {
+    assert.ok(unescaped.includes(bullet), `0032 missing Private lender bullet: ${bullet}`);
+  }
+  assert.ok(!unescaped.includes('Repair money is released only as work is finished'), 'Private lender repair-money bullet must be omitted');
 });

@@ -2,7 +2,7 @@ import { buyerName } from '../lib/people.js';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { evaluate, money, valueSummary } from '../lib/dealmath.js';
-import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES } from '../lib/lenderModel.js';
+import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES, parseLenderProtections } from '../lib/lenderModel.js';
 import { effectiveMarketRange } from '../lib/rangeValue.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads, FileList } from '../components/Files.jsx';
@@ -73,7 +73,7 @@ const SECTIONS = [
 const LENS_DRIVEN_SECTIONS = new Set(['overview', 'terms', 'plan', 'what-if']);
 
 // The lender's one-page workspace with three strictly isolated tabs (Bridge, Private, DSCR) driving Overview, Your terms, The plan, and What-if.
-export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' }) {
+export default function Lender({ deal, me, member = null, preview, tab, initialLens = 'bridge', urlLens = '', privateProtections = null }) {
   const root = preview ? `#/d/${deal.slug}/view/lender` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { offers: 'what-if' });
   const [lenderLens, setLenderLens] = useState(() => (LENDER_LENSES[initialLens] ? initialLens : 'bridge'));
@@ -83,6 +83,11 @@ export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' 
   const docs = visible.filter((r) => r.kind === 'document');
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [leadGuide, setLeadGuide] = useState(null);
+  const [loadedProtections, setLoadedProtections] = useState([]);
+
+  useEffect(() => {
+    if (LENDER_LENSES[urlLens]) setLenderLens(urlLens);
+  }, [urlLens]);
 
   useEffect(() => {
     let alive = true;
@@ -94,6 +99,25 @@ export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' 
     });
     return () => { alive = false; };
   }, [deal.id]);
+
+  useEffect(() => {
+    if (Array.isArray(privateProtections) || !deal?.slug) return;
+    let alive = true;
+    supabase
+      .from('commercial_settings')
+      .select('value')
+      .eq('key', `lender_protections:${deal.slug}`)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!alive) return;
+        setLoadedProtections(parseLenderProtections(data?.value));
+      });
+    return () => { alive = false; };
+  }, [deal?.slug, privateProtections]);
+
+  const protections = Array.isArray(privateProtections)
+    ? parseLenderProtections(privateProtections)
+    : loadedProtections;
 
   const b = { ...base, units: 10 };
   const plan = offers?.[0] || null;
@@ -502,6 +526,23 @@ export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' 
               </div>
             )}
 
+            {/* 3b. Private lender protections (Private tab only; owner-editable in commercial_settings) */}
+            {lenderLens === 'private' && protections.length > 0 && (
+              <div data-wb="private-protections">
+                <Card>
+                  <CardTitle>Your protections</CardTitle>
+                  <ul aria-label="Your protections" className="space-y-2.5 text-sm leading-relaxed text-ink">
+                    {protections.map((item, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5">
+                        <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </div>
+            )}
+
             {/* 4. Rent plan */}
             {(isRentValue(effectiveGuide?.rentValue) || fallbackRent) && (
               <div data-wb="rent-plan">
@@ -518,6 +559,7 @@ export default function Lender({ deal, me, preview, tab, initialLens = 'bridge' 
         <LenderTerms
           deal={deal}
           me={me}
+          member={member}
           preview={preview}
           guide={effectiveGuide}
           base={b}

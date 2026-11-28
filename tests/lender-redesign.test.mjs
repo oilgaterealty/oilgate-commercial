@@ -13,7 +13,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
 import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
-import { buildLenderPackage, LENDER_DEFAULTS, LENDER_LENSES } from '../src/lib/lenderModel.js';
+import { buildLenderPackage, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
 import { buildLeadGuide, monthlyPlan, overallRepairBudget, rentValue } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
 
@@ -202,6 +202,7 @@ async function buildLenderMocks(guide) {
     select: () => ({
       eq: () => ({
         eq: () => ({ maybeSingle: async () => ({ data: null }) }),
+        maybeSingle: async () => ({ data: null }),
         then: () => {},
       }),
     }),
@@ -212,7 +213,7 @@ async function buildLenderMocks(guide) {
     '../lib/format.js': await import('../src/lib/format.js'),
     '../lib/v63.js': await import('../src/lib/v63.js'),
     '../lib/dealmath.js': { BASE_DEFAULTS, money },
-    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES },
+    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES, parseLenderProtections },
     '../components/Shell.jsx': Shell,
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });
@@ -220,7 +221,7 @@ async function buildLenderMocks(guide) {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/supabase.js': { supabase: { from: () => noopQuery, rpc: () => ({ then: () => {} }) } },
     '../lib/dealmath.js': { evaluate, money, valueSummary },
-    '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, LENDER_LENSES },
+    '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, LENDER_LENSES, parseLenderProtections },
     '../lib/rangeValue.js': { effectiveMarketRange },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [{ ...WHITEBOARD_OFFER, seller_summary: { guide } }], base: WHITEBOARD_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
@@ -270,7 +271,9 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(bSec.overview, /non-Dutch/);
   assert.match(bSec.overview, /\$409,944/);
   assert.match(bSec.overview, /\$1,295/);
+  assert.match(bSec.overview, /rolled into the loan/);
   assert.match(bSec.overview, /Paid off by refinance after lease-up/);
+  assert.doesNotMatch(bSec.overview, /data-wb="private-protections"/);
   assert.match(bSec.terms, /Bridge terms/);
   assert.match(bSec.terms, /LTC \(% of cost\)/);
   assert.match(bSec.terms, /Number of extensions/);
@@ -282,15 +285,27 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.doesNotMatch(bAll, /\d+%\s*LTV\s*\(\$/i);
 
   // 2. PRIVATE TAB
+  const privProtections = [
+    'Your money is secured by a recorded first-lien mortgage on 23 & 27 Charlotte.',
+    'A neutral payment company pays you every month, and you see every payment.',
+    "You're named on the insurance.",
+    '15-day grace, then default.',
+    'Monthly updates here: rents, leases and repair photos.',
+    'Extra collateral: one of my other rentals backs this loan too.',
+  ];
   const privHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {
     deal: { id: 'd1', slug: 'charlotte' },
     me: { uid: 'l1', email: 'lender@example.com' },
     preview: false,
     initialLens: 'private',
+    privateProtections: privProtections,
   }));
   const pSec = sliceSections(privHtml);
   const pAll = pSec.overview + pSec.terms + pSec.plan + pSec.whatIf;
   assert.doesNotMatch(pSec.overview, /<p\b|<small\b|<caption\b/i);
+  assert.match(pSec.overview, /data-wb="private-protections"/);
+  assert.match(pSec.overview, /<h2>Your protections<\/h2>/);
+  assert.match(pSec.overview, /recorded first-lien mortgage on 23 &amp; 27 Charlotte/);
   assert.match(pSec.overview, /Private pooled loan/);
   assert.match(pSec.overview, /\$404,550/);
   assert.match(pSec.overview, /\$20,000/);
@@ -310,10 +325,12 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
     me: { uid: 'l1', email: 'lender@example.com' },
     preview: false,
     initialLens: 'dscr',
+    privateProtections: privProtections,
   }));
   const dSec = sliceSections(dscrHtml);
   const dAll = dSec.overview + dSec.terms + dSec.plan + dSec.whatIf;
   assert.doesNotMatch(dSec.overview, /<p\b|<small\b|<caption\b/i);
+  assert.doesNotMatch(dSec.overview, /data-wb="private-protections"/);
   assert.match(dSec.overview, /Commercial DSCR refinance/);
   assert.match(dSec.overview, /75% LTV/);
   assert.match(dSec.overview, /\$586,000/);

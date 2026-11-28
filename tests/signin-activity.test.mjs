@@ -167,6 +167,7 @@ test('Owner People renders Sign-ins card (name/email, role, Signed up/Signed in,
       '../lib/format.js': await import('../src/lib/format.js'),
       '../lib/signinActivity.js': await import('../src/lib/signinActivity.js'),
       '../lib/site.js': await import('../src/lib/site.js'),
+      '../lib/lenderLens.js': await import('../src/lib/lenderLens.js'),
       '../lib/openViewer.js': { summarizeOpenViews: () => ({ activeLink: null, totalViews: 0, uniqueVisitors: 0, lastViewed: null }) },
       '../components/Shell.jsx': {
         Card: ({ children, className }) => React.createElement('section', { className }, children),
@@ -255,6 +256,7 @@ test('Owner People renders Sign-ins card (name/email, role, Signed up/Signed in,
       '../lib/format.js': await import('../src/lib/format.js'),
       '../lib/signinActivity.js': await import('../src/lib/signinActivity.js'),
       '../lib/site.js': await import('../src/lib/site.js'),
+      '../lib/lenderLens.js': await import('../src/lib/lenderLens.js'),
       '../lib/openViewer.js': { summarizeOpenViews: () => ({ activeLink: null, totalViews: 0, uniqueVisitors: 0, lastViewed: null }) },
       '../components/Shell.jsx': {
         Card: ({ children, className }) => React.createElement('section', { className }, children),
@@ -367,6 +369,7 @@ test('DealRoom awaits commercial_log_view on load for every signed-in non-owner 
           },
         ),
         '../lib/site.js': { PUBLIC_SITE: 'https://example.invalid/', SITE_KIND: '', roleAllowedHere: () => true },
+        '../lib/lenderLens.js': await import('../src/lib/lenderLens.js'),
       },
       mockReact,
     );

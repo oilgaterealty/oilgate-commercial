@@ -17,6 +17,7 @@ import {
   signinRoleLabel,
 } from '../lib/signinActivity.js';
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, siteRules } from '../lib/site.js';
+import { LENDER_LENS_LABELS, LENDER_LENS_OPTIONS, normalizeLenderLens } from '../lib/lenderLens.js';
 import { summarizeOpenViews } from '../lib/openViewer.js';
 import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
 import Messages from '../components/Messages.jsx';
@@ -102,7 +103,7 @@ export function SignInsCard({ rows }) {
 
 export function People({ deal }) {
   const [rows, setRows] = useState(null);
-  const [f, setF] = useState({ email: '', role: 'realtor', display_name: '' });
+  const [f, setF] = useState({ email: '', role: 'realtor', display_name: '', company: '', lens: 'bridge' });
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
   const [seen, setSeen] = useState({});
@@ -162,18 +163,34 @@ export function People({ deal }) {
   const add = async (e) => {
     e.preventDefault();
     setErr('');
-    const row = { deal_id: deal.id, email: f.email.trim().toLowerCase(), role: f.role, display_name: f.display_name.trim() || null, ntfy_topic: ALERTED.includes(f.role) ? topic() : null };
+    const defaultLens = f.role === 'lender' ? (normalizeLenderLens(f.lens) || 'bridge') : null;
+    const row = {
+      deal_id: deal.id,
+      email: f.email.trim().toLowerCase(),
+      role: f.role,
+      display_name: f.display_name.trim() || null,
+      company: f.role === 'lender' ? f.company.trim() : '',
+      default_lens: defaultLens,
+      ntfy_topic: ALERTED.includes(f.role) ? topic() : null,
+    };
     const { error } = await supabase.from('commercial_members').upsert({ ...row, status: 'active' }, { onConflict: 'deal_id,email' });
     if (error) return setErr(error.message);
-    setDone(`${row.email} can sign in now as ${roleLabel[row.role].toLowerCase()}.`);
-    setF({ email: '', role: 'realtor', display_name: '' });
+    setDone(`${row.email} can sign in now as ${roleLabel[row.role].toLowerCase()}${defaultLens ? ` (${LENDER_LENS_LABELS[defaultLens]})` : ''}.`);
+    setF({ email: '', role: 'realtor', display_name: '', company: '', lens: 'bridge' });
     load();
   };
   const setStatus = async (r, status) => { await supabase.from('commercial_members').update({ status }).eq('id', r.id); load(); };
 
   const setRole = async (r, role) => {
     const ntfy = r.ntfy_topic || (ALERTED.includes(role) ? topic() : null);
-    await supabase.from('commercial_members').update({ role, ntfy_topic: ntfy }).eq('id', r.id);
+    const default_lens = role === 'lender' ? (normalizeLenderLens(r.default_lens) || 'bridge') : null;
+    await supabase.from('commercial_members').update({ role, ntfy_topic: ntfy, default_lens }).eq('id', r.id);
+    load();
+  };
+
+  const setLenderTab = async (r, lens) => {
+    const default_lens = normalizeLenderLens(lens) || 'bridge';
+    await supabase.from('commercial_members').update({ default_lens }).eq('id', r.id);
     load();
   };
 
@@ -191,6 +208,7 @@ export function People({ deal }) {
                   {signinChip(r)}
                   {seenChip(r)}
                   <InfoTip label={`Details for ${r.display_name || r.email}`} lines={[
+                    r.company && <>Company: {r.company}</>,
                     r.invited_by_email && <>Invited by {r.invited_by_email}</>,
                     `${r.email} · ${r.status === 'active' ? 'Has access' : 'Access removed'}${r.link_id ? ' · joined with a link' : ''}`,
                     r.ntfy_topic && r.status === 'active' && <>Alert topic: <code className="select-all">{r.ntfy_topic}</code></>,
@@ -201,6 +219,16 @@ export function People({ deal }) {
                     className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm">
                     {MEMBER_ROLES.map((k) => <option key={k} value={k}>{roleLabel[k]}</option>)}
                   </select>
+                  {r.role === 'lender' && (
+                    <select
+                      aria-label={`Lender tab for ${r.email}`}
+                      value={normalizeLenderLens(r.default_lens) || 'bridge'}
+                      onChange={(e) => setLenderTab(r, e.target.value)}
+                      className="min-h-[40px] rounded-xl border border-line bg-white px-3 py-2 text-sm"
+                    >
+                      {LENDER_LENS_OPTIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                    </select>
+                  )}
                   {r.status === 'active'
                     ? <Button kind="secondary" onClick={() => setStatus(r, 'revoked')}>Remove access</Button>
                     : <Button kind="secondary" onClick={() => setStatus(r, 'active')}>Restore</Button>}
@@ -215,18 +243,51 @@ export function People({ deal }) {
         <form onSubmit={add} className="space-y-3">
           <Field type="email" required placeholder="Their email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           <Field placeholder="Name (optional)" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} />
-          <select className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+          <select aria-label="Role" className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
             <option value="realtor">Realtor: deal, offers, walkthrough, tenants, messages, files</option>
             <option value="seller">Seller: the seller page only</option>
             <option value="reviewer">Reviewer: unit photos, comps, and offers and files you share</option>
             <option value="lender">Lender: the plan, city records, unit photos, and terms</option>
             <option value="viewer">Viewer: cover photo, unit photos and an overview, read only</option>
           </select>
+          {f.role === 'lender' && (
+            <>
+              <Field placeholder="Company (optional)" maxLength={120} value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
+              <div role="radiogroup" aria-label="Lender tab" className="grid grid-cols-3 gap-1.5">
+                {LENDER_LENS_OPTIONS.map(([k, label]) => {
+                  const active = f.lens === k;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setF({ ...f, lens: k })}
+                      className={`min-h-[40px] rounded-xl border px-3 py-1.5 text-sm font-medium transition ${
+                        active ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink hover:border-ink'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           {err && <p className="text-sm text-red-700">{err}</p>}
           <Button type="submit" className="w-full">Invite</Button>
           {done && <p className="text-sm text-green-800">{done}</p>}
-          <button type="button" onClick={() => { navigator.clipboard?.writeText(memberPageUrl(f.role, deal.slug)); setDone('Link copied.'); }}
-            className="min-h-[40px] w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink">Copy their link</button>
+          <button
+            type="button"
+            onClick={() => {
+              const chosenLens = f.role === 'lender' ? f.lens : '';
+              navigator.clipboard?.writeText(memberPageUrl(f.role, deal.slug, chosenLens));
+              setDone(f.role === 'lender' ? `${LENDER_LENS_LABELS[f.lens]} link copied.` : 'Link copied.');
+            }}
+            className="min-h-[40px] w-full rounded-xl border border-line px-3 py-2 text-sm hover:border-ink"
+          >
+            {f.role === 'lender' ? `Copy ${LENDER_LENS_LABELS[f.lens]} link` : 'Copy their link'}
+          </button>
         </form>
       </Card>
       <SignInsCard rows={signins} />

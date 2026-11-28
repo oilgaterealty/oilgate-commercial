@@ -144,10 +144,10 @@ export function wantedTerms(program, guide, base, offer = null) {
     byKey = {
       ...(hasBridge ? { ltc: `100% LTC · Loan ${money(pkg.totalLoan)} · $0 down` } : { ltc: '100% LTC · $0 down' }),
       rate: `${pkg.ratePct}% IO · non-Dutch · ${money(pkg.initialMonthlyInterest)}/mo at close`,
-      points: `${pkg.pointsPct} ${pointsWord} · Fee ${money(pkg.points)}`,
-      processing: money(pkg.processing),
+      points: `${pkg.pointsPct} ${pointsWord} · rolled into the loan · Fee ${money(pkg.points)}`,
+      processing: `${money(pkg.processing)} · rolled into the loan`,
       term: `${pkg.termMonths} months`,
-      deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months (due at payoff)` : 'None',
+      deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months · rolled into the loan (due at payoff)` : 'None',
       rehab_draws: pkg.repairs > 0 ? `Repairs ${money(pkg.repairs)} in draws (non-Dutch)` : 'In draws (non-Dutch)',
     };
   } else if (program === 'private') {
@@ -206,7 +206,11 @@ export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
           {rows.map((r) => (
             <li key={r.id} className="rounded-2xl border border-line bg-paper p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-lg font-semibold">{r.company_name}{r.terms?._contact ? `, ${r.terms._contact}` : ''}{r.lender_uid === me?.uid ? ' (you)' : ''}</h3>
+                <h3 className="text-lg font-semibold">
+                  {r.company_name}
+                  {r.terms?._contact && r.terms._contact !== r.company_name ? `, ${r.terms._contact}` : ''}
+                  {r.lender_uid === me?.uid ? ' (you)' : ''}
+                </h3>
                 <span className="text-sm text-ink" title={when(r.updated_at || r.created_at)}>{LENDER_BOARD_LABELS[r.lender_type]?.label || ''}</span>
               </div>
               {termTypes(r.terms).map(([type, fields]) => (
@@ -230,8 +234,23 @@ export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
   );
 }
 
-export function initialLenderName(me, preview) {
-  return preview || me?.email === '__preview__' ? '' : (me?.name || '');
+export function resolveLenderIdentity(me, member = null, preview = false) {
+  if (preview || me?.email === '__preview__') {
+    return { name: '', company: '', hasRecordCompany: false };
+  }
+  const name = String(member?.display_name || me?.name || me?.email || '').trim();
+  const company = String(member?.company || me?.company || '').trim();
+  return { name, company, hasRecordCompany: company.length > 0 };
+}
+
+export function initialLenderName(me, preview, member = null) {
+  return resolveLenderIdentity(me, member, preview).name;
+}
+
+export function isShortAsk(label, ask) {
+  const l = String(label || '').trim();
+  const a = String(ask || '').trim();
+  return a.length > 0 && a.length <= 18 && (l.length + a.length) <= 34;
 }
 
 export function resolveTermValues(asks, progDraft) {
@@ -283,12 +302,8 @@ export function setTermAnswer(drafts, editing, program, label, value, fieldKey) 
   return { drafts: nextDrafts, editing: nextEditing };
 }
 
-export function isTermsFormComplete({ company, name, fields, values }) {
-  return (
-    Boolean(String(company || '').trim()) &&
-    Boolean(String(name || '').trim()) &&
-    fields.every((f) => String(values?.[f.label] || '').trim().length > 0)
-  );
+export function isTermsFormComplete({ fields, values }) {
+  return fields.every((f) => String(values?.[f.label] || '').trim().length > 0);
 }
 
 export function buildTermsSubmission({
@@ -305,6 +320,7 @@ export function buildTermsSubmission({
 }) {
   const cleanCompany = String(company || '').trim();
   const cleanName = String(name || '').trim();
+  const storedCompany = cleanCompany || cleanName || 'Lender';
   const answered = {};
   for (const f of fields) {
     const formatted = formatFieldOutput(f, values?.[f.label]);
@@ -320,11 +336,15 @@ export function buildTermsSubmission({
     if (val) answered[opt.label] = val;
   }
   const extraNotes = String(values?.Questions || '').trim();
-  const terms = { ...(existingTerms || {}), [program]: answered, _contact: cleanName };
+  const terms = {
+    ...(existingTerms || {}),
+    [program]: answered,
+    ...(cleanName ? { _contact: cleanName } : {}),
+  };
   const upsertRow = {
     deal_id: dealId,
     lender_uid: lenderUid,
-    company_name: cleanCompany,
+    company_name: storedCompany,
     lender_type: program,
     terms,
     updated_at: nowIso,
@@ -332,7 +352,10 @@ export function buildTermsSubmission({
   const bodyLines = [...Object.entries(answered), ...(extraNotes ? [['Questions', extraNotes]] : [])]
     .map(([k, v]) => `${k}: ${v}`);
   const progLabel = LENDER_PROGRAMS[program]?.label || program;
-  const body = `${cleanCompany}, ${cleanName} · ${progLabel}\n${bodyLines.join('\n')}`;
+  const who = cleanCompany && cleanName && cleanCompany !== cleanName
+    ? `${cleanCompany}, ${cleanName}`
+    : cleanCompany || cleanName || 'Lender';
+  const body = `${who} · ${progLabel}\n${bodyLines.join('\n')}`;
   return { answered, terms, upsertRow, body };
 }
 
@@ -363,22 +386,50 @@ function ChoicePills({ label, choices, value, preview, onSelect }) {
 
 export function LenderTermField({ field, program, ask, value, countering, preview, onOpenCounter, onRestoreAsk, onChange }) {
   if (ask && !countering) {
-    return (
-      <div data-ask-card={field.key} className="rounded-xl border border-line bg-paper p-3 space-y-1.5">
-        <div className="flex items-start justify-between gap-2">
-          <span className="min-w-0 text-sm font-medium text-ink">
-            {field.label} <span aria-hidden="true" className="text-red-700">*</span>
-          </span>
+    if (isShortAsk(field.label, ask)) {
+      return (
+        <div
+          data-ask-card={field.key}
+          data-ask-layout="inline"
+          className="flex items-center justify-between gap-2 rounded-xl border border-line bg-paper px-3 py-2"
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="text-sm font-medium text-ink">
+              {field.label} <span aria-hidden="true" className="text-red-700">*</span>
+            </span>
+            <span className="text-sm font-semibold text-ink tabular-nums">{ask}</span>
+          </div>
           <button
             type="button"
             aria-label={`Change ${field.label}`}
             onClick={() => onOpenCounter(field)}
-            className="min-h-[36px] shrink-0 rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:border-ink"
+            className="min-h-[34px] shrink-0 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink hover:border-ink"
           >
             Change
           </button>
         </div>
-        <div className="text-base font-medium leading-snug text-ink break-words whitespace-normal">{ask}</div>
+      );
+    }
+    return (
+      <div
+        data-ask-card={field.key}
+        data-ask-layout="stacked"
+        className="flex items-center justify-between gap-2.5 rounded-xl border border-line bg-paper px-3 py-2"
+      >
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <span className="block text-sm font-medium text-ink">
+            {field.label} <span aria-hidden="true" className="text-red-700">*</span>
+          </span>
+          <div className="text-sm font-semibold leading-snug text-ink break-words whitespace-normal">{ask}</div>
+        </div>
+        <button
+          type="button"
+          aria-label={`Change ${field.label}`}
+          onClick={() => onOpenCounter(field)}
+          className="min-h-[34px] shrink-0 rounded-full border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink hover:border-ink"
+        >
+          Change
+        </button>
       </div>
     );
   }
@@ -386,7 +437,7 @@ export function LenderTermField({ field, program, ask, value, countering, previe
   const val = value || '';
   const choices = fieldChoices(field, program);
   return (
-    <div className="rounded-xl border border-ink/30 bg-white p-3 space-y-2">
+    <div className="rounded-xl border border-ink/30 bg-white px-3 py-2.5 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label htmlFor={`lt-${field.key}`} className="min-w-[140px] flex-1 text-sm font-medium text-ink">
           {field.label} <span aria-hidden="true" className="text-red-700">*</span>
@@ -484,6 +535,7 @@ export function LenderTermField({ field, program, ask, value, countering, previe
 export default function LenderTerms({
   deal,
   me,
+  member = null,
   preview,
   guide = null,
   base = null,
@@ -492,6 +544,7 @@ export default function LenderTerms({
   onLensChange = null,
   hideProgramTabs = false,
 }) {
+  const identity = resolveLenderIdentity(me, member, preview);
   const controlledProgram = lenderLens && LENDER_PROGRAMS[LENDER_LENSES[lenderLens]?.program]
     ? LENDER_LENSES[lenderLens].program
     : null;
@@ -500,12 +553,17 @@ export default function LenderTerms({
   const [drafts, setDrafts] = useState({});
   const [editing, setEditing] = useState({});
   const [ext, setExt] = useState({ count: '', months: '3 mo', fee: '0.5%' });
-  const [company, setCompany] = useState('');
-  const [name, setName] = useState(() => initialLenderName(me, preview));
+  const [company, setCompany] = useState(() => identity.company);
+  const [name, setName] = useState(() => identity.name);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    if (identity.name) setName((cur) => cur || identity.name);
+    if (identity.hasRecordCompany) setCompany(identity.company);
+  }, [identity.name, identity.company, identity.hasRecordCompany]);
 
   const isControlled = typeof onLensChange === 'function' && Boolean(controlledProgram);
   const program = isControlled ? controlledProgram : internalProgram;
@@ -534,7 +592,10 @@ export default function LenderTerms({
     supabase.from('commercial_lender_terms').select('*').eq('deal_id', deal.id).eq('lender_uid', me.uid).maybeSingle().then(({ data }) => {
       if (!data) return;
       setMine(data);
-      setCompany(data.company_name || '');
+      const recordName = identity.name || data.terms?._contact || '';
+      if (data.company_name && !identity.hasRecordCompany && data.company_name !== recordName) {
+        setCompany(data.company_name);
+      }
       if (data.terms?._contact) setName(data.terms._contact);
       if (LENDER_PROGRAMS[data.lender_type]) {
         setSavedType(data.lender_type);
@@ -542,7 +603,7 @@ export default function LenderTerms({
       }
       setDrafts(data.terms || {});
     });
-  }, [deal.id, me?.uid, preview, isControlled]);
+  }, [deal.id, me?.uid, preview, isControlled, identity.hasRecordCompany, identity.name]);
 
   const setAnswer = (label, value, fieldKey) => {
     setDrafts((prev) => setTermAnswer(prev, null, program, label, value).drafts);
@@ -569,7 +630,7 @@ export default function LenderTerms({
     setEditing(next.editing);
   };
 
-  const allAnswered = isTermsFormComplete({ company, name, fields, values });
+  const allAnswered = isTermsFormComplete({ fields, values });
 
   const send = async (e) => {
     e.preventDefault();
@@ -645,13 +706,12 @@ export default function LenderTerms({
         </div>
 
         <div role="tabpanel">
-          <form onSubmit={send} className="space-y-5">
-            {/* Group 1: Your info */}
-            <div className="grid gap-3 sm:grid-cols-2">
+          <form onSubmit={send} className="space-y-4">
+            {/* Group 1: Optional company only when member record has no company */}
+            {!identity.hasRecordCompany && (
               <label className="block text-sm font-medium text-ink">
-                Company name <span aria-hidden="true" className="text-red-700">*</span>
+                Company (optional)
                 <input
-                  required
                   autoComplete="organization"
                   disabled={preview}
                   maxLength={160}
@@ -661,25 +721,12 @@ export default function LenderTerms({
                   className="mt-1 min-h-[42px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-normal outline-none focus:border-ink"
                 />
               </label>
-              <label className="block text-sm font-medium text-ink">
-                Your name <span aria-hidden="true" className="text-red-700">*</span>
-                <input
-                  required
-                  autoComplete="name"
-                  disabled={preview}
-                  maxLength={120}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
-                  className="mt-1 min-h-[42px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-normal outline-none focus:border-ink"
-                />
-              </label>
-            </div>
+            )}
 
             {/* Group 2: Loan terms (program-specific asks, 1-tap Change) */}
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Loan terms</div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 {fields.map((f) => {
                   const ask = asks[f.label] || '';
                   const countering = isTermCountering(f, ask, progDraft, progEditing);
@@ -703,7 +750,7 @@ export default function LenderTerms({
 
             {/* Group 3: Extensions (Bridge only) */}
             {program === 'bridge' && (
-              <div className="rounded-xl border border-line bg-paper p-3.5 space-y-3">
+              <div className="rounded-xl border border-line bg-paper p-3 space-y-2.5">
                 <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Extension options (optional)</div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
@@ -745,7 +792,7 @@ export default function LenderTerms({
             )}
 
             {/* Group 4: Collateral & Optional terms */}
-            <div className="rounded-xl border border-line bg-paper p-3.5 space-y-3.5">
+            <div className="rounded-xl border border-line bg-paper p-3 space-y-3">
               <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Collateral &amp; optional terms</div>
               <div className="space-y-1.5">
                 <div className="text-sm font-medium text-ink">{COLLATERAL_QUESTION.prompt}</div>

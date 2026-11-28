@@ -60,7 +60,8 @@ test('lender page: no unit-by-unit table, identical views merge, terms before th
   assert.match(read('src/views/LenderTerms.jsx'), />Bridge<|label:\s*'Bridge'/);
   assert.match(read('src/views/LenderTerms.jsx'), /label:\s*'Private'/);
   assert.match(read('src/views/LenderTerms.jsx'), /label:\s*'DSCR'/);
-  assert.match(read('src/views/LenderTerms.jsx'), /Your name/);
+  assert.doesNotMatch(read('src/views/LenderTerms.jsx'), /Your name/);
+  assert.match(read('src/views/LenderTerms.jsx'), /resolveLenderIdentity/);
   void mergeViews;
 });
 

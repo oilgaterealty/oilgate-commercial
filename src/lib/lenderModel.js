@@ -51,6 +51,21 @@ export const LENDER_LENSES = {
 };
 
 const num = (v, d = 0) => (v !== undefined && v !== null && v !== '' && Number.isFinite(+v) ? +v : d);
+
+export function parseLenderProtections(rawValue) {
+  let list = rawValue;
+  if (typeof rawValue === 'string') {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return [];
+    try {
+      list = JSON.parse(trimmed);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((item) => String(item ?? '').trim()).filter(Boolean);
+}
 const pos = (...vals) => {
   for (const v of vals) {
     const n = num(v, 0);
@@ -285,14 +300,14 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     {
       key: 'processing',
-      label: 'Processing',
+      label: 'Processing (rolled into the loan)',
       value: processing,
       display: money(processing),
       overlay: ['Underwriting / processing fee rolled into the loan.'],
     },
     {
       key: 'points',
-      label: `${pointsPct} ${pointsWord}`,
+      label: `${pointsPct} ${pointsWord} (rolled into the loan)`,
       value: points,
       display: money(points),
       overlay: [
@@ -331,11 +346,11 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     ...(deferredMonths > 0
       ? [{
           key: 'deferredInterest',
-          label: `Deferred interest (${deferredMonths} mo · due at payoff)`,
+          label: `Deferred interest (${deferredMonths} mo · rolled into the loan)`,
           value: deferredInterest,
           display: money(deferredInterest),
           overlay: [
-            `${deferredMonths} months × ${money(initialMonthlyInterest)}/mo = ${money(deferredInterest)} due at payoff.`,
+            `${deferredMonths} months × ${money(initialMonthlyInterest)}/mo = ${money(deferredInterest)} rolled into the loan and due at payoff.`,
           ],
         }]
       : []),
@@ -367,10 +382,10 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       key: 'deferred',
       label: 'Deferred interest',
       value: deferredMonths,
-      display: deferredMonths > 0 ? `${deferredMonths} months (due at payoff)` : 'None',
+      display: deferredMonths > 0 ? `${deferredMonths} months · rolled into the loan (due at payoff)` : 'None',
       overlay: [
         deferredMonths > 0
-          ? `${deferredMonths} months deferred interest (${money(deferredInterest)}) due at payoff.`
+          ? `${deferredMonths} months deferred interest (${money(deferredInterest)}) rolled into the loan and due at payoff.`
           : 'No deferred interest.',
       ],
     },

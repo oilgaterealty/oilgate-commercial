@@ -47,6 +47,7 @@ async function loadLenderTermsModule() {
     select: () => ({
       eq: () => ({
         eq: () => ({ maybeSingle: async () => ({ data: null }) }),
+        maybeSingle: async () => ({ data: null }),
         then: () => {},
       }),
     }),
@@ -116,9 +117,9 @@ test('Your terms strictly isolates Bridge, Private, and DSCR fields and asks', a
   assert.equal(Object.keys(bridgeAsks).length, 7);
   assert.match(bridgeAsks['LTC (% of cost)'], /100% LTC · Loan \$409,944 · \$0 down/);
   assert.match(bridgeAsks['Interest rate'], /10% IO · non-Dutch/);
-  assert.match(bridgeAsks['Origination points'], /1 point · Fee \$4,099/);
-  assert.equal(bridgeAsks['Processing fee'], '$1,295');
-  assert.equal(bridgeAsks['Deferred interest'], '2 months (due at payoff)');
+  assert.match(bridgeAsks['Origination points'], /1 point · rolled into the loan · Fee \$4,099/);
+  assert.equal(bridgeAsks['Processing fee'], '$1,295 · rolled into the loan');
+  assert.equal(bridgeAsks['Deferred interest'], '2 months · rolled into the loan (due at payoff)');
   assert.equal(bridgeAsks['Max LTV (% of value)'], undefined);
 
   const html = renderToStaticMarkup(React.createElement(lt.default, {
@@ -254,13 +255,11 @@ test('each tab saves under its own program key without overwriting sibling progr
   const privFields = lt.fieldsForProgram('private');
   const privAsks = lt.wantedTerms('private', GUIDE, BASE);
 
-  assert.equal(lt.isTermsFormComplete({ company: 'Apex Capital', name: 'Jordan Lee', fields: bridgeFields, values: lt.resolveTermValues(bridgeAsks, {}) }), true);
+  assert.equal(lt.isTermsFormComplete({ fields: bridgeFields, values: lt.resolveTermValues(bridgeAsks, {}) }), true);
 
   const fRate = bridgeFields.find((x) => x.key === 'rate');
   const opened = lt.openTermCounter({}, {}, 'bridge', fRate);
   assert.equal(lt.isTermsFormComplete({
-    company: 'Apex Capital',
-    name: 'Jordan Lee',
     fields: bridgeFields,
     values: lt.resolveTermValues(bridgeAsks, opened.drafts.bridge),
   }), false);
@@ -319,21 +318,77 @@ test('each tab saves under its own program key without overwriting sibling progr
   assert.equal(subPriv.terms.bridge['Interest rate'], '10.5%');
 });
 
-test('owner preview leaves Your name blank instead of Preview and keeps Change clickable while inputs stay disabled', async () => {
+test('Your terms removes Your name input, hides Company when record has company, shows one optional Company only when missing, and balances inline vs stacked rows', async () => {
   const lt = await loadLenderTermsModule();
   assert.equal(lt.initialLenderName({ email: '__preview__', name: 'Preview' }, true), '');
   assert.equal(lt.initialLenderName({ email: 'lender@bank.com', name: 'Alex Morgan' }, false), 'Alex Morgan');
+  assert.deepEqual(
+    lt.resolveLenderIdentity({ email: 'lender@bank.com', name: 'Alex' }, { display_name: 'Alex Morgan', company: 'Apex Lending' }, false),
+    { name: 'Alex Morgan', company: 'Apex Lending', hasRecordCompany: true },
+  );
+  assert.deepEqual(
+    lt.resolveLenderIdentity({ email: 'lender@bank.com', name: 'Alex' }, { display_name: 'Alex Morgan', company: '' }, false),
+    { name: 'Alex Morgan', company: '', hasRecordCompany: false },
+  );
 
-  const html = renderToStaticMarkup(React.createElement(lt.default, {
+  // Short ask -> inline single row; long ask -> stacked two lines
+  assert.equal(lt.isShortAsk('Loan term', '12 months'), true);
+  assert.equal(lt.isShortAsk('Interest rate', '8% · no points'), true);
+  assert.equal(lt.isShortAsk('Origination points', '1 point · rolled into the loan · Fee $4,099'), false);
+
+  // Member WITH company: zero Company or Your name inputs shown
+  const withCompanyHtml = renderToStaticMarkup(React.createElement(lt.default, {
+    deal: { id: 'd1', slug: 'charlotte' },
+    me: { uid: 'l1', email: 'lender@bank.com', name: 'Alex Morgan', company: 'Apex Lending' },
+    member: { display_name: 'Alex Morgan', company: 'Apex Lending' },
+    preview: false,
+    guide: GUIDE,
+    base: BASE,
+    lenderLens: 'bridge',
+  }));
+  assert.doesNotMatch(withCompanyHtml, /Your name|Company name|Company \(optional\)|autoComplete="name"|autoComplete="organization"/);
+  assert.match(withCompanyHtml, /data-ask-card="term"[^>]*data-ask-layout="inline"/);
+  assert.match(withCompanyHtml, /data-ask-card="points"[^>]*data-ask-layout="stacked"/);
+
+  // Member WITHOUT company: single optional Company field (not required), still no Your name input
+  const noCompanyHtml = renderToStaticMarkup(React.createElement(lt.default, {
+    deal: { id: 'd1', slug: 'charlotte' },
+    me: { uid: 'l2', email: 'solo@bank.com', name: 'Sam Taylor', company: '' },
+    member: { display_name: 'Sam Taylor', company: '' },
+    preview: false,
+    guide: GUIDE,
+    base: BASE,
+    lenderLens: 'bridge',
+  }));
+  assert.doesNotMatch(noCompanyHtml, /Your name|autoComplete="name"/);
+  assert.match(noCompanyHtml, /Company \(optional\)/);
+  assert.doesNotMatch(noCompanyHtml, /Company \(optional\)[\s\S]*required=""/);
+  assert.doesNotMatch(noCompanyHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
+
+  // Silent submission without company falls back to contact name for company_name
+  const silentSub = lt.buildTermsSubmission({
+    dealId: 'd1',
+    lenderUid: 'l2',
+    company: '',
+    name: 'Sam Taylor',
+    program: 'private',
+    fields: lt.fieldsForProgram('private'),
+    values: lt.wantedTerms('private', GUIDE, BASE),
+    nowIso: '2026-11-27T21:15:00.000Z',
+  });
+  assert.equal(silentSub.upsertRow.company_name, 'Sam Taylor');
+  assert.equal(silentSub.terms._contact, 'Sam Taylor');
+  assert.match(silentSub.body, /^Sam Taylor · Private\n/);
+
+  // Preview keeps Change clickable while inputs and submit stay disabled
+  const previewHtml = renderToStaticMarkup(React.createElement(lt.default, {
     deal: { id: 'd1', slug: 'charlotte' },
     me: { email: '__preview__', name: 'Preview' },
     preview: true,
     guide: GUIDE,
     base: BASE,
   }));
-
-  assert.match(html, /Your name[\s\S]*?<input[^>]*placeholder="Your name"[^>]*value=""/);
-  assert.doesNotMatch(html, /value="Preview"/);
-  assert.doesNotMatch(html, /<button[^>]*disabled=""[^>]*>Change</);
-  assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""/);
+  assert.doesNotMatch(previewHtml, /value="Preview"/);
+  assert.doesNotMatch(previewHtml, /<button[^>]*disabled=""[^>]*>Change</);
+  assert.match(previewHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
 });

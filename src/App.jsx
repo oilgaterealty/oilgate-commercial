@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { supabase, configured } from './lib/supabase.js';
 import { useHashRoute } from './lib/useHashRoute.js';
 import { SITE_KIND, siteRules, requestAccessAllowed, openViewerAllowed } from './lib/site.js';
+import { readLensFromLocation, saveStoredLenderLens } from './lib/lenderLens.js';
 import {
   POPUP_QUERY_PARAM,
   clearPopupSignInFlow,
@@ -29,6 +30,11 @@ export default function App({ framedOwner = false }) {
   const [session, setSession] = useState(undefined);
   const [isOwner, setIsOwner] = useState(undefined);
   const popupRef = useRef(null);
+  const urlLens = typeof window !== 'undefined' ? readLensFromLocation(window.location.hash, window.location.search) : '';
+
+  useEffect(() => {
+    if (urlLens) saveStoredLenderLens(urlLens);
+  }, [urlLens]);
 
   useEffect(() => {
     if (!configured) return;
@@ -95,16 +101,16 @@ export default function App({ framedOwner = false }) {
         </Shell>
       );
     }
-    return <SignIn canRequestAccess={rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name !== 'join'} requestingAccess={route.name === 'request-access' && rules.guestsAllowed && requestAccessAllowed(SITE_KIND)} />;
+    return <SignIn canRequestAccess={rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name !== 'join'} requestingAccess={route.name === 'request-access' && rules.guestsAllowed && requestAccessAllowed(SITE_KIND)} urlLens={urlLens} />;
   }
   if (isOwner === undefined) return <Shell session={session}><p className="text-ink-soft">Loading…</p></Shell>;
   if (isOwner && !rules.ownerAllowed) return <Closed session={session} text="You’re signed in as the buyer. Your page opens only at your private address." />;
   if (!isOwner && !rules.guestsAllowed) return <Closed session={session} text="There’s nothing here for this email." />;
-  if (!isOwner && rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name === 'request-access') return <RequestAccess key={session.user.id} session={session} />;
-  if (route.name === 'join') return <Join token={route.token} session={session} />;
+  if (!isOwner && rules.guestsAllowed && requestAccessAllowed(SITE_KIND) && route.name === 'request-access') return <RequestAccess key={session.user.id} session={session} urlLens={urlLens} />;
+  if (route.name === 'join') return <Join token={route.token} session={session} urlLens={urlLens} />;
   return route.name === 'deal'
-    ? <DealRoom key={`${session.user.id}:${route.slug}`} slug={route.slug} tab={route.tab} sub={route.sub} session={session} />
-    : <Home session={session} />;
+    ? <DealRoom key={`${session.user.id}:${route.slug}`} slug={route.slug} tab={route.tab} sub={route.sub} session={session} urlLens={urlLens} />
+    : <Home session={session} urlLens={urlLens} />;
 }
 
 function Closed({ session, text }) {

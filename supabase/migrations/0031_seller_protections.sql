@@ -6,7 +6,6 @@ set seller_content = jsonb_set(
   jsonb_build_array(
     'Your bank gets paid first. A neutral payment company pays your mortgage every month, and you see every payment.',
     'The building comes back to you if payments stop. A signed deed waits at the title company.',
-    'You control the repair money. It''s released only as work is finished.',
     '15-day grace, then default.',
     'You''re named on the insurance.',
     'Monthly updates here: rents, leases and repair photos.',

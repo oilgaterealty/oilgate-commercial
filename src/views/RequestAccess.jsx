@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js';
 import Shell, { Button, Card } from '../components/Shell.jsx';
 import RoleChoice from '../components/RoleChoice.jsx';
 import { clearRequestRole, readRequestRole, saveRequestRole } from '../lib/requestRoles.js';
+import { appendLensToHash, clearStoredLenderLens, normalizeLenderLens, readLensFromLocation, readStoredLenderLens } from '../lib/lenderLens.js';
 
 const messages = {
   pending: 'Request sent.',
@@ -12,18 +13,32 @@ const messages = {
   error: 'Try again in a moment.',
 };
 
-export default function RequestAccess({ session }) {
+export default function RequestAccess({ session, urlLens = '' }) {
+  const activeLens = normalizeLenderLens(urlLens)
+    || (typeof window !== 'undefined' ? readLensFromLocation(window.location.hash, window.location.search) : '')
+    || readStoredLenderLens();
   const [status, setStatus] = useState();
-  const [role, setRole] = useState(() => readRequestRole());
+  const [role, setRole] = useState(() => readRequestRole() || (activeLens ? 'lender' : ''));
   const [busy, setBusy] = useState(false);
   const autoSent = useRef(false);
 
   async function send(r) {
     if (!r || busy) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc('commercial_request_charlotte_access', { p_submit: true, p_requested_role: r });
+    const requesterName = String(
+      session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || '',
+    ).trim().slice(0, 120) || null;
+    const { data, error } = await supabase.rpc('commercial_request_charlotte_access', {
+      p_submit: true,
+      p_requested_role: r,
+      p_requested_lens: r === 'lender' ? (activeLens || null) : null,
+      p_requester_name: requesterName,
+    });
     setStatus(error ? 'error' : data);
-    if (!error) clearRequestRole();
+    if (!error) {
+      clearRequestRole();
+      clearStoredLenderLens();
+    }
     setBusy(false);
   }
 
@@ -56,7 +71,7 @@ export default function RequestAccess({ session }) {
           </form>
         )}
         <p className="text-sm font-medium text-ink" role="status">{busy ? 'Sending…' : status && status !== 'ready' ? messages[status] : !status ? 'Checking…' : ''}</p>
-        {status === 'existing' && <a href="#/d/charlotte" className="text-sm font-medium underline">Open Charlotte</a>}
+        {status === 'existing' && <a href={appendLensToHash('#/d/charlotte', activeLens)} className="text-sm font-medium underline">Open Charlotte</a>}
       </Card>
     </Shell>
   );
