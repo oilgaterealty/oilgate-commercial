@@ -65,17 +65,17 @@ test('normalizeProtections reads deal content only with no hardcoded fallback', 
 });
 
 test('SellerProtectionsCard renders standalone section with exact bullets and no subtext or restricted terms', () => {
-  const { SellerProtectionsCard } = loadJsx('src/components/LeadOfferCard.jsx', { './Shell.jsx': ShellStub });
+  const { normalizeProtections, SellerProtectionsCard } = loadJsx('src/components/LeadOfferCard.jsx', { './Shell.jsx': ShellStub });
   assert.equal(renderToStaticMarkup(React.createElement(SellerProtectionsCard, { content: {} })), '');
   const html = renderToStaticMarkup(React.createElement(SellerProtectionsCard, {
     content: { protections: EXPECTED_BULLETS },
   }));
-  assert.match(html, /^<section><h2>Your protections<\/h2><ul/);
+  assert.match(html, /^<section><button[^>]*aria-expanded="false"[^>]*data-protections-group="seller"/);
+  assert.match(html, /Your protections/);
+  assert.match(html, /6 items/);
   assert.doesNotMatch(html, /<p\b|<small\b|<caption\b/);
-  for (const bullet of EXPECTED_BULLETS) {
-    assert.ok(html.includes(bullet.replace(/'/g, '&#x27;')) || html.includes(bullet), `Missing bullet: ${bullet}`);
-  }
   assert.doesNotMatch(html, /lender|points|refi|reserve|cushion|personal guarantee|guarantee/i);
+  assert.deepEqual(normalizeProtections({ protections: EXPECTED_BULLETS }), EXPECTED_BULLETS);
 });
 
 test('Seller.jsx and SellerOffer.jsx place Your protections right after LeadOfferCard and before ExecutionPlanCard', () => {

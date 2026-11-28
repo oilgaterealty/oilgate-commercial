@@ -5,12 +5,13 @@ const fmtAmt = (v) => (Number.isFinite(+v) ? `$${Math.round(+v).toLocaleString('
 const isLaundryLine = (line) => String(line?.key || '').startsWith('laundry-');
 
 export default function CostSummary({ summary, Trigger = OverlayTrigger, className = '' }) {
-  const [laundryOpen, setLaundryOpen] = useState(false);
+  const [open, setOpen] = useState({});
   if (!summary) return null;
 
   const allLines = summary.lines || [];
   const laundryLines = allLines.filter(isLaundryLine);
   const laundryTotal = laundryLines.reduce((s, l) => s + (Number.isFinite(+l.amount) ? +l.amount : 0), 0);
+  const toggleGroup = (key) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   let renderedLaundry = false;
 
   return (
@@ -23,13 +24,14 @@ export default function CostSummary({ summary, Trigger = OverlayTrigger, classNa
           if (isLaundryLine(line)) {
             if (renderedLaundry) return null;
             renderedLaundry = true;
+            const laundryOpen = Boolean(open.laundry);
             return (
               <li key="laundry-group" className="text-sm leading-snug">
                 <button
                   type="button"
                   aria-expanded={laundryOpen}
                   data-cost-group="laundry"
-                  onClick={() => setLaundryOpen((v) => !v)}
+                  onClick={() => toggleGroup('laundry')}
                   className="flex min-h-[40px] w-full items-center justify-between gap-x-3 rounded-lg px-1 -mx-1 text-left transition hover:bg-warm-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
                 >
                   <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink">
@@ -51,6 +53,38 @@ export default function CostSummary({ summary, Trigger = OverlayTrigger, classNa
                         </li>
                       );
                     })}
+                  </ul>
+                )}
+              </li>
+            );
+          }
+          if (Array.isArray(line.items) && line.items.length > 0) {
+            const gOpen = Boolean(open[line.key]);
+            return (
+              <li key={line.key || line.label} className="text-sm leading-snug">
+                <button
+                  type="button"
+                  aria-expanded={gOpen}
+                  data-cost-group={line.key}
+                  onClick={() => toggleGroup(line.key)}
+                  className="flex min-h-[40px] w-full items-center justify-between gap-x-3 rounded-lg px-1 -mx-1 text-left transition hover:bg-warm-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink">
+                    <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{gOpen ? '▴' : '▾'}</span>
+                    <span>{line.title || line.label}</span>
+                  </span>
+                  <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-ink">{fmtAmt(line.amount)}</span>
+                </button>
+                {gOpen && (
+                  <ul className="mt-1 space-y-1.5 border-t border-line/70 pt-1.5 pl-4">
+                    {line.items.map((sub) => (
+                      <li key={sub.key || sub.label} className="flex items-baseline justify-between gap-x-3 gap-y-0.5 text-sm leading-snug">
+                        <Trigger lines={sub.overlay || []} className="min-w-0 font-medium text-ink">
+                          {sub.label}
+                        </Trigger>
+                        <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-ink">{fmtAmt(sub.amount)}</span>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </li>

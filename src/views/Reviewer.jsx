@@ -248,6 +248,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
     units: 10,
     ...(leadGuide?.opex && !base?.opex ? { opex: leadGuide.opex } : {}),
     ...(leadGuide?.laundry && !base?.laundry ? { laundry: leadGuide.laundry } : {}),
+    ...(leadGuide?.upside && !base?.upside ? { upside: leadGuide.upside } : {}),
   };
   const o = operating(b);
   const val = valueSummary({ base: b, noi: o.noi, units: 10 });
@@ -259,6 +260,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
         ...leadGuide.rentValue,
         ...(b.opex && !leadGuide.rentValue.opex ? { opex: b.opex } : {}),
         ...(b.laundry && !leadGuide.rentValue.laundry ? { laundry: b.laundry } : {}),
+        ...(b.upside && !leadGuide.rentValue.upside ? { upside: b.upside } : {}),
       }
     : null;
 
@@ -281,7 +283,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
                 <div className="col-span-2 sm:col-span-2"><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
                 <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">10</dd></div>
                 {base.askPrice ? <div><dt className="text-ink-soft">Current offer (seller’s number)</dt><dd className="font-semibold">{money(+base.askPrice)}</dd></div> : null}
-                <div><dt className="text-ink-soft">Rent</dt><dd className="font-semibold">{money(o.b.rent)}/unit/mo</dd></div>
+                <div><dt className="text-ink-soft">Rent</dt><dd className="font-semibold">{money(o.b.rent + (o.opexCalc?.wifiRentAddPerUnit || 0))}/unit/mo</dd></div>
                 <div><dt className="text-ink-soft">Yearly profit before payments</dt><dd className="font-semibold">{money(o.noi)}/yr</dd></div>
                 <div><dt className="text-ink-soft">Value after repairs</dt><dd className="font-semibold"><OverlayTrigger lines={refiGuide?.estimatedValueOverlay || val.incomeOverlay}>{money(shownValue)}</OverlayTrigger></dd></div>
                 <div><dt className="text-ink-soft">Yearly return on value</dt><dd className="font-semibold">{pct(o.capRate, 1)}</dd></div>

@@ -275,19 +275,34 @@ export function normalizeProtections(content = {}) {
 }
 
 export function SellerProtectionsCard({ content }) {
+  const [open, setOpen] = useState(false);
   const items = normalizeProtections(content);
   if (items.length === 0) return null;
   return (
     <Card>
-      <CardTitle>Your protections</CardTitle>
-      <ul aria-label="Your protections" className="space-y-2.5 text-sm leading-relaxed text-ink">
-        {items.map((item, idx) => (
-          <li key={idx} className="flex items-start gap-2.5">
-            <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
+      <button
+        type="button"
+        aria-expanded={open}
+        data-protections-group="seller"
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-[44px] w-full items-center justify-between gap-3 text-left"
+      >
+        <span className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+          <span aria-hidden="true" className="text-xs text-ink-soft">{open ? '▴' : '▾'}</span>
+          <span>Your protections</span>
+        </span>
+        <span className="text-xs font-medium text-ink-soft">{items.length} items</span>
+      </button>
+      {open && (
+        <ul aria-label="Your protections" className="mt-3 space-y-2.5 border-t border-line pt-3 text-sm leading-relaxed text-ink">
+          {items.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2.5">
+              <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

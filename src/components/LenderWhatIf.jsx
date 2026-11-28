@@ -139,13 +139,14 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
   const keysByLens = {
     bridge: ['ratePct', 'pointsPct', 'deferredMonths', 'processing', 'repairs'],
     private: ['participation', 'privateRate', 'repairs'],
-    dscr: ['refiLtv', 'value', 'refiRate', 'refiYears', 'refiFeesPct', 'refiFeesFlat'],
+    dscr: ['refiLtv', 'value', 'refiRate', 'refiYears', 'refiFeesFlat'],
   };
   const activeKeys = keysByLens[lens] || keysByLens.bridge;
   const touched = activeKeys.some((k) => +inputs[k] !== +defaults[k]);
 
   const numOr = (val, fallback) => (val === '' || val === null || val === undefined || !Number.isFinite(+val) ? fallback : Math.max(0, +val));
 
+  const feesFlatTouched = +inputs.refiFeesFlat !== +defaults.refiFeesFlat;
   const simBase = {
     ...base,
     purchasePrice: pkg.purchase,
@@ -163,7 +164,7 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
     _valueOverride: +inputs.value !== +defaults.value,
     refiRate: numOr(inputs.refiRate, pkg.refiCheck.refiRate),
     refiYears: numOr(inputs.refiYears, pkg.refiCheck.refiYears),
-    refiFeesPct: numOr(inputs.refiFeesPct, pkg.refiCheck.refiFeesPct),
+    refiFeesPct: feesFlatTouched ? 0 : numOr(inputs.refiFeesPct, pkg.refiCheck.refiFeesPct),
     refiFeesFlat: numOr(inputs.refiFeesFlat, pkg.refiCheck.refiFeesFlat),
   };
   const simGuide = guide
@@ -200,7 +201,8 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
         `Lender what-if (${simPkg.lens.label}, nothing was saved):`,
         `- Your share: ${money(share)}`,
         `- Rate: ${simPkg.privatePool.ratePct}% a year (interest-only, paid monthly)`,
-        `- First payment: After month 1 · No prepayment penalty`,
+        `- Term: ${simPkg.privatePool.termSummary || '12 months, one 3-month extension. Paid off early at refinance, no prepayment penalty.'}`,
+        `- First payment: After month 1`,
         `- Total funds needed: ${money(simPkg.privatePool.totalFunds)}`,
         `- Monthly income: ${fmtCents(shareMonthly)}/mo (${fmtCents(shareAnnual)} per year at ${simPkg.privatePool.ratePct}%)`,
         `- Principal back at payoff: ${money(share)}`,
@@ -262,8 +264,7 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
       ['value', 'Stabilized value', '$', 10000, 0, undefined],
       ['refiRate', 'Interest rate', '%', 0.25, 0, 20],
       ['refiYears', 'Amortization', 'yr', 5, 5, 40],
-      ['refiFeesPct', 'Refi fee (%)', '%', 0.1, 0, 10],
-      ['refiFeesFlat', 'Flat refi fee', '$', 500, 0, undefined],
+      ['refiFeesFlat', 'Refi fees', '$', 500, 0, undefined],
     ],
   };
 
@@ -297,10 +298,10 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
           overlay: [`${money(share)} × ${simPkg.privatePool.ratePct}% a year = ${fmtCents(shareAnnual)}/yr annualized. Loan can be paid off early with no prepayment penalty.`],
         },
         {
-          key: 'firstPayment',
-          label: 'First payment',
-          value: 'After month 1',
-          overlay: ['First interest payment is one month after funding, then monthly.'],
+          key: 'term',
+          label: 'Term',
+          value: `${simPkg.privatePool.termMonths} mo + 1 ext`,
+          overlay: [simPkg.privatePool.termSummary || '12 months, one 3-month extension. Paid off early at refinance, no prepayment penalty.'],
         },
         {
           key: 'principalBack',

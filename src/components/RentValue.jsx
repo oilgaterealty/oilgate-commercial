@@ -86,7 +86,7 @@ function Ranges({ data, showMarket, sourceLines, Trigger, rent, setRent }) {
                 </Trigger>
               </dd>
             </div>
-            <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${mr.units} × ${money(rent)}/mo, less ${activeVacPct}% vacancy`, `Less costs: ${money(activeCostsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
+            <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${rentOverlayLines[0] || `${mr.units} × ${money(rent)}/mo`}, less ${activeVacPct}% vacancy`, `Less costs: ${money(activeCostsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
           </dl>
         </div>
       )}

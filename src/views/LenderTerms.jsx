@@ -29,16 +29,15 @@ export const LENDER_FIELDS = [
   { key: 'rate', label: 'Interest rate', programs: ['bridge', 'private', 'dscr'], inputType: 'number', unit: '%', step: 0.25, min: 0, max: 30, placeholder: 'e.g. 10' },
   { key: 'points', label: 'Origination points', programs: ['bridge'], inputType: 'number', unit: 'pts', step: 0.25, min: 0, max: 10, placeholder: 'e.g. 1' },
   { key: 'processing', label: 'Processing fee', programs: ['bridge'], inputType: 'number', unit: '$', step: 100, min: 0, placeholder: 'e.g. 1295' },
-  { key: 'amortization', label: 'Amortization', programs: ['dscr'], inputType: 'choice', choices: ['20 years', '25 years', '30 years'] },
+  { key: 'amortization', label: 'Term & amortization', programs: ['dscr'], inputType: 'choice', choices: ['20 years', '25 years', '30 years'] },
   {
     key: 'term',
     label: 'Loan term',
-    programs: ['bridge', 'private', 'dscr'],
+    programs: ['bridge', 'private'],
     inputType: 'choice',
     choicesByProgram: {
       bridge: ['6 months', '12 months', '18 months', '24 months'],
-      private: ['6 months', '12 months', '18 months', '24 months'],
-      dscr: ['5 years', '10 years', '20 years', '30 years'],
+      private: ['12 months, one 3-month extension', '6 months', '12 months', '18 months', '24 months'],
     },
   },
   {
@@ -76,11 +75,10 @@ export const LENDER_FIELDS = [
   {
     key: 'prepayment',
     label: 'Prepayment penalty',
-    programs: ['bridge', 'private', 'dscr'],
+    programs: ['bridge', 'dscr'],
     inputType: 'choice',
     choicesByProgram: {
       bridge: ['None', '1%', '2%', '3 months interest', '6 months interest'],
-      private: ['None', '1%', '2%', '3 months interest'],
       dscr: ['None', '3-2-1', '5-4-3-2-1', 'Yield maintenance'],
     },
   },
@@ -89,7 +87,7 @@ export const LENDER_FIELDS = [
     label: 'Refi fees',
     programs: ['dscr'],
     inputType: 'text',
-    placeholder: 'e.g. $5,000 flat + 2%',
+    placeholder: 'e.g. $15,000 flat',
   },
   {
     key: 'seasoning',
@@ -192,11 +190,13 @@ export function wantedTerms(program, guide, base, offer = null) {
         ? `Min ${money(pkg.minParticipation)} · Pool ${money(pkg.privatePool.totalFunds)}`
         : `Min ${money(pkg.minParticipation)}`,
       rate: `${pkg.privatePool.ratePct}%`,
-      term: `${pkg.privatePool.termMonths} months`,
+      term: pkg.privatePool.termSummary || '12 months, one 3-month extension. Paid off early at refinance, no prepayment penalty.',
       lien_position: 'First-lien pooled',
-      prepayment: pkg.privatePool.prepayment || 'None',
     };
   } else if (program === 'dscr') {
+    const feesText = pkg.refiCheck.refiFeesPct > 0
+      ? `${money(pkg.refiCheck.refiFeesFlat)} flat + ${pkg.refiCheck.refiFeesPct}%`
+      : `${money(pkg.refiCheck.refiFeesFlat)} flat`;
     byKey = {
       ltv: pkg.value > 0 && pkg.refiCheck.newLoan > 0
         ? `${pkg.refiCheck.refiLtv}% LTV · Value ${money(pkg.value)} · Loan ${money(pkg.refiCheck.newLoan)}`
@@ -204,11 +204,10 @@ export function wantedTerms(program, guide, base, offer = null) {
       dscr: `${refiDscr}x`,
       rate: `${refiRate}%`,
       amortization: `${refiYears} years`,
-      term: `${refiYears} years`,
       prepayment: 'None',
-      refi_fees: pkg.refiCheck.newLoan > 0
-        ? `${money(pkg.refiCheck.refiFeesFlat)} flat + ${pkg.refiCheck.refiFeesPct}% · Fee ${money(pkg.refiCheck.refiFeesTotal)}`
-        : `${money(pkg.refiCheck.refiFeesFlat)} flat + ${pkg.refiCheck.refiFeesPct}%`,
+      refi_fees: pkg.refiCheck.newLoan > 0 && pkg.refiCheck.refiFeesPct > 0
+        ? `${feesText} · Fee ${money(pkg.refiCheck.refiFeesTotal)}`
+        : feesText,
       seasoning: `Once all ${pkg.units} units are rented`,
     };
   }
@@ -597,6 +596,7 @@ export default function LenderTerms({
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
+  const [extrasOpen, setExtrasOpen] = useState({ ext: false, collateral: false });
 
   useEffect(() => {
     if (identity.name) setName((cur) => cur || identity.name);
@@ -794,74 +794,108 @@ export default function LenderTerms({
 
             {/* Group 3: Extensions (Bridge only) */}
             {program === 'bridge' && (
-              <div className="rounded-xl border border-line bg-paper p-3 space-y-2.5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Extension options</div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <div className="text-sm font-medium text-ink">Number of extensions</div>
-                    <ChoicePills
-                      label="Number of extensions"
-                      choices={EXTENSION_COUNTS}
-                      value={ext.count}
-                      preview={preview}
-                      onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), count: next }))}
-                    />
+              <div className="rounded-xl border border-line bg-paper p-3">
+                <button
+                  type="button"
+                  aria-expanded={extrasOpen.ext}
+                  data-terms-group="extension"
+                  onClick={() => setExtrasOpen((p) => ({ ...p, ext: !p.ext }))}
+                  className="flex min-h-[36px] w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-wider text-ink-soft"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span aria-hidden="true">{extrasOpen.ext ? '▴' : '▾'}</span>
+                    <span>Extension options</span>
+                  </span>
+                  <span className="font-medium normal-case text-ink">
+                    {ext.count === 'None' ? 'None' : `${ext.count} × ${ext.months} (${ext.fee})`}
+                  </span>
+                </button>
+                {extrasOpen.ext && (
+                  <div className="mt-2.5 grid gap-3 border-t border-line pt-2.5 sm:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <div className="text-sm font-medium text-ink">Number of extensions</div>
+                      <ChoicePills
+                        label="Number of extensions"
+                        choices={EXTENSION_COUNTS}
+                        value={ext.count}
+                        preview={preview}
+                        onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), count: next }))}
+                      />
+                    </div>
+                    {ext.count && ext.count !== 'None' && (
+                      <>
+                        <div className="space-y-1.5">
+                          <div className="text-sm font-medium text-ink">Months each</div>
+                          <ChoicePills
+                            label="Months each"
+                            choices={EXTENSION_MONTHS}
+                            value={ext.months}
+                            preview={preview}
+                            onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), months: next || defaultExt.months }))}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="text-sm font-medium text-ink">Fee per extension</div>
+                          <ChoicePills
+                            label="Fee per extension"
+                            choices={EXTENSION_FEES}
+                            value={ext.fee}
+                            preview={preview}
+                            onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), fee: next || defaultExt.fee }))}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
-                  {ext.count && ext.count !== 'None' && (
-                    <>
-                      <div className="space-y-1.5">
-                        <div className="text-sm font-medium text-ink">Months each</div>
-                        <ChoicePills
-                          label="Months each"
-                          choices={EXTENSION_MONTHS}
-                          value={ext.months}
-                          preview={preview}
-                          onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), months: next || defaultExt.months }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="text-sm font-medium text-ink">Fee per extension</div>
-                        <ChoicePills
-                          label="Fee per extension"
-                          choices={EXTENSION_FEES}
-                          value={ext.fee}
-                          preview={preview}
-                          onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), fee: next || defaultExt.fee }))}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
+                )}
               </div>
             )}
 
             {/* Group 4: Collateral & Optional terms */}
-            <div className="rounded-xl border border-line bg-paper p-3 space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Collateral &amp; optional terms</div>
-              <div className="space-y-1.5">
-                <div className="text-sm font-medium text-ink">{COLLATERAL_QUESTION.prompt}</div>
-                <ChoicePills
-                  label={COLLATERAL_QUESTION.prompt}
-                  choices={COLLATERAL_QUESTION.choices}
-                  value={values[COLLATERAL_QUESTION.label] || ''}
-                  preview={preview}
-                  onSelect={(next) => setAnswer(COLLATERAL_QUESTION.label, next)}
-                />
-              </div>
-              <div className={`grid gap-3 ${visibleOptionalFields.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
-                {visibleOptionalFields.map((opt) => (
-                  <div key={opt.key} className="space-y-1.5">
-                    <div className="text-sm font-medium text-ink">{opt.label}</div>
+            <div className="rounded-xl border border-line bg-paper p-3">
+              <button
+                type="button"
+                aria-expanded={extrasOpen.collateral}
+                data-terms-group="collateral"
+                onClick={() => setExtrasOpen((p) => ({ ...p, collateral: !p.collateral }))}
+                className="flex min-h-[36px] w-full items-center justify-between gap-2 text-left text-xs font-semibold uppercase tracking-wider text-ink-soft"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span aria-hidden="true">{extrasOpen.collateral ? '▴' : '▾'}</span>
+                  <span>Collateral &amp; optional terms</span>
+                </span>
+                <span className="font-medium normal-case text-ink">
+                  {values[COLLATERAL_QUESTION.label] || 'Optional'}
+                </span>
+              </button>
+              {extrasOpen.collateral && (
+                <div className="mt-2.5 space-y-3 border-t border-line pt-2.5">
+                  <div className="space-y-1.5">
+                    <div className="text-sm font-medium text-ink">{COLLATERAL_QUESTION.prompt}</div>
                     <ChoicePills
-                      label={opt.label}
-                      choices={opt.choices}
-                      value={values[opt.label] || ''}
+                      label={COLLATERAL_QUESTION.prompt}
+                      choices={COLLATERAL_QUESTION.choices}
+                      value={values[COLLATERAL_QUESTION.label] || ''}
                       preview={preview}
-                      onSelect={(next) => setAnswer(opt.label, next)}
+                      onSelect={(next) => setAnswer(COLLATERAL_QUESTION.label, next)}
                     />
                   </div>
-                ))}
-              </div>
+                  <div className={`grid gap-3 ${visibleOptionalFields.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+                    {visibleOptionalFields.map((opt) => (
+                      <div key={opt.key} className="space-y-1.5">
+                        <div className="text-sm font-medium text-ink">{opt.label}</div>
+                        <ChoicePills
+                          label={opt.label}
+                          choices={opt.choices}
+                          value={values[opt.label] || ''}
+                          preview={preview}
+                          onSelect={(next) => setAnswer(opt.label, next)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <label className="block text-sm font-medium text-ink">

@@ -336,7 +336,7 @@ export function OptionTable({ offers, stories, planHrefOf }) {
         const r = g(o)?.refi;
         return r ? <OverlayTrigger lines={r.loanOverlay} className="font-semibold">{money(r.loan)} ({r.ltvShownPct}%)</OverlayTrigger> : '—';
       }],
-      ['In hand after fees and reserve', (o) => {
+      ['In hand after fees', (o) => {
         const r = g(o)?.refi;
         return r ? <OverlayTrigger lines={r.inHandOverlay} className="font-semibold">{money(r.inHand)}</OverlayTrigger> : '—';
       }],

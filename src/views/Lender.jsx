@@ -34,17 +34,58 @@ function Stat({ label, value, overlay }) {
 }
 
 function LedgerRows({ rows }) {
+  const [open, setOpen] = useState({});
+  const toggle = (key) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+
   return (
     <dl className="divide-y divide-line">
       {rows.map((row) => {
         const isTotal = row.emphasis === 'total';
         const isAccent = row.emphasis === 'accent';
-        const isLong = !isTotal && String(row.display || '').length > 24;
+        const hasItems = Array.isArray(row.items) && row.items.length > 0;
+        const isOpen = hasItems && Boolean(open[row.key]);
+        const isLong = !hasItems && !isTotal && String(row.display || '').length > 24;
         const valCls = row.tone === 'good'
           ? 'text-good'
           : row.tone === 'warn'
             ? 'text-amber-800'
             : 'text-ink';
+        if (hasItems) {
+          return (
+            <div
+              key={row.key}
+              data-ledger-group={row.key}
+              className={`py-2 first:pt-0 last:pb-0 ${isTotal ? 'border-t-2 border-ink/20 pt-3' : isAccent ? 'rounded-xl bg-warm-soft/70 px-3 py-2 my-1' : ''}`}
+            >
+              <div className="flex items-center justify-between gap-x-3">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => toggle(row.key)}
+                  className="flex min-h-[40px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 -mx-1 text-left transition hover:bg-warm-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
+                >
+                  <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{isOpen ? '▴' : '▾'}</span>
+                  <span className={`min-w-0 text-sm ${isTotal || isAccent ? 'font-semibold text-ink' : 'font-medium text-ink'}`}>{row.label}</span>
+                </button>
+                <dd className={`shrink-0 whitespace-nowrap tabular-nums text-right ${isTotal ? 'font-display text-xl font-semibold' : 'text-sm font-semibold'} ${valCls}`}>
+                  <OverlayTrigger lines={row.overlay} className={valCls}>{row.display}</OverlayTrigger>
+                </dd>
+              </div>
+              {isOpen && (
+                <dl className="mt-1 space-y-1.5 rounded-xl bg-paper px-3 py-2 text-sm tabular-nums">
+                  {row.items.map((item) => (
+                    <div key={item.key || item.label} className="flex items-baseline justify-between gap-x-3 gap-y-0.5 py-0.5">
+                      <dt className="min-w-0 flex-1 text-ink-soft">{item.label}</dt>
+                      <dd className="shrink-0 whitespace-nowrap text-right font-medium text-ink">
+                        <OverlayTrigger lines={item.overlay}>{item.display}</OverlayTrigger>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          );
+        }
         return (
           <div
             key={row.key}
@@ -180,13 +221,9 @@ function PrivateReturnCard({ pkg }) {
           <dt className="text-xs text-ink-soft">Schedule</dt>
           <dd className="font-medium text-ink">First payment after month 1</dd>
         </div>
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 sm:block">
-          <dt className="text-xs text-ink-soft">Rate &amp; structure</dt>
-          <dd className="font-medium text-ink">{ratePct}% a year, interest-only</dd>
-        </div>
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 sm:block">
-          <dt className="text-xs text-ink-soft">Early payoff</dt>
-          <dd className="font-medium text-ink">No prepayment penalty</dd>
+        <div className="rounded-xl bg-paper px-3 py-2 sm:col-span-2">
+          <dt className="text-xs text-ink-soft">Term</dt>
+          <dd className="font-medium text-ink">{pkg.privatePool.termSummary || '12 months, one 3-month extension. Paid off early at refinance, no prepayment penalty.'}</dd>
         </div>
       </dl>
     </Card>
@@ -219,6 +256,8 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
   const [leadGuide, setLeadGuide] = useState(null);
   const [loadedProtections, setLoadedProtections] = useState([]);
   const [sharedRent, setSharedRent] = useState(null);
+  const [protectionsOpen, setProtectionsOpen] = useState(false);
+  const [planStepsOpen, setPlanStepsOpen] = useState({});
 
   useEffect(() => {
     if (LENDER_LENSES[urlLens]) setLenderLens(urlLens);
@@ -259,10 +298,12 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
   const rawGuide = isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null);
   const opexSource = b?.opex || rawGuide?.opex || null;
   const laundrySource = b?.laundry || rawGuide?.laundry || opexSource?.laundry || null;
+  const upsideSource = b?.upside || rawGuide?.upside || opexSource?.upside || null;
   const effectiveBase = {
     ...b,
     ...(opexSource && !b?.opex ? { opex: opexSource } : {}),
     ...(laundrySource && !b?.laundry ? { laundry: laundrySource } : {}),
+    ...(upsideSource && !b?.upside ? { upside: upsideSource } : {}),
   };
   const baseDefaultRent = Number.isFinite(+effectiveBase?.rent) && +effectiveBase.rent > 0
     ? +effectiveBase.rent
@@ -280,6 +321,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
         ourRent: activeRent,
         ...(opexSource && !rawGuide.rentValue.opex ? { opex: opexSource } : {}),
         ...(laundrySource && !rawGuide.rentValue.laundry ? { laundry: laundrySource } : {}),
+        ...(upsideSource && !rawGuide.rentValue.upside ? { upside: upsideSource } : {}),
         marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, activeBase),
       }
     : null;
@@ -461,7 +503,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Rate</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.privatePoolRows[0]?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'rateAndMin')?.items?.[0]?.overlay || pkg.privatePoolRows[0]?.overlay || []} className="text-white">
                         {pkg.privatePool.ratePct}%
                       </OverlayTrigger>
                     </dd>
@@ -469,7 +511,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Minimum share</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.privatePoolRows[1]?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'rateAndMin')?.items?.[1]?.overlay || pkg.privatePoolRows[0]?.overlay || []} className="text-white">
                         {money(pkg.minParticipation)}
                       </OverlayTrigger>
                     </dd>
@@ -477,7 +519,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Monthly income (min)</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'rateAndMin')?.items?.[1]?.overlay || []} className="text-white">
                         {fmtCents(pkg.privatePool.minMonthlyReturn)}/mo
                       </OverlayTrigger>
                     </dd>
@@ -488,7 +530,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Stabilized value</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.dscrLoanRows[0]?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.items?.[0]?.overlay || pkg.dscrLoanRows[0]?.overlay || []} className="text-white">
                         {money(pkg.value)}
                       </OverlayTrigger>
                     </dd>
@@ -496,7 +538,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Rate &amp; term</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.dscrLoanRows[4]?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.dscrLoanRows.find((r) => r.key === 'rateAmort')?.overlay || []} className="text-white">
                         {pkg.refiCheck.refiRate}% · {pkg.refiCheck.refiYears}-yr
                       </OverlayTrigger>
                     </dd>
@@ -595,7 +637,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                 <Card data-wb="private-pool">
                   <CardTitle
                     aside={
-                      <OverlayTrigger lines={pkg.privatePoolRows[1]?.overlay || []} className="text-sm font-medium text-ink-soft">
+                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'rateAndMin')?.overlay || []} className="text-sm font-medium text-ink-soft">
                         {money(pkg.minParticipation)} min
                       </OverlayTrigger>
                     }
@@ -667,7 +709,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                 <Card data-wb="bridge-terms">
                   <CardTitle
                     aside={
-                      <OverlayTrigger lines={pkg.bridgeTermsRows.find((r) => r.key === 'ltc')?.overlay || []} className="text-sm font-medium text-ink-soft">
+                      <OverlayTrigger lines={pkg.bridgeTermsRows.find((r) => r.key === 'rateAndDraws')?.overlay || []} className="text-sm font-medium text-ink-soft">
                         {pkg.ltcPct}% LTC · $0 down
                       </OverlayTrigger>
                     }
@@ -688,15 +730,29 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
             {lenderLens === 'private' && protections.length > 0 && (
               <div data-wb="private-protections">
                 <Card>
-                  <CardTitle>Your protections</CardTitle>
-                  <ul aria-label="Your protections" className="space-y-2.5 text-sm leading-relaxed text-ink">
-                    {protections.map((item, idx) => (
-                      <li key={idx} className="flex items-start gap-2.5">
-                        <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <button
+                    type="button"
+                    aria-expanded={protectionsOpen}
+                    data-protections-group="private"
+                    onClick={() => setProtectionsOpen((v) => !v)}
+                    className="flex min-h-[44px] w-full items-center justify-between gap-3 text-left"
+                  >
+                    <span className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+                      <span aria-hidden="true" className="text-xs text-ink-soft">{protectionsOpen ? '▴' : '▾'}</span>
+                      <span>Your protections</span>
+                    </span>
+                    <span className="text-xs font-medium text-ink-soft">{protections.length} items</span>
+                  </button>
+                  {protectionsOpen && (
+                    <ul aria-label="Your protections" className="mt-3 space-y-2.5 border-t border-line pt-3 text-sm leading-relaxed text-ink">
+                      {protections.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span aria-hidden="true" className="mt-[0.65em] h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </Card>
               </div>
             )}
@@ -753,21 +809,38 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
 
                 {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
 
-                <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                  {privatePlanSteps.map((step) => (
-                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                        {step.num}
-                      </span>
-                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                        <span className="text-sm font-semibold text-ink">{step.title}</span>
-                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                          {step.value}
-                        </OverlayTrigger>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                <div className="mt-4 border-t border-line pt-3">
+                  <button
+                    type="button"
+                    aria-expanded={Boolean(planStepsOpen.private)}
+                    data-plan-timeline="private"
+                    onClick={() => setPlanStepsOpen((p) => ({ ...p, private: !p.private }))}
+                    className="flex min-h-[40px] w-full items-center justify-between gap-2 rounded-lg px-1 -mx-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/50"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span aria-hidden="true" className="text-xs text-ink-soft">{planStepsOpen.private ? '▴' : '▾'}</span>
+                      <span>Step-by-step timeline</span>
+                    </span>
+                    <span className="text-xs text-ink-soft">{privatePlanSteps.length} steps</span>
+                  </button>
+                  {planStepsOpen.private && (
+                    <ol className="mt-3 space-y-3">
+                      {privatePlanSteps.map((step) => (
+                        <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                            {step.num}
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                            <span className="text-sm font-semibold text-ink">{step.title}</span>
+                            <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                              {step.value}
+                            </OverlayTrigger>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
               </Card>
             ) : lenderLens === 'dscr' ? (
               <Card data-plan="dscr">
@@ -783,28 +856,45 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
 
                 <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <Stat label={`Takeout loan (${pkg.refiCheck.refiLtv}% LTV)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.overlay} />
-                  <Stat label="Stabilized value" value={money(pkg.value)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'value')?.overlay} />
+                  <Stat label="Stabilized value" value={money(pkg.value)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.items?.[0]?.overlay} />
                   <Stat label="Monthly payment (P&I)" value={`${money(pkg.refiCheck.refiPayment)}/mo`} overlay={pkg.dscrLoanRows.find((r) => r.key === 'payment')?.overlay} />
                   <Stat label="Pays off bridge" value={money(pkg.refiCheck.bridgePayoff)} overlay={pkg.refiCheckRows.find((r) => r.key === 'payoff')?.overlay} />
                 </dl>
 
                 {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
 
-                <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                  {dscrPlanSteps.map((step) => (
-                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                        {step.num}
-                      </span>
-                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                        <span className="text-sm font-semibold text-ink">{step.title}</span>
-                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                          {step.value}
-                        </OverlayTrigger>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                <div className="mt-4 border-t border-line pt-3">
+                  <button
+                    type="button"
+                    aria-expanded={Boolean(planStepsOpen.dscr)}
+                    data-plan-timeline="dscr"
+                    onClick={() => setPlanStepsOpen((p) => ({ ...p, dscr: !p.dscr }))}
+                    className="flex min-h-[40px] w-full items-center justify-between gap-2 rounded-lg px-1 -mx-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/50"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span aria-hidden="true" className="text-xs text-ink-soft">{planStepsOpen.dscr ? '▴' : '▾'}</span>
+                      <span>Step-by-step timeline</span>
+                    </span>
+                    <span className="text-xs text-ink-soft">{dscrPlanSteps.length} steps</span>
+                  </button>
+                  {planStepsOpen.dscr && (
+                    <ol className="mt-3 space-y-3">
+                      {dscrPlanSteps.map((step) => (
+                        <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                            {step.num}
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                            <span className="text-sm font-semibold text-ink">{step.title}</span>
+                            <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                              {step.value}
+                            </OverlayTrigger>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
 
                 <div className="mt-5 border-t border-line pt-4">
                   <LedgerRows rows={pkg.refiCheckRows} />
@@ -826,26 +916,43 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
                   <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
                   <Stat label={`Interest (${pkg.ratePct}% IO · non-Dutch)`} value={`${money(pkg.initialMonthlyInterest)}/mo`} overlay={pkg.loanAskRows.find((r) => r.key === 'interest')?.overlay} />
-                  <Stat label={`Deferred (${pkg.deferredMonths} mo · due at payoff)`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
+                  <Stat label={`Deferred (${pkg.deferredMonths} mo · due at payoff)`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'interest')?.items?.[0]?.overlay} />
                 </dl>
 
                 {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
 
-                <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                  {bridgePlanSteps.map((step) => (
-                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                        {step.num}
-                      </span>
-                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                        <span className="text-sm font-semibold text-ink">{step.title}</span>
-                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                          {step.value}
-                        </OverlayTrigger>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
+                <div className="mt-4 border-t border-line pt-3">
+                  <button
+                    type="button"
+                    aria-expanded={Boolean(planStepsOpen.bridge)}
+                    data-plan-timeline="bridge"
+                    onClick={() => setPlanStepsOpen((p) => ({ ...p, bridge: !p.bridge }))}
+                    className="flex min-h-[40px] w-full items-center justify-between gap-2 rounded-lg px-1 -mx-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/50"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span aria-hidden="true" className="text-xs text-ink-soft">{planStepsOpen.bridge ? '▴' : '▾'}</span>
+                      <span>Step-by-step timeline</span>
+                    </span>
+                    <span className="text-xs text-ink-soft">{bridgePlanSteps.length} steps</span>
+                  </button>
+                  {planStepsOpen.bridge && (
+                    <ol className="mt-3 space-y-3">
+                      {bridgePlanSteps.map((step) => (
+                        <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                            {step.num}
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                            <span className="text-sm font-semibold text-ink">{step.title}</span>
+                            <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                              {step.value}
+                            </OverlayTrigger>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
               </Card>
             )}
             <ExecutionPlanCard

@@ -117,8 +117,8 @@ test('LENDER_DEFAULTS and LENDER_LENSES reflect owner-confirmed Bridge (10%), Pr
   assert.equal(LENDER_DEFAULTS.privatePointsPct, 0);
   assert.equal(LENDER_DEFAULTS.privateMinParticipation, 20000);
   assert.equal(LENDER_DEFAULTS.refiLtv, 75);
-  assert.equal(LENDER_DEFAULTS.refiFeesFlat, 5000);
-  assert.equal(LENDER_DEFAULTS.refiFeesPct, 2.1);
+  assert.equal(LENDER_DEFAULTS.refiFeesFlat, 15000);
+  assert.equal(LENDER_DEFAULTS.refiFeesPct, 0);
 });
 
 test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8%), and DSCR (75%/80% LTV) packages', () => {
@@ -145,8 +145,10 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8%), and
   assert.equal(bridgePkg.extension.display, '1 × 3 months at 1.25%');
   assert.equal(bridgePkg.drawFee, 0);
   assert.equal(bridgePkg.drawFeeDisplay, '$0 per draw');
-  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'drawFee')?.display, '$0 per draw');
-  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'extension')?.display, '1 × 3 months at 1.25%');
+  const rateDraws = bridgePkg.bridgeTermsRows.find((r) => r.key === 'rateAndDraws');
+  assert.equal(rateDraws?.display, '10% IO · $0 draw fee');
+  assert.equal(rateDraws?.items?.find((i) => i.key === 'drawFee')?.display, '$0 per draw');
+  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'termAndExtension')?.items?.find((i) => i.key === 'extension')?.display, '1 × 3 months at 1.25%');
   assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'prepayment')?.display, 'None');
   assert.equal(bridgePkg.bridgeTermsRows.at(-1).display, 'Paid off by refinance after lease-up');
 
@@ -183,10 +185,10 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8%), and
   assert.equal(privPkg.privatePool.minAnnualReturn, 1600);
   assert.equal(privPkg.privatePool.surplusAtRefi, undefined);
   const privText = JSON.stringify({ steps: privPkg.steps, privateFundsRows: privPkg.privateFundsRows, privatePoolRows: privPkg.privatePoolRows });
-  assert.match(privText, /"display":"8%"/);
+  assert.match(privText, /"display":"8% · \$20,000 min"/);
   assert.match(privText, /First-lien pooled/);
-  assert.match(privText, /First payment after month 1/);
-  assert.match(privText, /No prepayment penalty/);
+  assert.match(privText, /After month 1/);
+  assert.match(privText, /12 months, one 3-month extension\. Paid off early at refinance, no prepayment penalty\./);
   assert.match(privText, /Principal back at payoff/);
   assert.doesNotMatch(privText, /points|processing|\$1,295|DSCR|amortiz|Surplus at refinance|Left over at refinance|Gap at refinance|defer/i);
   assert.doesNotMatch(privPkg.lens.lead, /points/i);
@@ -313,16 +315,16 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(bSec.overview, /10% IO/);
   assert.match(bSec.overview, /non-Dutch/);
   assert.match(bSec.overview, /\$409,944/);
-  assert.match(bSec.overview, /\$1,295/);
-  assert.match(bSec.overview, /rolled into the loan/);
-  assert.match(bSec.overview, /\$0 per draw/);
+  assert.match(bSec.overview, /data-ledger-group="feesRolledIn"[\s\S]*aria-expanded="false"/);
+  assert.match(bSec.overview, /Fees rolled into loan/);
+  assert.match(bSec.overview, /\$0 draw fee/);
   assert.match(bSec.overview, /1 × 3 months at 1\.25%/);
   assert.match(bSec.overview, /Prepayment penalty/);
   assert.match(bSec.overview, /Paid off by refinance after lease-up/);
   assert.doesNotMatch(bSec.overview, /data-wb="private-protections"/);
   assert.match(bSec.terms, /Bridge terms/);
   assert.match(bSec.terms, /LTC \(% of cost\)/);
-  assert.match(bSec.terms, /Number of extensions/);
+  assert.match(bSec.terms, /Extension options/);
   assert.match(bSec.terms, /Rehab draws/);
   assert.match(bSec.terms, /Draw fee/);
   assert.match(bSec.terms, /Prepayment penalty/);
@@ -352,8 +354,8 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   const pAll = pSec.overview + pSec.terms + pSec.plan + pSec.whatIf;
   assert.doesNotMatch(pSec.overview, /<p\b|<small\b|<caption\b/i);
   assert.match(pSec.overview, /data-wb="private-protections"/);
-  assert.match(pSec.overview, /<h2>Your protections<\/h2>/);
-  assert.match(pSec.overview, /recorded first-lien mortgage on 23 &amp; 27 Charlotte/);
+  assert.match(pSec.overview, /aria-expanded="false"[^>]*data-protections-group="private"/);
+  assert.match(pSec.overview, /Your protections/);
   assert.match(pSec.overview, /Private pooled loan/);
   assert.match(pSec.overview, /\$404,550/);
   assert.match(pSec.overview, /\$20,000/);
@@ -363,7 +365,7 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(pSec.overview, /\$133\.33\/mo/);
   assert.match(pSec.overview, /Per year at 8%/);
   assert.match(pSec.overview, /First payment after month 1/);
-  assert.match(pSec.overview, /No prepayment penalty/);
+  assert.match(pSec.overview, /12 months, one 3-month extension\. Paid off early at refinance, no prepayment penalty\./);
   assert.match(pSec.overview, /Principal back at payoff/);
   assert.match(pSec.terms, /Private terms/);
   assert.match(pSec.terms, /Your participation/);
@@ -389,11 +391,11 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(dSec.overview, /\$586,000/);
   assert.match(dSec.overview, /\$439,500/);
   assert.match(dSec.overview, /1\.25x/);
-  assert.match(dSec.overview, /30 years/);
+  assert.match(dSec.overview, /7\.5% · 30 yrs/);
   assert.match(dSec.overview, /Pays off bridge/);
   assert.match(dSec.terms, /DSCR terms/);
   assert.match(dSec.terms, /75% LTV · Value \$586,000 · Loan \$439,500/);
-  assert.match(dSec.terms, /Amortization/);
+  assert.match(dSec.terms, /Term &amp; amortization/);
   assert.match(dSec.terms, /Prepayment penalty/);
   assert.match(dSec.terms, /Refi fees/);
   assert.match(dSec.plan, /DSCR refinance plan/);

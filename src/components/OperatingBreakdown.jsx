@@ -70,6 +70,41 @@ export default function OperatingBreakdown({ calc, Trigger = OverlayTrigger, car
           </Trigger>
         </span>
       </div>
+
+      {calc.upside && Array.isArray(calc.upside.items) && calc.upside.items.length > 0 && (
+        <div data-opex-group="upside" data-wb="upside" className="mt-2 pt-2">
+          <button
+            type="button"
+            aria-expanded={Boolean(open.upside)}
+            onClick={() => toggle('upside')}
+            className="flex min-h-[44px] w-full items-center justify-between gap-x-3 rounded-lg px-1.5 py-1.5 text-left text-sm transition hover:bg-warm-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
+          >
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 font-medium text-ink">
+              <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{open.upside ? '▴' : '▾'}</span>
+              <span className="min-w-0 break-words">{calc.upside.label}</span>
+            </span>
+            <span className="shrink-0 whitespace-nowrap text-xs font-medium text-ink-soft">
+              {calc.upside.totalText || ''}
+            </span>
+          </button>
+          {open.upside && (
+            <dl className="mb-1.5 mt-0.5 space-y-1 rounded-xl bg-paper px-3 py-2 text-sm tabular-nums">
+              {calc.upside.items.map((item) => (
+                <div key={item.key} className="flex items-baseline justify-between gap-x-3 gap-y-0.5 py-0.5">
+                  <dt className="min-w-0 flex-1 text-ink-soft">
+                    {item.overlay?.length ? <Trigger lines={item.overlay}>{item.label}</Trigger> : item.label}
+                  </dt>
+                  <dd className="shrink-0 whitespace-nowrap font-medium text-ink">
+                    {item.overlay?.length
+                      ? <Trigger lines={item.overlay}>{item.valueText}</Trigger>
+                      : item.valueText}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
     </div>
   );
 

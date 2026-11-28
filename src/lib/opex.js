@@ -122,10 +122,37 @@ export function computeLaundry(rawLaundry, rentedUnits = 0) {
   };
 }
 
+export function normalizeUpside(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+  const items = itemsRaw
+    .filter((it) => it && typeof it === 'object' && typeof it.label === 'string' && it.label.trim())
+    .map((it, idx) => ({
+      key: typeof it.key === 'string' && it.key.trim() ? it.key.trim() : `upside-${idx}`,
+      label: it.label.trim(),
+      valueText: typeof it.valueText === 'string' ? it.valueText.trim() : '',
+      annual: it.annual !== undefined && it.annual !== null && Number.isFinite(+it.annual) ? +it.annual : null,
+      overlay: Array.isArray(it.overlay)
+        ? it.overlay.filter((s) => typeof s === 'string' && s.trim())
+        : (typeof it.source === 'string' && it.source.trim() ? [it.source.trim()] : []),
+    }));
+  if (!items.length) return null;
+  const overlay = Array.isArray(raw.overlay)
+    ? raw.overlay.filter((s) => typeof s === 'string' && s.trim())
+    : (typeof raw.note === 'string' && raw.note.trim() ? [raw.note.trim()] : []);
+  return {
+    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Upside (not counted)',
+    totalText: typeof raw.totalText === 'string' && raw.totalText.trim() ? raw.totalText.trim() : '',
+    overlay,
+    items,
+  };
+}
+
 export function normalizeOpex(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const cleanSources = cleanSourcesMap(raw.sources);
   const laundry = raw.laundry && typeof raw.laundry === 'object' ? normalizeLaundry(raw.laundry) : null;
+  const upside = raw.upside && typeof raw.upside === 'object' ? normalizeUpside(raw.upside) : null;
   return {
     taxesAnnual: num(raw.taxesAnnual, 0),
     insuranceAnnual: num(raw.insuranceAnnual, 0),
@@ -137,11 +164,14 @@ export function normalizeOpex(raw) {
     mgmtHelpPct: num(raw.mgmtHelpPct, 0),
     mgmtHelpAnnual: num(raw.mgmtHelpAnnual, 0),
     wifiAnnual: num(raw.wifiAnnual, 0),
+    wifiLabel: typeof raw.wifiLabel === 'string' && raw.wifiLabel.trim() ? raw.wifiLabel.trim() : '',
+    wifiRentAddPerUnit: num(raw.wifiRentAddPerUnit, 0),
     camerasAnnual: num(raw.camerasAnnual, 0),
     rentalRegPerUnitAnnual: num(raw.rentalRegPerUnitAnnual, 0),
     snowLawnAnnual: num(raw.snowLawnAnnual, 0),
     sources: cleanSources,
     ...(laundry ? { laundry } : {}),
+    ...(upside ? { upside } : {}),
   };
 }
 
@@ -157,15 +187,36 @@ export function groupOpexCalc(calc) {
   const take = (keys) => keys.map((k) => lineMap.get(k)).filter(Boolean);
   const sum = (items) => items.reduce((s, l) => s + (l.annual || 0), 0);
   const perUnitMo = calc.units > 0 ? calc.grossMonthly / calc.units : calc.grossMonthly;
+  const hasWifiAdd = (calc.wifiRentAddAnnual || 0) > 0 && (calc.wifiRentAddPerUnit || 0) > 0;
+  const perUnitBaseMo = calc.rentedUnits > 0
+    ? (calc.baseGrossMonthly ?? calc.grossMonthly) / calc.rentedUnits
+    : (calc.units > 0 ? (calc.baseGrossMonthly ?? calc.grossMonthly) / calc.units : 0);
 
-  const groups = [
-    {
-      key: 'rent-in',
-      label: `Rent in (after ${calc.vacancyPct}% vacancy)`,
-      subtotalAnnual: calc.effectiveRentAnnual,
-      subtotalText: `${moneyRound(calc.effectiveRentAnnual)}/yr`,
-      tone: 'default',
-      items: [
+  const rentItems = hasWifiAdd
+    ? [
+        {
+          key: 'baseRent',
+          label: `Base rent (${calc.units} × ${moneyRound(perUnitBaseMo)}/mo)`,
+          valueText: `${moneyRound(calc.baseGrossAnnual)}/yr`,
+          overlay: [`${calc.units} units × ${moneyRound(perUnitBaseMo)}/mo = ${moneyRound(calc.baseGrossMonthly)}/mo (${moneyRound(calc.baseGrossAnnual)}/yr)`],
+          tone: 'default',
+        },
+        {
+          key: 'wifiRent',
+          label: `Wi-Fi included (+${moneyRound(calc.wifiRentAddPerUnit)}/unit)`,
+          valueText: `+${moneyRound(calc.wifiRentAddAnnual)}/yr`,
+          overlay: [`${calc.rentedUnits || calc.units} units × ${moneyRound(calc.wifiRentAddPerUnit)}/mo = +${moneyRound(calc.wifiRentAddMonthly)}/mo (+${moneyRound(calc.wifiRentAddAnnual)}/yr)`],
+          tone: 'default',
+        },
+        {
+          key: 'vacancy',
+          label: `Vacancy (${calc.vacancyPct}%)`,
+          valueText: `−${moneyRound(calc.vacancyAnnual)}/yr`,
+          overlay: [calc.vacancyOverlayLine].filter(Boolean),
+          tone: 'default',
+        },
+      ]
+    : [
         {
           key: 'grossRent',
           label: `Gross rent (${calc.units} × ${moneyRound(perUnitMo)}/mo)`,
@@ -180,7 +231,16 @@ export function groupOpexCalc(calc) {
           overlay: [calc.vacancyOverlayLine].filter(Boolean),
           tone: 'default',
         },
-      ],
+      ];
+
+  const groups = [
+    {
+      key: 'rent-in',
+      label: `Rent in (after ${calc.vacancyPct}% vacancy)`,
+      subtotalAnnual: calc.effectiveRentAnnual,
+      subtotalText: `${moneyRound(calc.effectiveRentAnnual)}/yr`,
+      tone: 'default',
+      items: rentItems,
     },
   ];
 
@@ -288,6 +348,7 @@ export function groupOpexCalc(calc) {
 export function computeOpex({
   opex,
   laundry = null,
+  upside = null,
   units = 10,
   rentedUnits = units,
   grossRentMonthly = 0,
@@ -298,7 +359,12 @@ export function computeOpex({
   if (!n) return null;
   const unitCount = Math.max(0, num(units, 10));
   const rented = Math.max(0, Math.min(unitCount || 10, num(rentedUnits, unitCount)));
-  const grossMonthly = Math.max(0, num(grossRentMonthly, 0));
+  const baseGrossMonthly = Math.max(0, num(grossRentMonthly, 0));
+  const baseGrossAnnual = baseGrossMonthly * 12;
+  const wifiAddActiveUnits = baseGrossMonthly > 0 ? rented : 0;
+  const wifiRentAddMonthly = wifiAddActiveUnits * n.wifiRentAddPerUnit;
+  const wifiRentAddAnnual = wifiRentAddMonthly * 12;
+  const grossMonthly = baseGrossMonthly + wifiRentAddMonthly;
   const grossAnnual = grossMonthly * 12;
   const vacancyPct = n.vacancyPct;
   const vacancyAnnual = applyVacancy ? grossAnnual * (vacancyPct / 100) : 0;
@@ -351,6 +417,8 @@ export function computeOpex({
     ? `Rental registration (${moneyRound(n.rentalRegPerUnitAnnual)}/unit)`
     : 'Rental registration';
 
+  const wifiLabel = n.wifiLabel || 'Wi-Fi (smart locks)';
+
   const makeLine = (key, label, annual) => ({
     key,
     label,
@@ -368,7 +436,7 @@ export function computeOpex({
     makeLine('reserves', reservesLabel, reservesAnnual),
     ...(repairsMaintAnnual > 0 ? [makeLine('repairsMaint', `Repairs & maintenance (${n.repairsMaintPct}%)`, repairsMaintAnnual)] : []),
     ...(mgmtHelpAnnual > 0 ? [makeLine('mgmtHelp', mgmtLabel, mgmtHelpAnnual)] : []),
-    ...(wifiAnnual > 0 ? [makeLine('wifi', 'Wi-Fi (smart locks)', wifiAnnual)] : []),
+    ...(wifiAnnual > 0 ? [makeLine('wifi', wifiLabel, wifiAnnual)] : []),
     ...(camerasAnnual > 0 ? [makeLine('cameras', 'Cameras', camerasAnnual)] : []),
     ...(rentalRegAnnual > 0 ? [makeLine('rentalReg', rentalRegLabel, rentalRegAnnual)] : []),
     ...(snowLawnAnnual > 0 ? [makeLine('snowLawn', 'Snow and lawn', snowLawnAnnual)] : []),
@@ -393,10 +461,17 @@ export function computeOpex({
     text: vacancyOverlayLine || `Vacancy (${vacancyPct}%): $0`,
   };
 
+  const upsideCalc = normalizeUpside(upside ?? n.upside ?? null);
+
   const result = {
     normalized: n,
     units: unitCount,
     rentedUnits: rented,
+    baseGrossMonthly,
+    baseGrossAnnual,
+    wifiRentAddPerUnit: n.wifiRentAddPerUnit,
+    wifiRentAddMonthly,
+    wifiRentAddAnnual,
     grossMonthly,
     grossAnnual,
     vacancyPct,
@@ -430,6 +505,7 @@ export function computeOpex({
     vacancyLine,
     costsOverlay,
     vacancyOverlayLine,
+    ...(upsideCalc ? { upside: upsideCalc } : {}),
   };
   result.groups = groupOpexCalc(result);
   return result;

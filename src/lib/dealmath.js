@@ -34,7 +34,7 @@ export const BASE_DEFAULTS = {
   purchasePrice: 0, bridgeRepairs: 0, bridgeClosing: 0, bridgeProcessing: 1295, bridgePointsPct: 1, bridgeRate: 10,
   bridgeDeferredMonths: 2, bridgeTermMonths: 12, privateRate: 8, privateTermMonths: 12, privateMinParticipation: 20000,
   marketRentLow: 0, marketRentHigh: 0,
-  refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 2.5, refiFeesFlat: 0, refiReserve: 0,
+  refiRate: 7.5, refiYears: 30, refiLtv: 75, refiDscr: 1.25, refiFeesPct: 0, refiFeesFlat: 15000, refiReserve: 0,
 };
 
 export const STRUCTURES = {
@@ -122,7 +122,7 @@ export function operating(baseIn = {}) {
   const b = {
     ...BASE_DEFAULTS,
     ...Object.fromEntries(
-      Object.entries(baseIn).map(([k, v]) => (k === 'opex' || k === 'laundry' || k.startsWith('_') ? [k, v] : [k, num(v, BASE_DEFAULTS[k])])),
+      Object.entries(baseIn).map(([k, v]) => (k === 'opex' || k === 'laundry' || k === 'upside' || k.startsWith('_') ? [k, v] : [k, num(v, BASE_DEFAULTS[k])])),
     ),
   };
   // All units are long-term rentals; ignore any legacy short-term values.
@@ -131,9 +131,11 @@ export function operating(baseIn = {}) {
   if (hasOpex(baseIn)) {
     const capRate = num(baseIn.valueCapRate, 9) > 0 ? num(baseIn.valueCapRate, 9) : 9;
     const laundry = baseIn.laundry || baseIn.opex?.laundry || null;
+    const upside = baseIn.upside || baseIn.opex?.upside || null;
     const opexCalc = computeOpex({
       opex: baseIn.opex,
       laundry,
+      upside,
       units: b.units,
       rentedUnits: b.units,
       grossRentMonthly: ltrUnits * b.rent,
@@ -497,7 +499,7 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
         : [
             { label: val.incomeLine, value: '', overlay: [...val.incomeOverlay, 'No lender has confirmed yet. A lender still has to confirm terms; the math still runs on today’s numbers.'] },
             ...(val.compsLine ? [{ label: val.compsLine, value: '', overlay: val.compsOverlay }] : []),
-            { label: 'Loan', value: money(o.refiLoan), overlay: [`${money(o.refiLoan)} (${o.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − fees & holdback = ${money(o.refiNet)} net.`] },
+            { label: 'Loan', value: money(o.refiLoan), overlay: [`${money(o.refiLoan)} (${o.refiLimitedBy === 'LTV' ? `${b.refiLtv}% of value` : `${b.refiDscr}x rent coverage`}) − ${b.refiReserve > 0 ? 'fees & holdback' : `${money((o.refiLoan * b.refiFeesPct) / 100 + b.refiFeesFlat)} fees`} = ${money(o.refiNet)} net.`] },
             {
               label: 'Pays seller',
               value: structure === 'seller_rehab'

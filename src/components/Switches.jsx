@@ -121,7 +121,7 @@ export function WhatIfNumbers({ deal, me, role, preview, planRepairBudget = 0 })
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Rent per unit</dt>
-            <dd className="mt-1 font-display text-xl font-semibold">{money(o.b.rent)}/mo</dd>
+            <dd className="mt-1 font-display text-xl font-semibold">{money(o.b.rent + (o.opexCalc?.wifiRentAddPerUnit || 0))}/mo</dd>
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Yearly profit before payments</dt>
