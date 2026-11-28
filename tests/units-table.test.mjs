@@ -208,9 +208,9 @@ test('buildSellerSummary writes plain sellerTable + refiLine without months/buye
   assert.equal(summary.sellerTable.length, 11);
   assert.equal(summary.sellerTable[0].covered, 'no');
   assert.equal(summary.sellerTable[4].covered, 'yes');
-  assert.equal(summary.refiLine, 'Once all 10 are rented, I refinance and pay you $180,000, and your loan is paid off.');
+  assert.equal(summary.refiLine, 'Once all 10 are rented, I pay you $180,000, and your loan is paid off.');
   assert.match(summary.intro, /I take over the leasing and the repairs/);
-  assert.doesNotMatch(JSON.stringify({ intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Month \d+|You net|repair loan payoff|Left for you/i);
+  assert.doesNotMatch(JSON.stringify({ intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Month \d+|You net|repair loan payoff|Left for you|refinanc|\brefi\b/i);
 
   const locked = {
     version: 1,
@@ -266,7 +266,7 @@ test('UnitsRentedGuide and LeadOfferCard render cleanly without subtext, estimat
   const sellerHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, { deal: { id: 'd1', slug: 'demo' }, content: {}, summary }));
   assert.match(sellerHtml, /Units rented/);
   assert.match(sellerHtml, /Your costs covered/);
-  assert.match(sellerHtml, /Once all 10 are rented, I refinance and pay you \$180,000, and your loan is paid off\./);
+  assert.match(sellerHtml, /Once all 10 are rented, I pay you \$180,000, and your loan is paid off\./);
   assert.doesNotMatch(sellerHtml, /You net|Left for you|Repair loan|contingency/i);
 });
 

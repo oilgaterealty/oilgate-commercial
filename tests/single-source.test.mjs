@@ -55,6 +55,8 @@ const CHARLOTTE_PLAN = {
   ],
   costs: [
     { label: 'Security, locks and lighting', cost: 12000, start: 0, end: 4, group: 'security' },
+    { label: 'Laundry 3 sets', cost: 19800, start: 0, end: 2, group: 'laundry' },
+    { label: 'Gas check + furnace', cost: 2000, start: 0, end: 2, group: 'diligence' },
     { label: 'Due diligence and tests', cost: 2500, start: 0, end: 2, group: 'diligence' },
     { label: 'City permits and registration', cost: 2050, start: 0, end: 2, group: 'permits' },
     { label: 'Exterior and common systems', cost: 13500, start: 2, end: 10, group: 'systems' },
@@ -72,7 +74,7 @@ const CHARLOTTE_BASE = {
   waterMo: 1000,
   reservesPerUnit: 300,
   value: 586000,
-  rehab: 124050,
+  rehab: 145850,
   purchasePrice: 275000,
   bridgeRepairs: 140000,
   bridgeClosing: 5500,
@@ -95,14 +97,24 @@ const CHARLOTTE_OFFER = {
   inputs: { note: 275000, rate: 5, amortYears: 0, closing: 5500 },
 };
 
-test('planStepBudgets derives units ($74,000), security, diligence+permits, and total ($124,050) from deal_plan', () => {
-  assert.equal(overallRepairBudget(CHARLOTTE_PLAN), 124050);
+test('planStepBudgets derives units ($74,000), one-time ($51,850), contingency ($20,000), and total ($145,850) from deal_plan', () => {
+  assert.equal(overallRepairBudget(CHARLOTTE_PLAN), 145850);
   const b = planStepBudgets(CHARLOTTE_PLAN);
   assert.deepEqual(b, {
     units: 74000,
+    nearReadyUnits: 22000,
+    biggerUnits: 52000,
     security: 12000,
-    safetyRecords: 4550,
-    total: 124050,
+    laundry: 19800,
+    paperwork: 6550,
+    safetyRecords: 6550,
+    eviction: 0,
+    building: 13500,
+    leaseUp: 0,
+    week1: 60350,
+    week2Onward: 65500,
+    contingency: 20000,
+    total: 145850,
   });
   const cs = buildCostSummary(CHARLOTTE_BASE, CHARLOTTE_PLAN);
   assert.deepEqual(cs.stepBudgets, b);
@@ -141,7 +153,7 @@ test('ExecutionPlanCard and normalizeExecutionSteps strip stale hardcoded dollar
   // With plan: each matching step renders its plan-derived figure instead.
   const withPlanHtml = renderToStaticMarkup(React.createElement(ExecutionPlanCard, { content: staleContent, plan: CHARLOTTE_PLAN }));
   assert.doesNotMatch(withPlanHtml, /\$140,000|\$3,000|\$6,000|\$10,000|\$13,500|\$150|\$500|\$50/);
-  assert.match(withPlanHtml, /\$4,550/);
+  assert.match(withPlanHtml, /\$6,550/);
   assert.match(withPlanHtml, /\$12,000/);
   assert.match(withPlanHtml, /\$74,000/);
   assert.match(withPlanHtml, /Court process only\./);
@@ -149,7 +161,7 @@ test('ExecutionPlanCard and normalizeExecutionSteps strip stale hardcoded dollar
   // With summary.stepBudgets (no raw plan import needed): same numbers.
   const budgets = planStepBudgets(CHARLOTTE_PLAN);
   const withBudgetsHtml = renderToStaticMarkup(React.createElement(ExecutionPlanCard, { content: staleContent, summary: { stepBudgets: budgets } }));
-  assert.match(withBudgetsHtml, /\$4,550/);
+  assert.match(withBudgetsHtml, /\$6,550/);
   assert.match(withBudgetsHtml, /\$12,000/);
   assert.match(withBudgetsHtml, /\$74,000/);
 
@@ -158,18 +170,18 @@ test('ExecutionPlanCard and normalizeExecutionSteps strip stale hardcoded dollar
   assert.equal(stripHardcodedDollars('Court process only.'), 'Court process only.');
 });
 
-test('lender bridge repairs always uses plan total ($124,050) first ahead of stale bridgeRepairs ($140,000)', () => {
+test('lender bridge repairs always uses plan total ($145,850) first ahead of stale bridgeRepairs ($140,000)', () => {
   const guide = buildLeadGuide(CHARLOTTE_BASE, CHARLOTTE_PLAN, CHARLOTTE_OFFER);
-  assert.equal(guide.bridge.repairs, 124050);
+  assert.equal(guide.bridge.repairs, 145850);
 
   const pkg = buildLenderPackage({ base: CHARLOTTE_BASE, offer: CHARLOTTE_OFFER, guide, lens: 'bridge' });
-  assert.equal(pkg.repairs, 124050);
-  assert.equal(pkg.loanAskRows.find((r) => r.key === 'repairs').display, '$124,050');
+  assert.equal(pkg.repairs, 145850);
+  assert.equal(pkg.loanAskRows.find((r) => r.key === 'repairs').display, '$145,850');
   assert.doesNotMatch(JSON.stringify(pkg), /140,?000/);
 
   // Falls back cleanly when no plan guide is present.
-  const fallbackPkg = buildLenderPackage({ base: { ...CHARLOTTE_BASE, rehab: 124050 }, offer: CHARLOTTE_OFFER, guide: null });
-  assert.equal(fallbackPkg.repairs, 124050);
+  const fallbackPkg = buildLenderPackage({ base: { ...CHARLOTTE_BASE, rehab: 145850 }, offer: CHARLOTTE_OFFER, guide: null });
+  assert.equal(fallbackPkg.repairs, 145850);
 });
 
 test('cross-role parity: market rent range, purchase, value, closing, and refi LTV match single source', () => {
@@ -204,9 +216,19 @@ test('buildSellerSummary includes stepBudgets without leaking buyer or lender de
   const s = offerSellerSummary(CHARLOTTE_OFFER, CHARLOTTE_BASE, CHARLOTTE_PLAN, [], false);
   assert.deepEqual(s.stepBudgets, {
     units: 74000,
+    nearReadyUnits: 22000,
+    biggerUnits: 52000,
     security: 12000,
-    safetyRecords: 4550,
-    total: 124050,
+    laundry: 19800,
+    paperwork: 6550,
+    safetyRecords: 6550,
+    eviction: 0,
+    building: 13500,
+    leaseUp: 0,
+    week1: 60350,
+    week2Onward: 65500,
+    contingency: 20000,
+    total: 145850,
   });
-  assert.ok(s.steps.some((st) => st.detail.includes('$124,050')));
+  assert.ok(s.steps.some((st) => st.detail.includes('$145,850')));
 });

@@ -79,8 +79,9 @@ export function InviteSeller({ deal, preview, inline = false, onInvited }) {
 }
 
 // The one offer the seller sees, with its steps. Shown to the seller and the realtor. No buyer numbers.
-export default function SellerOffer({ deal, preview, onAsk, canInvite = false }) {
-  const { loaded, row, summary } = useSellerOffer(deal);
+export default function SellerOffer({ deal, preview, onAsk, canInvite = false, offerState = null }) {
+  const fetched = useSellerOffer(deal);
+  const { loaded, row, summary } = offerState || fetched;
   if (!loaded) return null;
   const c = deal.seller_content || {};
   const invite = canInvite ? <InviteSeller deal={deal} preview={preview} /> : null;

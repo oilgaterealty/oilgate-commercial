@@ -33,9 +33,9 @@ const SECTIONS = [
   ['activity', 'Recent activity'],
 ];
 
-function RealtorOverview({ deal, root, onJump }) {
+function RealtorOverview({ deal, root, onJump, offerState }) {
   const [rows] = useUploads(deal);
-  const { row, summary } = useSellerOffer(deal);
+  const { row, summary } = offerState;
   const [base, setBase] = useState(null);
   const [interest, setInterest] = useState(null);
   const [nextTask, setNextTask] = useState(null);
@@ -59,6 +59,8 @@ function RealtorOverview({ deal, root, onJump }) {
   const leadHeadline = summary?.title || (row?.name ? row.name.replace(/^[A-Z]\s*:\s*/, '') : 'Not shared yet');
   const statusText = INTEREST[interest] || cap(deal.status);
   const nextStep = nextTask || summary?.steps?.[0]?.title || 'Share the offer with the seller';
+  const planTotal = +(summary?.stepBudgets?.total || summary?.guide?.costSummary?.total || 0);
+  const shownRehab = planTotal > 0 ? money(planTotal) : (base ? money(+(base.rehab || 0)) : '…');
 
   return (
     <div className="space-y-4">
@@ -76,7 +78,7 @@ function RealtorOverview({ deal, root, onJump }) {
           </div>
           <div className="rounded-2xl bg-paper p-3">
             <dt className="text-xs text-ink-soft">Repair budget</dt>
-            <dd className="mt-1 font-display text-xl font-semibold">{base ? money(+(summary?.stepBudgets?.total || summary?.guide?.costSummary?.total || base.rehab || 0)) : '…'}</dd>
+            <dd className="mt-1 font-display text-xl font-semibold">{shownRehab}</dd>
           </div>
           <div className="rounded-2xl bg-ink p-3 text-white">
             <dt className="text-xs text-warm">Lead offer</dt>
@@ -101,6 +103,8 @@ function RealtorOverview({ deal, root, onJump }) {
 export default function Realtor({ deal, me, member, preview, tab }) {
   const root = preview ? `#/d/${deal.slug}/view/realtor` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, SECTIONS, { seller: 'activity' });
+  const offerState = useSellerOffer(deal);
+  const planRepairBudget = +(offerState.summary?.stepBudgets?.total || offerState.summary?.guide?.costSummary?.total || 0);
 
   return (
     <div className="readable">
@@ -108,7 +112,7 @@ export default function Realtor({ deal, me, member, preview, tab }) {
         <JumpNav sections={SECTIONS} active={activeSection} onJump={jumpTo} base={root} preview={preview} />
 
       <section id="sec-overview" data-section="overview" className="scroll-mt-20">
-        <RealtorOverview deal={deal} root={root} onJump={jumpTo} />
+        <RealtorOverview deal={deal} root={root} onJump={jumpTo} offerState={offerState} />
       </section>
 
       <section id="sec-tasks" data-section="tasks" className="scroll-mt-20 space-y-4">
@@ -120,11 +124,11 @@ export default function Realtor({ deal, me, member, preview, tab }) {
       </section>
 
       <section id="sec-offers" data-section="offers" className="scroll-mt-20">
-        <SellerOffer deal={deal} preview={preview} canInvite onAsk={(q) => sendToOwner(deal, me, 'realtor', q, 'Offer question')} />
+        <SellerOffer deal={deal} preview={preview} canInvite offerState={offerState} onAsk={(q) => sendToOwner(deal, me, 'realtor', q, 'Offer question')} />
       </section>
 
       <section id="sec-what-if" data-section="what-if" className="scroll-mt-20">
-        <WhatIfNumbers deal={deal} me={me} role="realtor" preview={preview} />
+        <WhatIfNumbers deal={deal} me={me} role="realtor" preview={preview} planRepairBudget={planRepairBudget} />
       </section>
 
       <section id="sec-walkthrough" data-section="walkthrough" className="scroll-mt-20">

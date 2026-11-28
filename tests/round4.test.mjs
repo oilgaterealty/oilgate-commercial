@@ -17,10 +17,10 @@ test('round 4: seller summary is generated, plain and holds nothing the buyer ma
   assert.equal(s.terms.length, 4);
   assert.deepEqual(s.terms.map((t) => t.label), ['Buyout', 'You keep paying', 'Rent pays you first', 'I buy when']);
   assert.equal(s.steps.length, 4);
-  assert.deepEqual(s.steps.map((t) => t.title), ['Master lease', 'Repairs', 'Rent', 'Refinance']);
+  assert.deepEqual(s.steps.map((t) => t.title), ['Master lease', 'Repairs', 'Rent', 'Payoff']);
   for (const r of s.sellerTable) assert.deepEqual(Object.keys(r).sort(), ['covered', 'rentIn', 'units']);
   const sellerText = JSON.stringify({ terms: s.terms, steps: s.steps, refiLine: s.refiLine, title: s.title });
-  assert.doesNotMatch(sellerText, /buyer|\bnet\b|interest|contingency used|left for|You net|—|–/i);
+  assert.doesNotMatch(sellerText, /buyer|\bnet\b|interest|contingency used|left for|You net|—|–|refinanc|\brefi\b/i);
   const keep = s.terms.find((t) => t.label === 'You keep paying').value;
   assert.match(keep, /Your loan/);
   assert.doesNotMatch(keep, /insurance/i, 'a $0 cost item is skipped');

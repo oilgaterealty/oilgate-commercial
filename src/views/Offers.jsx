@@ -468,7 +468,9 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
     const lead = offers.find((x) => x.is_lead);
     if (!lead) { syncedLeadRef.current = true; return; }
     syncedLeadRef.current = true;
-    const summary = computeSellerSummary(lead, lead.inputs, base, false);
+    const planTotal = planState.lib.overallRepairBudget(planState.plan);
+    const syncBase = planTotal > 0 ? { ...base, rehab: planTotal } : base;
+    const summary = computeSellerSummary(lead, lead.inputs, syncBase, false);
     if (summary && JSON.stringify(summary) !== JSON.stringify(lead.seller_summary)) {
       setOffers((list) => list.map((x) => (x.id === lead.id ? { ...x, seller_summary: summary } : x)));
       void supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', lead.id);

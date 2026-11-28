@@ -77,28 +77,87 @@ export function stripHardcodedDollars(text) {
   return cleaned;
 }
 
+const NEAR_READY_UNIT_IDS = new Set(['5', '8', '1', '2']);
+
+function classifyCostBucket(c = {}) {
+  const g = String(c?.group || '').toLowerCase();
+  const label = String(c?.label || '');
+  if (g === 'security' || /(secur|lock|camera)/i.test(label)) return 'security';
+  if (g === 'laundry' || /(laundry|washer|dryer)/i.test(label)) return 'laundry';
+  if (g === 'eviction' || /(evict|writ|court)/i.test(label)) return 'eviction';
+  if (['lease-up', 'leaseup', 'leasing'].includes(g) || /(lease[- ]?up|leasing|tenant placement|screening)/i.test(label)) return 'leaseUp';
+  if (['diligence', 'permits', 'gas', 'safety'].includes(g) || /(gas|furnace|diligence|permit|zoning|registrat|title|code|violation)/i.test(label)) return 'paperwork';
+  return 'building';
+}
+
 export function resolveStepBudgets(source) {
   if (!source || typeof source !== 'object') return null;
   const direct = source.stepBudgets || source.guide?.costSummary?.stepBudgets || source.costSummary?.stepBudgets;
   if (direct && typeof direct === 'object' && typeof direct.units === 'number') {
+    const pos = (v) => Math.max(0, +v || 0);
+    const units = pos(direct.units);
+    const nearReadyUnits = pos(direct.nearReadyUnits);
+    const biggerUnits = 'biggerUnits' in direct ? pos(direct.biggerUnits) : Math.max(0, units - nearReadyUnits);
+    const security = pos(direct.security);
+    const laundry = pos(direct.laundry);
+    const paperwork = pos(direct.paperwork ?? direct.safetyRecords);
+    const eviction = pos(direct.eviction);
+    const building = pos(direct.building);
+    const leaseUp = pos(direct.leaseUp);
+    const contingency = pos(direct.contingency);
+    const week1 = 'week1' in direct ? pos(direct.week1) : (security + nearReadyUnits + laundry + paperwork);
+    const week2Onward = 'week2Onward' in direct ? pos(direct.week2Onward) : (biggerUnits + building);
     return {
-      units: Math.max(0, +direct.units || 0),
-      security: Math.max(0, +direct.security || 0),
-      safetyRecords: Math.max(0, +direct.safetyRecords || 0),
-      total: Math.max(0, +direct.total || 0),
+      units,
+      nearReadyUnits,
+      biggerUnits,
+      security,
+      laundry,
+      paperwork,
+      safetyRecords: paperwork,
+      eviction,
+      building,
+      leaseUp,
+      week1,
+      week2Onward,
+      contingency,
+      total: pos(direct.total),
     };
   }
   if (Array.isArray(source.units) || Array.isArray(source.costs)) {
-    const units = (Array.isArray(source.units) ? source.units : []).reduce((s, u) => s + Math.max(0, +u?.rehab || 0), 0);
+    const unitRows = Array.isArray(source.units) ? source.units : [];
+    const units = unitRows.reduce((s, u) => s + Math.max(0, +u?.rehab || 0), 0);
+    const nearReadyUnits = unitRows
+      .filter((u) => NEAR_READY_UNIT_IDS.has(String(u?.id || '').trim()))
+      .reduce((s, u) => s + Math.max(0, +u?.rehab || 0), 0);
+    const biggerUnits = Math.max(0, units - nearReadyUnits);
     const costs = Array.isArray(source.costs) ? source.costs : [];
-    const sumGroups = (...groups) => costs
-      .filter((c) => groups.includes(String(c?.group || '').toLowerCase()) && (+c?.cost || 0) > 0)
-      .reduce((s, c) => s + (+c.cost || 0), 0);
-    const security = sumGroups('security');
-    const safetyRecords = sumGroups('diligence', 'permits');
+    const buckets = { security: 0, laundry: 0, paperwork: 0, eviction: 0, building: 0, leaseUp: 0 };
+    for (const c of costs) {
+      const cost = Math.max(0, +c?.cost || 0);
+      if (cost <= 0) continue;
+      buckets[classifyCostBucket(c)] += cost;
+    }
     const allCosts = costs.reduce((s, c) => s + Math.max(0, +c?.cost || 0), 0);
     const contingency = Math.max(0, +source.contingency || 0);
-    return { units, security, safetyRecords, total: units + allCosts + contingency };
+    const week1 = buckets.security + nearReadyUnits + buckets.laundry + buckets.paperwork;
+    const week2Onward = biggerUnits + buckets.building;
+    return {
+      units,
+      nearReadyUnits,
+      biggerUnits,
+      security: buckets.security,
+      laundry: buckets.laundry,
+      paperwork: buckets.paperwork,
+      safetyRecords: buckets.paperwork,
+      eviction: buckets.eviction,
+      building: buckets.building,
+      leaseUp: buckets.leaseUp,
+      week1,
+      week2Onward,
+      contingency,
+      total: units + allCosts + contingency,
+    };
   }
   return null;
 }
@@ -121,27 +180,66 @@ export function normalizeExecutionSteps(content = {}, planOrBudgets = null) {
     const steps = content.execution_steps
       .map((step, i) => {
         const title = String(step?.title || '').trim();
+        const week = String(step?.week || '').trim();
+        const budgetKey = String(step?.budgetKey || '').trim();
         const rawDetail = String(step?.detail || '').trim();
-        const rawItems = Array.isArray(step?.items) ? step.items.map((x) => String(x || '').trim()).filter(Boolean) : [];
+        const rawItems = Array.isArray(step?.items) ? step.items : [];
+        const isStructured = Boolean(week || budgetKey || rawItems.some((x) => x && typeof x === 'object'));
+
+        if (isStructured) {
+          const items = rawItems
+            .map((item) => {
+              if (item && typeof item === 'object') {
+                const text = String(item.text || item.label || '').trim();
+                const itemKey = String(item.budgetKey || '').trim();
+                const rawAmt = itemKey && budgets ? budgets[itemKey] : null;
+                const amount = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : null;
+                return text ? { text, budgetKey: itemKey || null, amount } : null;
+              }
+              const text = String(item || '').trim();
+              return text ? { text, budgetKey: null, amount: null } : null;
+            })
+            .filter(Boolean);
+          const rawAmount = budgetKey && budgets ? budgets[budgetKey] : null;
+          const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : null;
+          const hadContent = Boolean(rawDetail || items.length || week || amount);
+          return {
+            key: String(step?.key || `step-${i}`),
+            week,
+            title,
+            detail: rawDetail,
+            budgetKey: budgetKey || null,
+            amount,
+            items,
+            structured: true,
+            _hadContent: hadContent,
+          };
+        }
+
+        const stringItems = rawItems.map((x) => String(x || '').trim()).filter(Boolean);
         const cleanDetail = stripHardcodedDollars(rawDetail);
-        const items = rawItems.map(stripHardcodedDollars).filter(Boolean);
-        const category = classifyExecutionStep({ title, detail: rawDetail, items: rawItems });
+        const items = stringItems.map(stripHardcodedDollars).filter(Boolean);
+        const category = classifyExecutionStep({ title, detail: rawDetail, items: stringItems });
         const planAmount = category === 'fix_units'
           ? budgets?.units
           : category === 'security'
             ? budgets?.security
             : category === 'safety_records'
-              ? budgets?.safetyRecords
+              ? (budgets?.paperwork ?? budgets?.safetyRecords)
               : null;
         const detail = Number.isFinite(planAmount) && planAmount > 0
           ? (cleanDetail ? `${fmtDollars(planAmount)}. ${cleanDetail}` : fmtDollars(planAmount))
           : cleanDetail;
-        const hadContent = Boolean(rawDetail || rawItems.length);
+        const hadContent = Boolean(rawDetail || stringItems.length);
         return {
           key: `step-${i}`,
+          week: '',
           title,
           detail,
+          budgetKey: null,
+          amount: null,
           items,
+          structured: false,
           _hadContent: hadContent,
         };
       })
@@ -152,6 +250,10 @@ export function normalizeExecutionSteps(content = {}, planOrBudgets = null) {
   const raw = content?.execution && typeof content.execution === 'object' ? content.execution : {};
   return DEFAULT_EXECUTION_PLAN.map((step) => ({
     ...step,
+    week: '',
+    budgetKey: null,
+    amount: null,
+    structured: false,
     detail: stripHardcodedDollars(String(raw[step.key] || '').trim()) || step.detail,
     items: [],
   }));
@@ -350,48 +452,92 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
 
 // "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
 export function ExecutionPlanCard({ content, summary, sellerOnly = false, plan = null, stepBudgets = null }) {
+  const hasContentSteps = Array.isArray(content?.execution_steps) && content.execution_steps.length > 0;
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
-  if (sellerOnly && !hasSummarySteps) return null;
+  if (sellerOnly && !hasContentSteps && !hasSummarySteps) return null;
+  const budgetSource = stepBudgets || plan || summary;
+  const budgets = resolveStepBudgets(budgetSource);
   const toLines = (v) => (Array.isArray(v) ? v : v ? String(v).split('\n') : []).map((x) => String(x || '').trim()).filter(Boolean);
-  const steps = hasSummarySteps
-    ? summary.steps.map((s, i) => ({
-        key: `sum-${i}`,
-        title: String(s?.title || '').trim(),
-        detail: String(s?.detail || '').trim(),
-        overlay: toLines(s?.overlay),
-        items: [],
-      })).filter((s) => s.title)
-    : normalizeExecutionSteps(content, stepBudgets || plan || summary).map((s) => ({ ...s, overlay: [] }));
+  const steps = hasContentSteps
+    ? normalizeExecutionSteps(content, budgetSource).map((s) => ({ ...s, overlay: [] }))
+    : hasSummarySteps
+      ? summary.steps.map((s, i) => ({
+          key: `sum-${i}`,
+          week: String(s?.week || '').trim(),
+          title: String(s?.title || '').trim(),
+          detail: String(s?.detail || '').trim(),
+          amount: Number.isFinite(+s?.amount) && +s.amount > 0 ? +s.amount : null,
+          overlay: toLines(s?.overlay),
+          items: [],
+          structured: false,
+        })).filter((s) => s.title)
+      : normalizeExecutionSteps(content, budgetSource).map((s) => ({ ...s, overlay: [] }));
   const proof = validProofItems(content);
+  const showPlanTotals = Boolean(hasContentSteps && budgets && budgets.total > 0);
   return (
     <Card>
       <CardTitle>The plan</CardTitle>
-      <ol className="space-y-3">
+      <ol className="space-y-4">
         {steps.map((s, i) => (
           <li key={s.key} className="flex gap-3">
             <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
               {i + 1}
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
+              {(s.week || s.amount > 0) && (
+                <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  {s.week ? <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{s.week}</span> : <span />}
+                  {s.amount > 0 && <span className="text-sm font-semibold tabular-nums text-ink">{fmtDollars(s.amount)}</span>}
+                </div>
+              )}
               <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
               {s.detail && (
-                <p className="text-sm leading-relaxed text-ink">
+                <p className="mt-0.5 text-sm leading-relaxed text-ink">
                   {s.overlay.length > 0 && OverlayTrigger
                     ? <OverlayTrigger lines={s.overlay}>{s.detail}</OverlayTrigger>
                     : s.detail}
                 </p>
               )}
               {s.items.length > 0 && (
-                <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
-                  {s.items.map((item, j) => (
-                    <li key={j}>{item}</li>
-                  ))}
-                </ul>
+                s.structured || s.items.some((item) => item && typeof item === 'object') ? (
+                  <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-ink">
+                    {s.items.map((item, j) => {
+                      const text = typeof item === 'object' ? item.text : item;
+                      const amt = typeof item === 'object' && Number.isFinite(item.amount) && item.amount > 0 ? item.amount : null;
+                      return (
+                        <li key={j} className="flex items-baseline justify-between gap-3 rounded-xl bg-paper px-3 py-2">
+                          <span className="min-w-0">{text}</span>
+                          {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
+                    {s.items.map((item, j) => (
+                      <li key={j}>{item}</li>
+                    ))}
+                  </ul>
+                )
               )}
             </div>
           </li>
         ))}
       </ol>
+      {showPlanTotals && (
+        <dl className="mt-5 space-y-2 border-t border-line pt-4 text-sm tabular-nums">
+          {budgets.contingency > 0 && (
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="text-ink-soft">Contingency (only if used)</dt>
+              <dd className="font-semibold text-ink">{fmtDollars(budgets.contingency)}</dd>
+            </div>
+          )}
+          <div className="flex items-baseline justify-between gap-4 border-t border-line pt-2.5">
+            <dt className="font-display text-base font-semibold text-ink">Total</dt>
+            <dd className="font-display text-xl font-semibold text-ink">{fmtDollars(budgets.total)}</dd>
+          </div>
+        </dl>
+      )}
       {proof.length > 0 && (
         <div className="mt-5 border-t border-line pt-4">
           <h3 className="mb-3 font-display text-lg font-semibold">Verified track record</h3>

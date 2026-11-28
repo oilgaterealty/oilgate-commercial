@@ -145,10 +145,10 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
   assert.ok(!summary.title.includes('A:'));
   assert.equal(summary.sellerTable.length, 11);
   assert.ok(summary.terms.some((t) => t.label === 'Buyout' && !/or what you owe/.test(t.value)));
-  assert.deepEqual(summary.steps.map((s) => s.title), ['Master lease', 'Repairs', 'Rent', 'Refinance']);
+  assert.deepEqual(summary.steps.map((s) => s.title), ['Master lease', 'Repairs', 'Rent', 'Payoff']);
   assert.ok(summary.steps[1].detail.includes('I pay for the repairs, $69,000'));
-  // Never exposes buyer returns, option letters, or months
-  assert.doesNotMatch(JSON.stringify({ title: summary.title, intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR|Month \d+/i);
+  // Never exposes buyer returns, option letters, refinance wording, or months
+  assert.doesNotMatch(JSON.stringify({ title: summary.title, intro: summary.intro, refiLine: summary.refiLine, terms: summary.terms, steps: summary.steps }), /Option [A-E]|Your cash in|Cash out|DSCR|Month \d+|refinanc|\brefi\b/i);
 
   // Seller page is never typed by hand: a locked summary is still regenerated from the numbers
   const locked = { version: 1, locked: true, title: 'Custom locked title', terms: [{ label: 'Price', value: 'Custom' }], steps: [] };

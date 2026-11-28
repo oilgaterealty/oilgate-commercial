@@ -96,17 +96,23 @@ function WhatIfRow({ label, unit, value, onChange, changed }) {
 }
 
 // Local-only building numbers what-if card for non-owner roles (such as the realtor) with Send to buyer.
-export function WhatIfNumbers({ deal, me, role, preview }) {
+export function WhatIfNumbers({ deal, me, role, preview, planRepairBudget = 0 }) {
   const model = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
   const { base, setBase } = model;
   const [open, setOpen] = useState(false);
-  const o = operating({ ...base, units: 10 });
-  const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: 10 });
-  const valueChanged = base.value !== model.original?.base?.value;
+  const rehabEdited = Boolean(model.original && base.rehab !== model.original.base?.rehab);
+  const effectiveBase = planRepairBudget > 0 && !rehabEdited ? { ...base, rehab: planRepairBudget } : base;
+  const effectiveOriginal = model.original && planRepairBudget > 0
+    ? { ...model.original, base: { ...model.original.base, rehab: planRepairBudget } }
+    : model.original;
+  const o = operating({ ...effectiveBase, units: 10 });
+  const val = valueSummary({ base: { ...o.b, ...effectiveBase }, noi: o.noi, units: 10 });
+  const valueChanged = effectiveBase.value !== model.original?.base?.value;
   const shownValue = o.b.value > 0 && (!model.touched || valueChanged) ? o.b.value : (val.income ?? o.b.value);
+  const fields = role === 'owner' ? BASE_FIELDS : BASE_FIELDS.filter(([k]) => !String(k).startsWith('refi'));
   return (
     <>
-      <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={model} />
+      <SendWhatIf deal={deal} me={me} role={role} preview={preview} model={{ ...model, base: effectiveBase, original: effectiveOriginal }} />
       <Card>
         <CardTitle>What-if numbers</CardTitle>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -134,8 +140,8 @@ export function WhatIfNumbers({ deal, me, role, preview }) {
           </button>
           {open && (
             <div className="mt-3 grid gap-x-8 md:grid-cols-2">
-              {BASE_FIELDS.map(([k, l, u]) => (
-                <WhatIfRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
+              {fields.map(([k, l, u]) => (
+                <WhatIfRow key={k} label={l} unit={u} value={effectiveBase[k] ?? BASE_DEFAULTS[k]} changed={effectiveBase[k] !== undefined && effectiveBase[k] !== BASE_DEFAULTS[k]}
                   onChange={(v) => setBase({ ...base, [k]: v })} />
               ))}
             </div>
