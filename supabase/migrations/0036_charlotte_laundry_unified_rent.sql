@@ -957,8 +957,7 @@ begin
       v_new_steps := v_new_steps || jsonb_build_array(v_step);
     end loop;
     update public.commercial_deals
-    set seller_content = jsonb_set(coalesce(seller_content, '{}'::jsonb), '{execution_steps}', v_new_steps, true),
-        updated_at = now()
+    set seller_content = jsonb_set(coalesce(seller_content, '{}'::jsonb), '{execution_steps}', v_new_steps, true)
     where id = v_deal_id;
   end if;
 
