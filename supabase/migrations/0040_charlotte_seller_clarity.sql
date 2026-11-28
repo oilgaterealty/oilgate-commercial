@@ -355,8 +355,7 @@ begin
 
   if jsonb_array_length(v_new_steps) > 0 then
     update public.commercial_deals
-    set seller_content = jsonb_set(v_content, '{execution_steps}', v_new_steps, true),
-        updated_at = now()
+    set seller_content = jsonb_set(v_content, '{execution_steps}', v_new_steps, true)
     where id = v_deal_id;
   end if;
 
@@ -418,7 +417,7 @@ begin
       'c', case when v_cont > 0 then 'Contingency (' || commercial_access_private.fmt_money(v_cont) || ', bringing total repair budget to ' || commercial_access_private.fmt_money(v_total_budget) || '): only added to the renovation note if actually used.' end,
       'd', 'Second seller note funding the work and closing costs. Paid from rent as units fill, then paid back in full.'
     ));
-    v_reno_overlay := (select coalesce(jsonb_agg(val), '[]'::jsonb) from jsonb_each_text(v_reno_overlay) as e(k, val));
+    v_reno_overlay := (select coalesce(jsonb_agg(val order by k), '[]'::jsonb) from jsonb_each_text(v_reno_overlay) as e(k, val));
 
     v_bills_overlay := jsonb_build_array(
       'Property tax: ' || commercial_access_private.fmt_money(v_taxes_mo) || '/mo',
