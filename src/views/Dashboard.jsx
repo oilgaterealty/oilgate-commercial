@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react';
 import { evaluate, money, valueSummary } from '../lib/dealmath.js';
-import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { SITE_KIND, canAccessCityRecords } from '../lib/site.js';
-import { Card, CardTitle } from '../components/Shell.jsx';
+import { Button, Card, CardTitle } from '../components/Shell.jsx';
 import { useUploads } from '../components/Files.jsx';
 import { Cover, useDealGallery } from '../components/Photos.jsx';
 import { OverviewActionButtons } from '../components/OverlaySheet.jsx';
@@ -11,12 +9,6 @@ import { useSheetBadges } from '../lib/sheetBadges.js';
 import { WorkBoard } from '../components/DealWorkspace.jsx';
 import { SellerPulse } from '../components/Pulse.jsx';
 import Activity from '../components/Activity.jsx';
-
-// Owner-only dynamic import so public and seller builds never bundle dealplan or deal_plan data.
-const loadPlanLib =
-  import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.VITE_SITE_KIND === 'seller'
-    ? null
-    : () => import('../lib/dealplan.js');
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
 const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
@@ -48,7 +40,7 @@ function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Selle
 }
 
 // Short phone-first overview for the owner.
-export default function Dashboard({ deal, me, role = 'owner', preview, onJump, onOpenPanel }) {
+export default function Dashboard({ deal, me, role = 'owner', preview, onJump, onOpenPanel, onOpenNumbers }) {
   const owner = role === 'owner' && !preview;
   const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
@@ -56,42 +48,11 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump, o
   const docs = (rows || []).filter((r) => r.kind === 'document');
   const { docBadge, msgBadge } = useSheetBadges({ deal, me, role, preview, docs });
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
-  const { offers, base, setBase } = model;
-  const [planRepairBudget, setPlanRepairBudget] = useState(0);
-  const [planOpex, setPlanOpex] = useState(null);
-  const [planLaundry, setPlanLaundry] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    if (!owner || !loadPlanLib) {
-      setPlanRepairBudget(0);
-      setPlanOpex(null);
-      setPlanLaundry(null);
-      return () => { alive = false; };
-    }
-    (async () => {
-      try {
-        const lib = await loadPlanLib();
-        const plan = await lib.loadDealPlan(supabase, deal.slug);
-        if (alive) {
-          setPlanRepairBudget(plan ? lib.overallRepairBudget(plan) : 0);
-          setPlanOpex(plan?.opex || null);
-          setPlanLaundry(plan?.laundry || null);
-        }
-      } catch {
-        if (alive) {
-          setPlanRepairBudget(0);
-          setPlanOpex(null);
-          setPlanLaundry(null);
-        }
-      }
-    })();
-    return () => { alive = false; };
-  }, [deal.slug, owner]);
+  const { offers, base, setBase, plan } = model;
   const effectiveBase = {
     ...base,
-    ...(planRepairBudget > 0 ? { rehab: planRepairBudget } : {}),
-    ...(planOpex && !base?.opex ? { opex: planOpex } : {}),
-    ...(planLaundry && !base?.laundry ? { laundry: planLaundry } : {}),
+    ...(plan?.opex && !base?.opex ? { opex: plan.opex } : {}),
+    ...(plan?.laundry && !base?.laundry ? { laundry: plan.laundry } : {}),
   };
   const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, effectiveBase) }));
   const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);
@@ -101,6 +62,7 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump, o
     : o.b.value;
   const ready = offers !== null;
   const openPanel = (kind) => (onOpenPanel ? onOpenPanel(kind) : onJump?.(kind, root));
+  const openNumbers = () => (onOpenNumbers ? onOpenNumbers() : openPanel('numbers'));
 
   return (
     <div className="space-y-4">
@@ -108,18 +70,25 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump, o
       {gallery.items.length > 0 && (
         <Cover items={gallery.items} compact onOpenUnitGallery={() => openPanel('photos')} />
       )}
-      <OverviewActionButtons
-        showDocuments
-        showMessages
-        showCityRecords={canAccessCityRecords(SITE_KIND, role, preview)}
-        showComps
-        docCount={docBadge}
-        msgCount={msgBadge}
-        onOpenDocuments={() => openPanel('documents')}
-        onOpenMessages={() => openPanel('messages')}
-        onOpenCityRecords={() => openPanel('city-records')}
-        onOpenComps={() => openPanel('comps')}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <OverviewActionButtons
+          showDocuments
+          showMessages
+          showCityRecords={canAccessCityRecords(SITE_KIND, role, preview)}
+          showComps
+          docCount={docBadge}
+          msgCount={msgBadge}
+          onOpenDocuments={() => openPanel('documents')}
+          onOpenMessages={() => openPanel('messages')}
+          onOpenCityRecords={() => openPanel('city-records')}
+          onOpenComps={() => openPanel('comps')}
+        />
+        {owner && (
+          <Button type="button" kind="primary" data-open-numbers="true" onClick={openNumbers}>
+            Numbers
+          </Button>
+        )}
+      </div>
       {owner && (
         <div className="flex flex-wrap items-center gap-1.5 text-sm">
           <span className="mr-1 text-ink-soft">See as</span>

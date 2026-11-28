@@ -77,7 +77,7 @@ const stageNames = { vacant: 'Fixing up', partial: 'Filling up', full: 'Full', a
 const stageColors = { vacant: 'bg-amber-50', partial: 'bg-orange-50', full: 'bg-emerald-50', after: 'bg-sky-50' };
 const tone = (value) => value < 0 ? 'text-red-700' : 'text-ink';
 
-export function DealPlanView({ result, base, offers, selected, onSelect, setBase, onChangeShortCarry, onSavePlan, comps = [], readiness = {} }) {
+export function DealPlanView({ result, base, offers, selected, onSelect, setBase, onChangeShortCarry, onSavePlan, comps = [], readiness = {}, onOpenNumbers = null }) {
   const [showMonthly, setShowMonthly] = useState(false);
   const [editBudget, setEditBudget] = useState(false);
   const [draftPlan, setDraftPlan] = useState(() => normalizePlan(result.plan));
@@ -127,37 +127,46 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
           onClick={() => onSelect(offer)} className={`min-h-10 rounded-full border px-4 py-2 text-sm ${offer.id === selected.id ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>{offer.name}</button>)}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {setBase && (
-          <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Refinance LTV">
-            {[75, 80].map((ltv) => {
-              const active = +(base?.refiLtv ?? result?.operating?.b?.refiLtv ?? 75) === ltv;
-              return (
-                <button
-                  key={ltv}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setBase({ ...base, refiLtv: ltv })}
-                  className={`min-h-[34px] rounded-full px-3 py-1 text-xs font-semibold transition ${
-                    active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
-                  }`}
-                >
-                  {ltv}% LTV
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
-          <span>Short months paid by the repair loan ($)</span>
-          <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months paid by the repair loan ($)" value={shortCarry}
-            onChange={(e) => onChangeShortCarry?.(e.target.value === '' ? 0 : +e.target.value)}
-            className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
-        </label>
-        {onSavePlan && (
-          <button type="button" aria-expanded={editBudget} onClick={() => setEditBudget((v) => !v)}
-            className="rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:border-ink">
-            {editBudget ? 'Hide repair budget' : 'Edit repair budget'}
+        {onOpenNumbers ? (
+          <button type="button" onClick={onOpenNumbers}
+            className="min-h-[38px] rounded-full border border-ink bg-white px-4 py-1.5 text-xs font-semibold text-ink hover:bg-ink hover:text-white">
+            Change in Numbers
           </button>
+        ) : (
+          <>
+            {setBase && (
+              <div className="inline-flex rounded-full border border-line bg-white p-0.5" role="group" aria-label="Refinance LTV">
+                {[75, 80].map((ltv) => {
+                  const active = +(base?.refiLtv ?? result?.operating?.b?.refiLtv ?? 75) === ltv;
+                  return (
+                    <button
+                      key={ltv}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setBase({ ...base, refiLtv: ltv })}
+                      className={`min-h-[34px] rounded-full px-3 py-1 text-xs font-semibold transition ${
+                        active ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'
+                      }`}
+                    >
+                      {ltv}% LTV
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <label className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1 text-xs text-ink-soft">
+              <span>Short months paid by the repair loan ($)</span>
+              <input type="number" inputMode="decimal" min={0} step={500} aria-label="Short months paid by the repair loan ($)" value={shortCarry}
+                onChange={(e) => onChangeShortCarry?.(e.target.value === '' ? 0 : +e.target.value)}
+                className="w-20 rounded border border-line px-1.5 py-0.5 text-right text-xs font-semibold text-ink outline-none focus:border-ink" />
+            </label>
+            {onSavePlan && (
+              <button type="button" aria-expanded={editBudget} onClick={() => setEditBudget((v) => !v)}
+                className="rounded-full border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:border-ink">
+                {editBudget ? 'Hide repair budget' : 'Edit repair budget'}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -306,33 +315,23 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
   </div>;
 }
 
-function LoadedDealPlan({ deal }) {
+function LoadedDealPlan({ deal, onOpenNumbers = null }) {
   const model = useDealModel(deal, { owner: true });
   const route = useHashRoute();
   const [chosen, setChosen] = useState(null);
   const [picked, setPicked] = useState(null);
-  const [state, setState] = useState({ slug: null, plan: null, comps: [], readiness: {}, status: 'loading' });
+  const [readiness, setReadiness] = useState({});
   useEffect(() => {
     let alive = true;
-    setState({ slug: deal.slug, plan: null, comps: [], readiness: {}, status: 'loading' });
-    (async () => {
-      try {
-        const [{ data: row, error }, { data: compRows }, readiness] = await Promise.all([
-          supabase.from('commercial_settings').select('value').eq('key', `deal_plan:${deal.slug}`).maybeSingle(),
-          supabase.from('commercial_comps').select('units,sale_price').eq('deal_id', deal.id),
-          loadReadinessMap(supabase, deal.id),
-        ]);
-        if (alive) setState({ slug: deal.slug, plan: row ? normalizePlan(row.value) : null, comps: compRows || [], readiness, status: error ? 'error' : 'ready' });
-      } catch {
-        if (alive) setState({ slug: deal.slug, plan: null, comps: [], readiness: {}, status: 'error' });
-      }
-    })();
+    loadReadinessMap(supabase, deal.id)
+      .then((r) => { if (alive) setReadiness(r || {}); })
+      .catch(() => {});
     return () => { alive = false; };
-  }, [deal.id, deal.slug]);
-  if (state.slug !== deal.slug || state.status === 'loading') return <Card><Empty>Loading…</Empty></Card>;
-  if (state.status === 'error' || model.error) return <Card><Empty>Plan unavailable</Empty></Card>;
-  if (!state.plan) return <Card><Empty>No plan yet</Empty></Card>;
-  if (model.offers === null) return <Card><Empty>Loading…</Empty></Card>;
+  }, [deal.id]);
+  if (model.error) return <Card><Empty>Plan unavailable</Empty></Card>;
+  if (model.offers === null || (!model.plan && model.saved !== 'Saved' && model.offers.length === 0)) return <Card><Empty>Loading…</Empty></Card>;
+  if (!model.plan) return <Card><Empty>No plan yet</Empty></Card>;
+  const activePlan = normalizePlan(model.plan);
   const structure = picked || route.sub || 'master_lease';
   const selected = model.offers.find((offer) => offer.id === chosen && offer.structure === structure)
     || model.offers.find((offer) => offer.structure === structure) || model.offers[0];
@@ -340,39 +339,18 @@ function LoadedDealPlan({ deal }) {
   const planBase = {
     ...model.base,
     units: 10,
-    ...(state.plan?.opex && !model.base?.opex ? { opex: state.plan.opex } : {}),
-    ...(state.plan?.laundry && !model.base?.laundry ? { laundry: state.plan.laundry } : {}),
+    ...(activePlan.opex && !model.base?.opex ? { opex: activePlan.opex } : {}),
+    ...(activePlan.laundry && !model.base?.laundry ? { laundry: activePlan.laundry } : {}),
   };
-  const result = monthlyPlan(selected.structure, selected.inputs, planBase, state.plan);
+  const result = monthlyPlan(selected.structure, selected.inputs, planBase, activePlan);
   const saveShortCarry = (val) => {
-    const nextInputs = { ...selected.inputs, shortCarry: val };
-    const nextSummary = offerSellerSummary({ ...selected, inputs: nextInputs }, planBase, state.plan, state.comps, false);
-    model.setOffers((list) => list.map((o) => (o.id === selected.id ? { ...o, inputs: nextInputs, seller_summary: nextSummary } : o)));
-    model.later(`short-${selected.id}`, () => supabase.from('commercial_offers').update({ inputs: nextInputs, seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', selected.id));
-  };
-  const handleSetBase = (nextBase, nextPlanOverride = state.plan) => {
-    model.setBase(nextBase);
-    const lead = model.offers.find((o) => o.is_lead) || selected;
-    if (lead) {
-      const nextSummary = offerSellerSummary(lead, { ...nextBase, units: 10 }, nextPlanOverride, state.comps, false);
-      model.setOffers((list) => list.map((o) => (o.id === lead.id ? { ...o, seller_summary: nextSummary } : o)));
-      model.later(`summary-${lead.id}`, () => supabase.from('commercial_offers').update({ seller_summary: nextSummary, updated_at: new Date().toISOString() }).eq('id', lead.id));
-    }
+    model.patchOffer(selected.id, { inputs: { ...selected.inputs, shortCarry: val } });
   };
   const handleSavePlan = async (nextPlan) => {
-    const clean = normalizePlan(nextPlan);
-    const total = overallRepairBudget(clean);
-    const { error } = await supabase.from('commercial_settings').upsert({
-      key: `deal_plan:${deal.slug}`,
-      value: clean,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) return error;
-    setState((prev) => ({ ...prev, plan: clean }));
-    handleSetBase({ ...model.base, rehab: total }, clean);
+    model.setPlan(nextPlan);
     return null;
   };
-  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={handleSetBase} onChangeShortCarry={saveShortCarry} onSavePlan={handleSavePlan} comps={state.comps} readiness={state.readiness}
+  return <DealPlanView key={selected.id} result={result} base={planBase} offers={model.offers} selected={selected} setBase={model.setBase} onChangeShortCarry={saveShortCarry} onSavePlan={handleSavePlan} comps={model.comps} readiness={readiness} onOpenNumbers={onOpenNumbers}
     onSelect={(offer) => {
       // Switch offers in place: update the address without a page jump.
       setChosen(offer.id); setPicked(offer.structure);
@@ -380,7 +358,7 @@ function LoadedDealPlan({ deal }) {
     }} />;
 }
 
-export default function DealPlan({ deal, role, preview = false }) {
+export default function DealPlan({ deal, role, preview = false, onOpenNumbers = null }) {
   if (!canAccessDealPlan(SITE_KIND, role, preview)) return null;
-  return <LoadedDealPlan key={deal.id} deal={deal} />;
+  return <LoadedDealPlan key={deal.id} deal={deal} onOpenNumbers={onOpenNumbers} />;
 }

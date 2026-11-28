@@ -14,6 +14,7 @@ import { SellerPulse, AlertsCard } from '../components/Pulse.jsx';
 import SellerOffer, { useSellerOffer } from '../components/SellerOffer.jsx';
 import { WorkBoard } from '../components/DealWorkspace.jsx';
 import { WhatIfNumbers } from '../components/Switches.jsx';
+import { useDealModel } from '../lib/useDealModel.js';
 import { supabase } from '../lib/supabase.js';
 import { money } from '../lib/dealmath.js';
 import { SITE_KIND, canAccessCityRecords } from '../lib/site.js';
@@ -150,7 +151,11 @@ export default function Realtor({ deal, me, member, preview, tab }) {
     'what-if': 'offers',
     ...Object.fromEntries(Object.keys(PANEL_ALIASES).map((k) => [k, 'overview'])),
   });
-  const offerState = useSellerOffer(deal);
+  const fetchedOfferState = useSellerOffer(deal);
+  const model = useDealModel(deal, { owner: false, onlyShared: preview ? 'realtor' : undefined });
+  const offerState = model.liveSummary
+    ? { loaded: true, row: model.offers?.[0] || fetchedOfferState.row || null, summary: model.liveSummary }
+    : fetchedOfferState;
   const planRepairBudget = +(offerState.summary?.stepBudgets?.total || offerState.summary?.guide?.costSummary?.total || 0);
 
   useEffect(() => {

@@ -33,7 +33,7 @@ test('value range: floor is the locked value, top is value after repairs; market
 test('market range shows for lender and owner, not the reviewer', () => {
   assert.match(read('src/views/Lender.jsx'), /<RentValue data=\{effectiveGuide\.rentValue\} showMarket hideUnits\b/);
   assert.doesNotMatch(read('src/views/Reviewer.jsx'), /showMarket/);
-  assert.match(read('src/components/OwnerRentValue.jsx'), /showMarket sourceLines=\{ctx\.plan\.marketRent\?\.source/);
+  assert.match(read('src/components/OwnerRentValue.jsx'), /showMarket[\s\S]*sourceLines=\{model\.plan\.marketRent\?\.source/);
   const mig = read('supabase/migrations/0024_note_waits_market_range.sql');
   assert.match(mig, /if r = 'reviewer' and g is not null then g := g #- '\{rentValue,marketRange\}'/);
   assert.match(mig, /'noteWaits', t->'noteWaits'/);

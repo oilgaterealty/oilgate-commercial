@@ -4,7 +4,7 @@ import { Button, Card, CardTitle, Empty, Field } from './Shell.jsx';
 import { PUBLIC_SITE } from '../lib/site.js';
 import { ExecutionPlanCard, LeadOfferCard, SellerProtectionsCard } from './LeadOfferCard.jsx';
 
-export const coveredLabelOf = (structure) => (structure === 'wrap' ? 'Your note covered' : 'Your costs covered');
+export const coveredLabelOf = (structure) => (structure === 'wrap' ? 'Covered?' : 'Your costs covered');
 
 export function useSellerOffer(deal) {
   const [row, setRow] = useState(undefined);

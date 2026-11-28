@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase.js';
+import { useDealModel } from '../lib/useDealModel.js';
 import RentValue from './RentValue.jsx';
 
 // Owner-only dynamic import so public and seller builds never bundle dealplan or deal_plan data.
@@ -19,48 +19,36 @@ export function mergeUnitRents(prev = {}, units = []) {
   return next;
 }
 
-// The owner's Overview copy: same three sections lenders and reviewers see, with rent today and market rent typed per unit.
-export default function OwnerRentValue({ deal }) {
-  const [ctx, setCtx] = useState(null);
+// The owner's Overview copy: driven by shared dealStore so Numbers updates reflect here right away.
+export default function OwnerRentValue({ deal, onOpenNumbers = null }) {
+  const model = useDealModel(deal, { owner: true });
+  const [lib, setLib] = useState(null);
+
   useEffect(() => {
     if (!loadPlanLib) return () => {};
     let alive = true;
-    (async () => {
-      try {
-        const lib = await loadPlanLib();
-        const [plan, { data: m }, { data: offers }, { data: comps }] = await Promise.all([
-          lib.loadDealPlan(supabase, deal.slug),
-          supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
-          supabase.from('commercial_offers').select('*').eq('deal_id', deal.id).eq('is_lead', true).limit(1),
-          supabase.from('commercial_comps').select('units,sale_price').eq('deal_id', deal.id),
-        ]);
-        if (!alive || !plan) return;
-        setCtx({ lib, plan, base: { ...(m?.base || {}), units: 10, strUnits: 0 }, lead: offers?.[0] || null, comps: comps || [] });
-      } catch {
-        if (alive) setCtx(null);
-      }
-    })();
+    loadPlanLib().then((m) => { if (alive) setLib(m); }).catch(() => {});
     return () => { alive = false; };
-  }, [deal.id, deal.slug]);
+  }, []);
 
-  if (!ctx) return null;
-  const data = ctx.lib.rentValue(ctx.base, ctx.plan, ctx.lead || {});
+  if (!lib || !model.plan) return null;
+  const lead = (model.offers || []).find((o) => o.is_lead) || model.offers?.[0] || {};
+  const data = lib.rentValue(model.base, model.plan, lead);
 
   const onSave = async (units) => {
-    const { data: m, error: readErr } = await supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle();
-    if (readErr) return readErr;
-    const fresh = { ...(m?.base || {}), units: 10, strUnits: 0 };
-    const nextBase = { ...fresh, unitRents: mergeUnitRents(fresh.unitRents, units) };
-    const { error } = await supabase.from('commercial_models').upsert({ deal_id: deal.id, base: nextBase, updated_at: new Date().toISOString() });
-    if (error) return error;
-    if (ctx.lead) {
-      const summary = ctx.lib.offerSellerSummary(ctx.lead, nextBase, ctx.plan, ctx.comps, false);
-      const { error: e2 } = await supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', ctx.lead.id);
-      if (e2) return e2;
-    }
-    setCtx((c) => ({ ...c, base: nextBase }));
+    model.setBase({ ...model.base, unitRents: mergeUnitRents(model.base?.unitRents, units) });
     return null;
   };
 
-  return <RentValue data={data} editable onSave={onSave} showMarket sourceLines={ctx.plan.marketRent?.source ? [ctx.plan.marketRent.source] : null} />;
+  return (
+    <RentValue
+      data={data}
+      editable
+      onSave={onSave}
+      showMarket
+      hideSlider={Boolean(onOpenNumbers)}
+      onOpenNumbers={onOpenNumbers}
+      sourceLines={model.plan.marketRent?.source ? [model.plan.marketRent.source] : null}
+    />
+  );
 }

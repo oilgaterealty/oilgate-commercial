@@ -23,9 +23,9 @@ test('Plans is owner-only, blocked in previews, and lazy-loaded outside public b
   assert.match(owner, /DealPlan && canAccessDealPlan/);
   const view = read('src/views/DealPlan.jsx');
   assert.match(view, /if \(!canAccessDealPlan\(SITE_KIND, role, preview\)\) return null/);
-  assert.match(view, /from\('commercial_settings'\)\.select\('value'\)\.eq\('key', `deal_plan:\$\{deal\.slug\}`\)\.maybeSingle\(\)/);
-  assert.match(view, /normalizePlan\(row\.value\)/);
-  assert.match(view, /monthlyPlan\(selected\.structure, selected\.inputs, planBase, state\.plan\)/);
+  assert.match(read('src/lib/dealplan.js'), /from\('commercial_settings'\)\.select\('value'\)\.eq\('key', `deal_plan:\$\{slug\}`\)\.maybeSingle\(\)/);
+  assert.match(view, /normalizePlan\(model\.plan\)/);
+  assert.match(view, /monthlyPlan\(selected\.structure, selected\.inputs, planBase, activePlan\)/);
   assert.match(view, /derivations\(result\)/);
   assert.match(view, /useDealModel\(deal, \{ owner: true \}\)/);
   assert.match(view, /route\.sub \|\| 'master_lease'/);

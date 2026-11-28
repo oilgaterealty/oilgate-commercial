@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Field, Button } from './Shell.jsx';
 import { sendToOwner } from './Messages.jsx';
 
-const FIELDS = [['balance', 'Remaining loan balance', 'number'], ['lender', 'Lender', 'text'], ['payment', 'Monthly loan payment', 'number'], ['rate', 'Interest rate (%)', 'number'], ['maturity', 'Maturity / payoff terms', 'text']];
+const FIELDS = [['balance', 'Remaining loan balance', 'number'], ['lender', 'Lender', 'text'], ['payment', 'Monthly loan payment', 'number'], ['rate', 'Interest rate (%)', 'number'], ['maturity', 'When it comes due / payoff terms', 'text']];
 export default function LoanPosition({ deal, role, preview, me, sendTo = 'buyer', collapsedByDefault = false }) {
   const toName = sendTo === 'realtor' ? 'the realtor' : buyerName();
   const [mine, setMine] = useState({});

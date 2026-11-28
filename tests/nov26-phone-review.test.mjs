@@ -159,8 +159,8 @@ test('wrap billsFromRent: 0, 5, and 10 units rented pay bills first then note; b
 
   const summary = offerSellerSummary({ name: 'B: Seller financing', ...offerOn }, WRAP_BASE, WRAP_PLAN, [], false);
   assert.equal(summary.billsFromRent, true);
-  assert.match(summary.intro, /holding bills.*first, then your note/i);
-  assert.match(summary.refiLine, /deferred holding costs/);
+  assert.match(summary.intro, /building bills.*first, then your note/i);
+  assert.match(summary.refiLine, /unpaid costs while units fill/);
   assert.doesNotMatch(JSON.stringify({ intro: summary.intro, terms: summary.terms, steps: summary.steps, refiLine: summary.refiLine }), /interest|reserve|DSCR|left for you/i);
 
   // UnitsRentedGuide renders the refi carried bills row

@@ -293,6 +293,7 @@ test('realtor renders WorkBoard, SellerPulse, Latest, SellerOffer, and WhatIfNum
     },
     '../components/DealWorkspace.jsx': { WorkBoard: () => React.createElement('div', { 'data-mock': 'WorkBoard' }) },
     '../components/Switches.jsx': switchesMod,
+    '../lib/useDealModel.js': { useDealModel: () => ({ offers: null, base: {}, liveSummary: null }) },
     '../lib/supabase.js': { supabase: supabaseStub },
     '../lib/dealmath.js': { money },
   });
@@ -326,7 +327,7 @@ test('owner Building numbers include editable rent and exclude tenthUnitRepair; 
   assert.doesNotMatch(offersSrc, /BASE_FIELDS\.filter\(/);
 
   const ownerSrc = read('src/views/Owner.jsx');
-  assert.match(ownerSrc, /<OwnerRentValue deal=\{deal\} \/>/);
+  assert.match(ownerSrc, /<OwnerRentValue deal=\{deal\} onOpenNumbers=\{/);
   assert.match(ownerSrc, /panel === 'activity'[\s\S]*?<Activity deal=\{deal\} title="Recent activity"/);
   assert.match(read('src/views/Dashboard.jsx'), /<Activity deal=\{deal\} title="Latest" compactLimit=\{3\}/);
   assert.match(read('src/views/Dashboard.jsx'), /<WorkBoard/);
@@ -355,12 +356,22 @@ test('what-ifs never call a save on commercial_models or commercial_offers', asy
     },
     useRef: (init) => ({ current: init }),
     useEffect: (fn) => { fn(); },
+    useSyncExternalStore: (_sub, getSnap) => getSnap(),
   };
+  const storeSrc = read('src/lib/dealStore.js').replace(/import\.meta\.env\.VITE_SITE_KIND/g, '""');
+  const storeCode = transformSync(storeSrc, { loader: 'js', format: 'cjs' }).code;
+  const storeMod = { exports: {} };
+  new Function('module', 'exports', 'require', storeCode)(storeMod, storeMod.exports, (spec) => {
+    if (spec === './supabase.js') return { supabase: supabaseStub };
+    return require(spec);
+  });
+  storeMod.exports.resetDealStore();
   const code = transformSync(read('src/lib/useDealModel.js'), { loader: 'js', format: 'cjs' }).code;
   const mod = { exports: {} };
   const localRequire = (spec) => {
     if (spec === 'react') return reactMock;
     if (spec === './supabase.js') return { supabase: supabaseStub };
+    if (spec === './dealStore.js') return storeMod.exports;
     return require(spec);
   };
   new Function('module', 'exports', 'require', code)(mod, mod.exports, localRequire);

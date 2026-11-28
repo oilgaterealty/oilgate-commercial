@@ -1,7 +1,8 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState, useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { roleLabel } from '../lib/format.js';
 import { setDealNames, buyerName } from '../lib/people.js';
+import { getLiveSellerSummary, subscribeDealStore } from '../lib/dealStore.js';
 import Shell, { Card, Empty, PropertyHead } from '../components/Shell.jsx';
 import { PUBLIC_SITE, SITE_KIND, roleAllowedHere } from '../lib/site.js';
 import { normalizeLenderLens } from '../lib/lenderLens.js';
@@ -49,6 +50,13 @@ export default function DealRoom({ slug, tab, sub, session, urlLens = '' }) {
     return () => { alive = false; };
   }, [slug, session.user.email, viewing]);
 
+  const dealId = state.deal?.id;
+  const liveSellerSummary = useSyncExternalStore(
+    (cb) => (dealId ? subscribeDealStore(dealId, cb) : () => {}),
+    () => (dealId ? getLiveSellerSummary(dealId) : null),
+    () => (dealId ? getLiveSellerSummary(dealId) : null),
+  );
+
   // Names follow who is looking: the seller (and "See as seller") never gets the buyer's name.
   setDealNames(state.deal, viewing && state.role === 'owner' && PREVIEWABLE.includes(sub) ? sub : state.role);
   const me = {
@@ -89,7 +97,7 @@ export default function DealRoom({ slug, tab, sub, session, urlLens = '' }) {
         </div>
         <Shell head={<PropertyHead deal={state.deal} role={sub} />} wide={sub === 'seller'}>
           <Suspense fallback={<Empty>Loading…</Empty>}>
-            <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview', company: '' }} preview tab={innerTab} initialLens={cleanUrlLens || 'bridge'} urlLens={cleanUrlLens} />
+            <Page role={sub} deal={state.deal} me={{ email: '__preview__', name: 'Preview', company: '' }} preview tab={innerTab} initialLens={cleanUrlLens || 'bridge'} urlLens={cleanUrlLens} liveSummary={sub === 'seller' ? liveSellerSummary : null} />
           </Suspense>
         </Shell>
       </div>

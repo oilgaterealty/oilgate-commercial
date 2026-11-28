@@ -264,8 +264,8 @@ test('UnitsRentedGuide and LeadOfferCard render cleanly without subtext, estimat
     },
   });
   const sellerHtml = renderToStaticMarkup(React.createElement(LeadOfferCard, { deal: { id: 'd1', slug: 'demo' }, content: {}, summary }));
-  assert.match(sellerHtml, /Units rented/);
-  assert.match(sellerHtml, /Your costs covered/);
+  assert.match(sellerHtml, /Units/);
+  assert.match(sellerHtml, /Covered\?/);
   assert.match(sellerHtml, /Once all 10 are rented, I pay you \$180,000, and your loan is paid off\./);
   assert.doesNotMatch(sellerHtml, /You net|Left for you|Repair loan|contingency/i);
 });

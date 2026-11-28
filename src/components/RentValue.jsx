@@ -106,7 +106,7 @@ export function mergeViews(views) {
   return out;
 }
 
-export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false, hideSlider = false, hideValueRange = false, collapseTables = false, rent: controlledRent = null, onRentChange = null }) {
+export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false, hideSlider = false, hideValueRange = false, collapseTables = false, rent: controlledRent = null, onRentChange = null, onOpenNumbers = null }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
   const [tablesOpen, setTablesOpen] = useState({ units: false, views: false, grid: false });
@@ -244,6 +244,18 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
     <div className={collapseTables ? 'space-y-3.5' : 'space-y-5'}>
       {showRangesCard && (
         <Ranges data={data} showMarket={showMarket && !hideSlider} sourceLines={sourceLines} Trigger={Trigger} rent={rent} setRent={setRent} />
+      )}
+      {hideSlider && onOpenNumbers && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-paper px-3.5 py-2.5 text-sm">
+          <span className="text-ink-soft">Rent &amp; building numbers are edited in Numbers ({money(activeRent)}/unit).</span>
+          <button
+            type="button"
+            onClick={onOpenNumbers}
+            className="min-h-[36px] rounded-full border border-ink bg-white px-3 py-1 text-xs font-semibold text-ink hover:bg-ink hover:text-white"
+          >
+            Change in Numbers
+          </button>
+        </div>
       )}
       <OperatingBreakdown calc={opexBreakdown} Trigger={Trigger} card />
       {collapseTables ? (

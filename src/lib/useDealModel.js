@@ -1,53 +1,119 @@
-import { useEffect, useRef, useState } from 'react';
-import { supabase } from './supabase.js';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import {
+  filterOffersForRole,
+  getDealSnapshot,
+  loadDealStore,
+  scheduleDealPersist,
+  setDealOffers,
+  subscribeDealStore,
+  updateDealBase,
+  updateDealOffer,
+  updatePlanState,
+} from './dealStore.js';
 
-// Offers and building numbers for one deal. The owner's changes save; everyone else's stay a local what-if.
+// Shared per-deal state across Owner views & "See as" previews. The owner's changes save; real non-owners stay a local what-if.
 export function useDealModel(deal, { owner, onlyShared } = {}) {
-  const [offers, setOffers] = useState(null);
-  const [base, setBaseState] = useState({});
-  const [saved, setSaved] = useState('');
-  const [error, setError] = useState('');
-  const original = useRef(null);
-  const timers = useRef({});
+  const dealId = deal?.id;
+  const snapshot = useSyncExternalStore(
+    (cb) => (dealId ? subscribeDealStore(dealId, cb) : () => {}),
+    () => (dealId ? getDealSnapshot(dealId) : null),
+    () => (dealId ? getDealSnapshot(dealId) : null),
+  );
+
+  // Real non-owners (not in an owner preview session) keep local what-if edits isolated from the shared store.
+  const [localWhatIf, setLocalWhatIf] = useState(null);
 
   useEffect(() => {
-    const offersQuery = owner || onlyShared
-      ? supabase.from('commercial_offers').select('*').eq('deal_id', deal.id).order('sort')
-      : supabase.rpc('commercial_get_lead_offer', { p_deal: deal.id });
-    Promise.all([
-      offersQuery,
-      supabase.from('commercial_models').select('base').eq('deal_id', deal.id).maybeSingle(),
-    ]).then(([a, b]) => {
-      let list = a.data || [];
-      if (onlyShared) {
-        list = list
-          .filter((x) => x.is_lead && Boolean(x['share_' + onlyShared]))
-          .slice(0, 1)
-          .map(({ note: _n, ...rest }) => rest);
-      } else if (!owner) {
-        list = list.slice(0, 1).map(({ note: _n, ...rest }) => rest);
-      }
-      const loadedBase = { ...b.data?.base, units: 10, strUnits: 0 };
-      setOffers(list);
-      setBaseState(loadedBase);
-      original.current = { list, base: loadedBase };
-      setError(a.error || b.error ? 'Some numbers could not load. Refresh to try again.' : '');
-    });
-  }, [deal.id, owner, onlyShared]);
+    if (!dealId) return undefined;
+    loadDealStore(deal, { owner, onlyShared });
+    return undefined;
+  }, [dealId, deal?.slug, owner, onlyShared]);
+
+  const useStoreState = Boolean(owner || snapshot?.dirtyByOwner);
+  const storeOffers = snapshot?.offers ?? null;
+  const filteredStoreOffers = filterOffersForRole(storeOffers, { owner, onlyShared });
+
+  const offers = useStoreState
+    ? filteredStoreOffers
+    : (localWhatIf?.offers ?? filteredStoreOffers);
+  const base = useStoreState
+    ? (snapshot?.base || { units: 10, strUnits: 0 })
+    : (localWhatIf?.base ?? (snapshot?.base || { units: 10, strUnits: 0 }));
 
   const later = (key, fn) => {
-    if (!owner) return;
-    clearTimeout(timers.current[key]);
-    setSaved('Saving…');
-    timers.current[key] = setTimeout(async () => { const { error } = await fn(); setSaved(error ? 'Not saved. Check your connection.' : 'Saved'); }, 600);
+    if (!owner || !dealId) return;
+    scheduleDealPersist(dealId, key, fn);
   };
-  const setBase = (b) => {
-    const next = { ...b, units: 10, strUnits: 0 };
-    setBaseState(next);
-    later('base', () => supabase.from('commercial_models').upsert({ deal_id: deal.id, base: next, updated_at: new Date().toISOString() }));
+
+  const setBase = (nextBaseOrFn) => {
+    if (!dealId) return;
+    if (owner) {
+      updateDealBase(deal, nextBaseOrFn, { owner: true, persist: true });
+      return;
+    }
+    const curBase = localWhatIf?.base ?? base;
+    const resolved = typeof nextBaseOrFn === 'function' ? nextBaseOrFn(curBase) : nextBaseOrFn;
+    setLocalWhatIf({
+      offers: localWhatIf?.offers ?? filteredStoreOffers,
+      base: { ...(resolved || {}), units: 10, strUnits: 0 },
+    });
   };
-  const reset = () => { setOffers(original.current.list); setBaseState(original.current.base); };
+
+  const setOffers = (nextOffersOrFn) => {
+    if (!dealId) return;
+    if (owner) {
+      setDealOffers(deal, nextOffersOrFn);
+      return;
+    }
+    const curOffers = localWhatIf?.offers ?? filteredStoreOffers;
+    const resolved = typeof nextOffersOrFn === 'function' ? nextOffersOrFn(curOffers) : nextOffersOrFn;
+    setLocalWhatIf({
+      offers: resolved,
+      base: localWhatIf?.base ?? base,
+    });
+  };
+
+  const setPlan = (nextPlanOrFn) => {
+    if (!owner || !dealId) return null;
+    return updatePlanState(deal, nextPlanOrFn, { owner: true, persist: true });
+  };
+
+  const patchOffer = (offerId, patch) => {
+    if (!dealId) return;
+    if (owner) {
+      updateDealOffer(deal, offerId, patch, { owner: true, persist: true });
+      return;
+    }
+    setOffers((list) => (list || []).map((o) => (o.id === offerId ? { ...o, ...patch } : o)));
+  };
+
+  const reset = () => {
+    if (!owner) setLocalWhatIf(null);
+  };
+
   const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b);
-  const touched = !owner && !!original.current && (!same(offers, original.current.list) || !same(base, original.current.base));
-  return { offers, setOffers, base, setBase, later, saved, error, reset, touched, original: original.current };
+  const original = snapshot?.original || null;
+  const touched = !owner && !snapshot?.dirtyByOwner && !!original && (!same(offers, original.list) || !same(base, original.base));
+  const lead = Array.isArray(storeOffers) ? (storeOffers.find((o) => o.is_lead) || storeOffers[0]) : null;
+  const liveSummary = useStoreState ? (lead?.seller_summary || null) : null;
+  const liveGuide = liveSummary?.guide || null;
+
+  return {
+    offers,
+    setOffers,
+    patchOffer,
+    base,
+    setBase,
+    plan: snapshot?.plan || null,
+    setPlan,
+    comps: snapshot?.comps || [],
+    liveSummary,
+    liveGuide,
+    later,
+    saved: snapshot?.saved || '',
+    error: snapshot?.error || '',
+    reset,
+    touched,
+    original,
+  };
 }

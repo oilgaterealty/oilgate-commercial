@@ -28,6 +28,7 @@ import { AlertsCard } from '../components/Pulse.jsx';
 import Dashboard from './Dashboard.jsx';
 import LoanPosition from '../components/LoanPosition.jsx';
 import OwnerRentValue from '../components/OwnerRentValue.jsx';
+import OwnerNumbersPanel from '../components/OwnerNumbersPanel.jsx';
 import AccessRequests from '../components/AccessRequests.jsx';
 import Activity from '../components/Activity.jsx';
 
@@ -54,6 +55,7 @@ const PANEL_ALIASES = {
   'city-records': 'city-records',
   comps: 'comps',
   activity: 'activity',
+  numbers: 'numbers',
   settings: 'settings',
   people: 'settings',
 };
@@ -64,6 +66,7 @@ const PANEL_TITLES = {
   'city-records': 'City records',
   comps: 'Comps',
   activity: 'Recent activity',
+  numbers: 'Numbers',
   settings: 'Settings',
 };
 
@@ -521,6 +524,9 @@ export default function Owner({ deal: initial, me, tab }) {
         {panel === 'activity' && (
           <Activity deal={deal} title="Recent activity" />
         )}
+        {panel === 'numbers' && (
+          <OwnerNumbersPanel deal={deal} />
+        )}
         {panel === 'settings' && (
           <div className="space-y-6">
             <People deal={deal} />
@@ -538,13 +544,13 @@ export default function Owner({ deal: initial, me, tab }) {
 
       {show('overview') && (
         <section id="sec-overview" data-section="overview" className="scroll-mt-20">
-          <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} onOpenPanel={openPanel} />
+          <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} onOpenPanel={openPanel} onOpenNumbers={() => openPanel('numbers')} />
         </section>
       )}
 
       {show('offers') && (
         <section id="sec-offers" data-section="offers" className="scroll-mt-20 space-y-5">
-          <Offers deal={deal} canSave me={me} role="owner" />
+          <Offers deal={deal} canSave me={me} role="owner" onOpenNumbers={() => openPanel('numbers')} />
 
           <Card>
             <button
@@ -559,7 +565,7 @@ export default function Owner({ deal: initial, me, tab }) {
             </button>
             {offersExtra.rentValue && (
               <div className="mt-4 border-t border-line pt-4">
-                <OwnerRentValue deal={deal} />
+                <OwnerRentValue deal={deal} onOpenNumbers={() => openPanel('numbers')} />
               </div>
             )}
           </Card>
@@ -600,7 +606,7 @@ export default function Owner({ deal: initial, me, tab }) {
       {show('plans') && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
         <section id="sec-plans" data-section="plans" className="scroll-mt-20">
           <Suspense fallback={<Empty>Loading…</Empty>}>
-            <DealPlan key={deal.id} deal={deal} role="owner" />
+            <DealPlan key={deal.id} deal={deal} role="owner" onOpenNumbers={() => openPanel('numbers')} />
           </Suspense>
         </section>
       )}

@@ -244,7 +244,9 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
   const viewer = role !== 'reviewer';
   const [panel, setPanel] = useState(() => (tab === 'photos' ? 'photos' : (!viewer ? (REVIEWER_PANELS[tab] || null) : null)));
   const [rentValueOpen, setRentValueOpen] = useState(() => tab === 'rent-value');
-  const { base } = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
+  const model = useDealModel(deal, { owner: false, onlyShared: preview ? role : undefined });
+  const { base } = model;
+  const activeGuide = model.liveGuide || leadGuide;
 
   const gallery = useDealGallery(deal, viewer ? 'viewer' : role, preview, { externalRows: rows });
 
@@ -325,21 +327,21 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
   const b = {
     ...base,
     units: 10,
-    ...(leadGuide?.opex && !base?.opex ? { opex: leadGuide.opex } : {}),
-    ...(leadGuide?.laundry && !base?.laundry ? { laundry: leadGuide.laundry } : {}),
-    ...(leadGuide?.upside && !base?.upside ? { upside: leadGuide.upside } : {}),
+    ...(activeGuide?.opex && !base?.opex ? { opex: activeGuide.opex } : {}),
+    ...(activeGuide?.laundry && !base?.laundry ? { laundry: activeGuide.laundry } : {}),
+    ...(activeGuide?.upside && !base?.upside ? { upside: activeGuide.upside } : {}),
   };
   const o = operating(b);
   const val = valueSummary({ base: b, noi: o.noi, units: 10 });
-  const refiGuide = leadGuide?.refi || null;
+  const refiGuide = activeGuide?.refi || null;
   const shownValue = o.opexCalc ? (val.income || o.b.value) : (refiGuide?.estimatedValue || val.income || o.b.value);
-  const shownRepair = leadGuide?.costSummary?.total ?? o.b.rehab;
-  const reviewerRentValue = leadGuide?.rentValue
+  const shownRepair = activeGuide?.costSummary?.total ?? o.b.rehab;
+  const reviewerRentValue = activeGuide?.rentValue
     ? {
-        ...leadGuide.rentValue,
-        ...(b.opex && !leadGuide.rentValue.opex ? { opex: b.opex } : {}),
-        ...(b.laundry && !leadGuide.rentValue.laundry ? { laundry: b.laundry } : {}),
-        ...(b.upside && !leadGuide.rentValue.upside ? { upside: b.upside } : {}),
+        ...activeGuide.rentValue,
+        ...(b.opex && !activeGuide.rentValue.opex ? { opex: b.opex } : {}),
+        ...(b.laundry && !activeGuide.rentValue.laundry ? { laundry: b.laundry } : {}),
+        ...(b.upside && !activeGuide.rentValue.upside ? { upside: b.upside } : {}),
       }
     : null;
 
@@ -408,7 +410,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
                     <div><dt className="text-ink-soft">Yearly profit before payments</dt><dd className="font-semibold">{money(o.noi)}/yr</dd></div>
                     <div><dt className="text-ink-soft">Value after repairs</dt><dd className="font-semibold"><OverlayTrigger lines={refiGuide?.estimatedValueOverlay || val.incomeOverlay}>{money(shownValue)}</OverlayTrigger></dd></div>
                     <div><dt className="text-ink-soft">Yearly return on value</dt><dd className="font-semibold">{pct(o.capRate, 1)}</dd></div>
-                    <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-semibold"><OverlayTrigger lines={leadGuide?.costHeadingOverlay || []}>{money(shownRepair)}</OverlayTrigger></dd></div>
+                    <div><dt className="text-ink-soft">Repair budget</dt><dd className="font-semibold"><OverlayTrigger lines={activeGuide?.costHeadingOverlay || []}>{money(shownRepair)}</OverlayTrigger></dd></div>
                     <div><dt className="text-ink-soft">Refinance</dt><dd className="font-semibold">{o.b.refiRate}%, {o.b.refiYears} yrs</dd></div>
                   </dl>
                 </Card>
@@ -421,7 +423,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
           {!viewer && (
             <section id="sec-offers" data-section="offers" className="scroll-mt-20 space-y-5">
               <h2 className="font-display text-2xl font-semibold">The lead offer</h2>
-              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} leadGuide={leadGuide} />
+              <Offers deal={deal} canSave={false} onlyShared={preview ? role : undefined} me={me} role={role} preview={preview} leadGuide={activeGuide} />
               {isRentValue(reviewerRentValue) && (
                 <Card>
                   <button

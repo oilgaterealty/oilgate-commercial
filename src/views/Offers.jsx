@@ -123,7 +123,7 @@ const LAUNDRY_FIELDS = [
   ['repairsPerStackAnnual', 'Repairs per stack / yr ($)', '$'],
 ];
 
-function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
+function BuildingNumbers({ base, setBase, o, owner = false, comps, onOpenNumbers = null }) {
   const [open, setOpen] = useState(false);
   const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: o.b.units, comps });
   const buildingOverlay = [
@@ -142,7 +142,11 @@ function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-xl font-semibold">Building numbers</h2>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          {owner && (
+          {owner && onOpenNumbers ? (
+            <Button type="button" kind="secondary" onClick={onOpenNumbers}>
+              Change in Numbers
+            </Button>
+          ) : owner ? (
             <div className="inline-flex rounded-full border border-line bg-paper p-0.5" role="group" aria-label="Refinance LTV">
               {[75, 80].map((ltv) => {
                 const active = activeRefiLtv === ltv;
@@ -161,48 +165,50 @@ function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
                 );
               })}
             </div>
-          )}
+          ) : null}
           <OverlayTrigger lines={buildingOverlay} className="font-semibold text-ink">{val.incomeLine}</OverlayTrigger>
           <InfoTip label="How value is figured" lines={buildingOverlay} />
         </div>
       </div>
       {o.opexCalc && <OperatingBreakdown calc={o.opexCalc} Trigger={OverlayTrigger} />}
-      <div className="mt-3 border-t border-line pt-2.5">
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
-          <span>Assumptions</span>
-          <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
-        </button>
-        {open && (
-          <div className="mt-3 space-y-4">
-            <div className="grid gap-x-8 md:grid-cols-2">
-              {BASE_FIELDS.map(([k, l, u]) => (
-                <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                  onChange={(v) => {
-                    const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
-                    setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
-                  }} />
-              ))}
-            </div>
-            {owner && (
-              <div className="border-t border-line pt-3">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Laundry assumptions</div>
-                <div className="grid gap-x-8 md:grid-cols-2">
-                  {LAUNDRY_FIELDS.map(([k, l, u]) => (
-                    <NumberRow
-                      key={k}
-                      label={l}
-                      unit={u}
-                      value={laundryState[k]}
-                      changed={laundryState[k] !== DEFAULT_LAUNDRY[k]}
-                      onChange={(v) => setLaundryField(k, v)}
-                    />
-                  ))}
-                </div>
+      {!(owner && onOpenNumbers) && (
+        <div className="mt-3 border-t border-line pt-2.5">
+          <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
+            <span>Assumptions</span>
+            <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
+          </button>
+          {open && (
+            <div className="mt-3 space-y-4">
+              <div className="grid gap-x-8 md:grid-cols-2">
+                {BASE_FIELDS.map(([k, l, u]) => (
+                  <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
+                    onChange={(v) => {
+                      const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
+                      setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
+                    }} />
+                ))}
               </div>
-            )}
-          </div>
-        )}
-      </div>
+              {owner && (
+                <div className="border-t border-line pt-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Laundry assumptions</div>
+                  <div className="grid gap-x-8 md:grid-cols-2">
+                    {LAUNDRY_FIELDS.map(([k, l, u]) => (
+                      <NumberRow
+                        key={k}
+                        label={l}
+                        unit={u}
+                        value={laundryState[k]}
+                        changed={laundryState[k] !== DEFAULT_LAUNDRY[k]}
+                        onChange={(v) => setLaundryField(k, v)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
@@ -444,23 +450,23 @@ export function OptionTable({ offers, stories, planHrefOf }) {
 }
 
 // Owner: saves. Everyone else (realtor, reviewer, lender): terms and switches are a what-if they can send to the buyer.
-export default function Offers({ deal, canSave, onlyShared, me, role, preview, leadGuide: leadGuideProp }) {
+export default function Offers({ deal, canSave, onlyShared, me, role, preview, leadGuide: leadGuideProp, onOpenNumbers = null }) {
   const owner = !!canSave;
   const model = useDealModel(deal, { owner, onlyShared });
-  const { offers, setOffers, base, setBase: saveBase, later, saved } = model;
+  const { offers, setOffers, base, setBase, plan: sharedPlan, patchOffer, comps: storeComps, liveGuide, saved } = model;
   const [active, setActive] = useState(null);
   // Owner opens on the short comparison table; everyone else opens on the lead offer.
   const [view, setView] = useState(owner ? 'table' : 'cards');
   const [leadErr, setLeadErr] = useState('');
-  const [planState, setPlanState] = useState({ lib: null, plan: null });
-  const [comps, setComps] = useState([]);
+  const [planLib, setPlanLib] = useState(null);
+  const [fetchedComps, setFetchedComps] = useState([]);
   const [fetchedLeadGuide, setFetchedLeadGuide] = useState(null);
-  const syncedLeadRef = useRef(false);
   const canPlan = Boolean(owner && !onlyShared && canAccessDealPlan(SITE_KIND, role, preview) && loadPlanLib);
   const canComps = Boolean(owner || role === 'realtor' || role === 'reviewer');
+  const comps = owner && storeComps?.length ? storeComps : fetchedComps;
 
   useEffect(() => {
-    if (owner || leadGuideProp !== undefined) return () => {};
+    if (owner || leadGuideProp !== undefined || liveGuide) return () => {};
     let alive = true;
     supabase.rpc('commercial_get_lead_guide', { p_deal: deal.id }).then(({ data }) => {
       if (!alive) return;
@@ -469,80 +475,34 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
       setFetchedLeadGuide(isUnitsGuide(g) ? g : null);
     });
     return () => { alive = false; };
-  }, [deal.id, owner, leadGuideProp]);
+  }, [deal.id, owner, leadGuideProp, liveGuide]);
 
   useEffect(() => {
     let alive = true;
     if (!loadPlanLib || !canPlan) {
-      setPlanState({ lib: null, plan: null });
+      setPlanLib(null);
       return () => { alive = false; };
     }
-    (async () => {
-      try {
-        const lib = await loadPlanLib();
-        const plan = await lib.loadDealPlan(supabase, deal.slug);
-        if (alive) setPlanState({ lib, plan });
-      } catch {
-        if (alive) setPlanState({ lib: null, plan: null });
-      }
-    })();
+    loadPlanLib().then((lib) => { if (alive) setPlanLib(lib); }).catch(() => { if (alive) setPlanLib(null); });
     return () => { alive = false; };
-  }, [deal.slug, canPlan]);
+  }, [canPlan]);
 
   useEffect(() => {
     let alive = true;
-    if (!canComps) return () => { alive = false; };
+    if (!canComps || owner) return () => { alive = false; };
     supabase.from('commercial_comps').select('units,sale_price').eq('deal_id', deal.id).then(({ data }) => {
-      if (alive && data) setComps(data);
+      if (alive && data) setFetchedComps(data);
     });
     return () => { alive = false; };
-  }, [deal.id, canComps]);
+  }, [deal.id, canComps, owner]);
 
   const computeSellerSummary = (offer, nextInputs, nextBase, force = false) => {
-    if (!owner || !canPlan || !planState.lib || !planState.plan) return undefined;
-    return planState.lib.offerSellerSummary({ ...offer, inputs: nextInputs }, nextBase, planState.plan, comps, force);
+    if (!owner || !canPlan || !planLib || !sharedPlan) return undefined;
+    return planLib.offerSellerSummary({ ...offer, inputs: nextInputs }, nextBase, sharedPlan, comps, force);
   };
-
-  // Ensure the lead offer gets a fresh seller_summary.guide (and unlocked seller_summary terms) once deal_plan loads.
-  useEffect(() => {
-    if (syncedLeadRef.current || !owner || !canPlan || !planState.lib || !planState.plan || !offers?.length) return;
-    const lead = offers.find((x) => x.is_lead);
-    if (!lead) { syncedLeadRef.current = true; return; }
-    syncedLeadRef.current = true;
-    const planTotal = planState.lib.overallRepairBudget(planState.plan);
-    const syncBase = planTotal > 0 ? { ...base, rehab: planTotal } : base;
-    const summary = computeSellerSummary(lead, lead.inputs, syncBase, false);
-    if (summary && JSON.stringify(summary) !== JSON.stringify(lead.seller_summary)) {
-      setOffers((list) => list.map((x) => (x.id === lead.id ? { ...x, seller_summary: summary } : x)));
-      void supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', lead.id);
-    }
-  }, [owner, canPlan, planState, offers, base, comps]);
 
   const patch = (id, p) => {
-    const existing = (offers || []).find((o) => o.id === id);
-    const nextPatch = { ...p };
-    if (owner && existing && 'inputs' in p && !('seller_summary' in p)) {
-      const summary = computeSellerSummary(existing, p.inputs, base, false);
-      if (summary) nextPatch.seller_summary = summary;
-    }
-    setOffers((list) => list.map((o) => (o.id === id ? { ...o, ...nextPatch } : o)));
-    later(id, () => supabase.from('commercial_offers').update({ ...nextPatch, updated_at: new Date().toISOString() }).eq('id', id));
-  };
-
-  const setBase = (nextBase) => {
-    saveBase(nextBase);
-    if (owner && canPlan && planState.lib && planState.plan && offers?.length) {
-      const updates = [];
-      setOffers((list) => list.map((o) => {
-        const summary = computeSellerSummary(o, o.inputs, nextBase, false);
-        if (!summary) return o;
-        updates.push([o.id, summary]);
-        return { ...o, seller_summary: summary };
-      }));
-      for (const [id, summary] of updates) {
-        later(`summary-${id}`, () => supabase.from('commercial_offers').update({ seller_summary: summary, updated_at: new Date().toISOString() }).eq('id', id));
-      }
-    }
+    patchOffer(id, p);
   };
 
   const add = async (structure, from) => {
@@ -572,11 +532,12 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   };
 
   const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
-  const planRehab = loadPlanLib && canPlan && planState.lib && planState.plan ? planState.lib.overallRepairBudget(planState.plan) : 0;
-  const planOpex = loadPlanLib && canPlan && planState.plan?.opex ? planState.plan.opex : null;
-  const planLaundry = loadPlanLib && canPlan && planState.plan?.laundry ? planState.plan.laundry : null;
-  const guideOpex = (leadGuideProp?.opex || fetchedLeadGuide?.opex || null);
-  const guideLaundry = (leadGuideProp?.laundry || fetchedLeadGuide?.laundry || null);
+  const planRehab = loadPlanLib && canPlan && planLib && sharedPlan ? planLib.overallRepairBudget(sharedPlan) : 0;
+  const planOpex = loadPlanLib && canPlan && sharedPlan?.opex ? sharedPlan.opex : null;
+  const planLaundry = loadPlanLib && canPlan && sharedPlan?.laundry ? sharedPlan.laundry : null;
+  const effectiveLeadGuide = liveGuide && isUnitsGuide(liveGuide) ? liveGuide : leadGuideProp;
+  const guideOpex = (effectiveLeadGuide?.opex || fetchedLeadGuide?.opex || null);
+  const guideLaundry = (effectiveLeadGuide?.laundry || fetchedLeadGuide?.laundry || null);
   const resolvedOpex = planOpex || guideOpex || base?.opex || null;
   const resolvedLaundry = base?.laundry || planLaundry || guideLaundry || resolvedOpex?.laundry || null;
   const effectiveBase = {
@@ -588,12 +549,12 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, effectiveBase)])), [sortedOffers, effectiveBase]);
   const useStaticGuide = owner || !model.touched;
   const stories = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => {
-    if (loadPlanLib && canPlan && planState.lib && planState.plan) {
-      return [o.id, planState.lib.offerPlanStory(o, effectiveBase, planState.plan, comps)];
+    if (loadPlanLib && canPlan && planLib && sharedPlan) {
+      return [o.id, planLib.offerPlanStory(o, effectiveBase, sharedPlan, comps)];
     }
     const baseStory = buildLeadStory(o.structure, evals[o.id], { base: effectiveBase, comps });
     if (useStaticGuide) {
-      const g = (leadGuideProp && isUnitsGuide(leadGuideProp) ? leadGuideProp : null)
+      const g = (effectiveLeadGuide && isUnitsGuide(effectiveLeadGuide) ? effectiveLeadGuide : null)
         || (fetchedLeadGuide && isUnitsGuide(fetchedLeadGuide) ? fetchedLeadGuide : null)
         || (isUnitsGuide(o.seller_summary?.guide) ? o.seller_summary.guide : null);
       if (g) {
@@ -608,7 +569,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
     }
     if (!owner) Object.assign(baseStory, sharedRefiStory(baseStory, { loanOption: role === 'reviewer' }));
     return [o.id, baseStory];
-  })), [sortedOffers, evals, base, comps, canPlan, planState, leadGuideProp, fetchedLeadGuide, useStaticGuide]);
+  })), [sortedOffers, evals, base, comps, canPlan, planLib, sharedPlan, effectiveLeadGuide, fetchedLeadGuide, useStaticGuide]);
 
   if (offers === null) return <Empty>Loading…</Empty>;
   const cur = sortedOffers.find((o) => o.id === active) || sortedOffers[0];
@@ -719,7 +680,7 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
           )}
         </>
       )}
-      <BuildingNumbers base={effectiveBase} setBase={setBase} o={o} owner={owner} comps={comps} />
+      <BuildingNumbers base={effectiveBase} setBase={setBase} o={o} owner={owner} comps={comps} onOpenNumbers={onOpenNumbers} />
     </div>
   );
 }

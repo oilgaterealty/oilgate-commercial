@@ -55,10 +55,11 @@ test('0018 locks down offers to owner-only table access and exposes at most one 
   const getLeadBlock = sql0018.match(/create or replace function commercial_access_private\.get_lead_offer[\s\S]*?\$\$;/i)?.[0] || '';
   assert.doesNotMatch(getLeadBlock, /\bo\.note\b/);
 
-  const useDealModel = read('src/lib/useDealModel.js');
-  assert.match(useDealModel, /commercial_get_lead_offer/);
-  assert.match(useDealModel, /x\.is_lead && Boolean\(x\['share_' \+ onlyShared\]\)/);
-  assert.match(useDealModel, /\.map\(\(\{ note: _n, \.\.\.rest \}\) => rest\)/);
+  const dealStore = read('src/lib/dealStore.js');
+  assert.match(dealStore, /commercial_get_lead_offer/);
+  assert.match(dealStore, /x\.is_lead && Boolean\(x\['share_' \+ onlyShared\]\)/);
+  assert.match(dealStore, /\.map\(\(\{ note: _n, \.\.\.rest \}\) => rest\)/);
+  assert.match(read('src/lib/useDealModel.js'), /from '\.\/dealStore\.js'/);
 
   const offersSrc = read('src/views/Offers.jsx');
   assert.match(offersSrc, /commercial_set_lead_offer/);

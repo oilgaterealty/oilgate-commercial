@@ -273,13 +273,17 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
   const visible = preview ? seenBy('lender', rows) : rows || [];
   const docs = visible.filter((r) => r.kind === 'document');
   const { docBadge, msgBadge } = useSheetBadges({ deal, me, role: 'lender', preview, docs });
-  const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
+  const { offers, base, error, liveGuide } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [leadGuide, setLeadGuide] = useState(null);
   const [loadedProtections, setLoadedProtections] = useState([]);
   const [sharedRent, setSharedRent] = useState(null);
   const [sharedUnits, setSharedUnits] = useState(10);
   const [protectionsOpen, setProtectionsOpen] = useState(false);
   const [planStepsOpen, setPlanStepsOpen] = useState({});
+
+  useEffect(() => {
+    setSharedRent(null);
+  }, [base?.rent]);
 
   useEffect(() => {
     if (LENDER_LENSES[urlLens]) setLenderLens(urlLens);
@@ -344,7 +348,9 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
 
   const b = { ...base, units: 10 };
   const plan = offers?.[0] || null;
-  const rawGuide = isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null);
+  const rawGuide = isUnitsGuide(liveGuide)
+    ? liveGuide
+    : (isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null));
   const opexSource = b?.opex || rawGuide?.opex || null;
   const laundrySource = b?.laundry || rawGuide?.laundry || opexSource?.laundry || null;
   const upsideSource = b?.upside || rawGuide?.upside || opexSource?.upside || null;
@@ -1028,7 +1034,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                 )}
                 <ExecutionPlanCard
                   content={deal.seller_content}
-                  summary={guideCostSummary ? { ...guideCostSummary, steps: plan?.seller_summary?.steps } : plan?.seller_summary}
+                  summary={guideCostSummary ? { ...plan?.seller_summary, ...guideCostSummary, steps: plan?.seller_summary?.steps } : plan?.seller_summary}
                   stepBudgets={guideCostSummary?.stepBudgets || plan?.seller_summary?.stepBudgets}
                   lenderMode
                 />

@@ -41,11 +41,11 @@ test('seller messages go to the realtor', () => {
   assert.match(mig, /if new\.author_role <> 'owner' and not skip_owner then/);
 });
 
-test('seller table: note payment, bills I pay, "covered"', () => {
+test('seller table: Paid to you, Buyer pays bills, "Covered?"', () => {
   const card = read('src/components/LeadOfferCard.jsx');
-  assert.match(card, /Your note payment/);
-  assert.match(card, /Taxes, insurance, utilities \(buyer pays\)/);
-  assert.match(card, /coveredWord = \(c\) => \(c === 'yes' \? 'covered' : c\)/);
+  assert.match(card, /Paid to you/);
+  assert.match(card, /Buyer pays bills/);
+  assert.match(card, /coveredWord = \(c\) => \(c === 'yes' \? 'Yes'/);
   const mig = read('supabase/migrations/0022_seller_table_costs.sql');
   assert.match(mig, /'note', t->'note', 'bills', t->'bills', 'billsLines', t->'billsLines'/);
   assert.doesNotMatch(mig, /buyerNet|interest|reserve/);

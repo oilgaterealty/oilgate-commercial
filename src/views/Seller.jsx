@@ -19,7 +19,7 @@ const LEVELS = [
   ['not_now', 'Not right now'],
 ];
 
-export default function Seller({ deal, me, preview, tab }) {
+export default function Seller({ deal, me, preview, tab, liveSummary = null }) {
   const c = deal.seller_content || {};
   const [rows, load] = useUploads(deal);
   const [level, setLevel] = useState(null);
@@ -27,6 +27,7 @@ export default function Seller({ deal, me, preview, tab }) {
   const [sellerOffer, setSellerOffer] = useState(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(null);
   const [activeSheet, setActiveSheet] = useState(null);
+  const [sellerTab, setSellerTab] = useState(tab === 'loan' ? 'loan' : 'offer');
   const sellerTo = useSellerMessagesTo(deal);
 
   const gallery = useDealGallery(deal, 'seller', preview, { includeVideos: true, externalRows: rows });
@@ -40,6 +41,8 @@ export default function Seller({ deal, me, preview, tab }) {
   });
 
   useEffect(() => {
+    if (tab === 'loan') setSellerTab('loan');
+    else if (tab === 'offer') setSellerTab('offer');
     if (tab === 'photos' && gallery.items.length > 0) setPhotoViewerOpen(0);
     else if (tab === 'documents' || tab === 'files') {
       setActiveSheet('documents');
@@ -83,7 +86,7 @@ export default function Seller({ deal, me, preview, tab }) {
     setActiveSheet('messages');
   };
 
-  const rawSummary = sellerOffer?.seller_summary;
+  const rawSummary = liveSummary || sellerOffer?.seller_summary;
   const summary = rawSummary && ((Array.isArray(rawSummary.sellerTable) && rawSummary.sellerTable.length > 0) || (Array.isArray(rawSummary.terms) && rawSummary.terms.length > 0))
     ? rawSummary
     : null;
@@ -104,35 +107,75 @@ export default function Seller({ deal, me, preview, tab }) {
         />
       </div>
 
-      <LeadOfferCard
-        deal={deal}
-        content={c}
-        summary={summary}
-        preview={preview}
-        sellerOnly
-        coveredLabel={coveredLabelOf(sellerOffer?.structure)}
-        onAsk={(q) => sendToOwner(deal, me, 'seller', q, 'Offer question')}
-      />
-
-      <SellerProtectionsCard content={c} />
-
-      <ExecutionPlanCard content={c} summary={summary} sellerOnly />
-
-      <LoanPosition deal={deal} role="seller" preview={preview} me={me} sendTo={sellerTo} collapsedByDefault />
-
-      <Card>
-        <CardTitle>How do you feel about it?</CardTitle>
-        {saveError && <p role="alert" className="mb-3 text-sm text-red-700">{saveError}</p>}
-        <div className="flex flex-wrap gap-2">
-          {LEVELS.map(([k, label]) => (
-            <button key={k} onClick={() => save(k)} disabled={preview}
-              className={`min-h-[44px] rounded-full border px-4 py-2 text-sm transition ${level === k ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
+      <div role="tablist" aria-label="Seller sections" className="grid grid-cols-2 gap-2 rounded-2xl bg-paper p-1">
+        {[
+          ['offer', 'The offer'],
+          ['loan', 'Your loan'],
+        ].map(([k, label]) => {
+          const active = sellerTab === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-seller-tab={k}
+              onClick={() => setSellerTab(k)}
+              className={`min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                active ? 'bg-ink text-white shadow-sm' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
               {label}
             </button>
-          ))}
+          );
+        })}
+      </div>
+
+      {sellerTab === 'offer' && (
+        <div role="tabpanel" aria-label="The offer" className="space-y-6">
+          <LeadOfferCard
+            deal={deal}
+            content={c}
+            summary={summary}
+            preview={preview}
+            sellerOnly
+            coveredLabel={coveredLabelOf(sellerOffer?.structure)}
+            onAsk={(q) => sendToOwner(deal, me, 'seller', q, 'Offer question')}
+          />
+
+          <SellerProtectionsCard content={c} defaultOpen />
+
+          <ExecutionPlanCard content={c} summary={summary} sellerOnly />
         </div>
-        {level && <p role="status" className="mt-3 text-sm text-ink">Saved. We’ll follow your pace.</p>}
-      </Card>
+      )}
+
+      {sellerTab === 'loan' && (
+        <div role="tabpanel" aria-label="Your loan" className="space-y-6">
+          <LoanPosition deal={deal} role="seller" preview={preview} me={me} sendTo={sellerTo} collapsedByDefault={false} />
+
+          <Card>
+            <CardTitle>How do you feel about it?</CardTitle>
+            {saveError && <p role="alert" className="mb-3 text-sm text-red-700">{saveError}</p>}
+            <div className="flex flex-wrap gap-2">
+              {LEVELS.map(([k, label]) => (
+                <button key={k} type="button" onClick={() => save(k)} disabled={preview}
+                  className={`min-h-[44px] rounded-full border px-4 py-2 text-sm transition ${level === k ? 'border-ink bg-ink text-white' : 'border-line bg-white hover:border-ink'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {level && <p role="status" className="mt-3 text-sm text-ink">Saved. We’ll follow your pace.</p>}
+          </Card>
+
+          <Messages deal={deal} me={me} role="seller" preview={preview} sellerTo={sellerTo} />
+
+          <Card>
+            <CardTitle>Share documents</CardTitle>
+            <Uploader deal={deal} role="seller" me={me} onDone={load} label="Choose files" accept={DOCS} preview={preview} />
+            <div className="mt-4">{mine.length ? <FileList rows={mine} /> : <Empty>No files shared yet.</Empty>}</div>
+          </Card>
+        </div>
+      )}
 
       <OverlaySheet open={activeSheet === 'documents'} kind="documents" title="Documents" onClose={() => setActiveSheet(null)}>
         <Card>

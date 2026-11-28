@@ -273,7 +273,7 @@ test('Part A: 2-stack Speed Queen budget totals $142,440 with 4 laundry items an
   assert.equal(budgets.laundry, 16390);
   assert.equal(budgets.total, 142440);
   assert.equal(budgets.contingency, 20000);
-  assert.equal(budgets.week1, 43690);
+  assert.equal(budgets.week1, 46440);
 
   const laundryItems = planLaundryItems(CHARLOTTE_PLAN);
   assert.equal(laundryItems.length, 4);
@@ -490,7 +490,7 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
     sellerOnly: true,
   }));
   assert.match(sellerPlanHtml, /aria-expanded="false"[^>]*data-plan-step="week1_secure_and_start"|data-plan-step="week1_secure_and_start"[^>]*aria-expanded="false"/);
-  assert.match(sellerPlanHtml, /\$43,690/);
+  assert.match(sellerPlanHtml, /\$46,440/);
   assert.doesNotMatch(sellerPlanHtml, /Two Speed Queen stacked washer\/dryer units/);
   assert.match(sellerPlanHtml, /\$142,440/);
   assert.match(sellerPlanHtml, /Your renovation loan is paid off in full\./);

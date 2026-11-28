@@ -105,7 +105,7 @@ export function resolveStepBudgets(source) {
     const building = pos(direct.building);
     const leaseUp = pos(direct.leaseUp);
     const contingency = pos(direct.contingency);
-    const week1 = 'week1' in direct ? pos(direct.week1) : (security + nearReadyUnits + laundry + paperwork);
+    const week1 = 'week1' in direct ? pos(direct.week1) : (security + nearReadyUnits + laundry + paperwork + eviction);
     const week2Onward = 'week2Onward' in direct ? pos(direct.week2Onward) : (biggerUnits + building);
     return {
       units,
@@ -140,7 +140,7 @@ export function resolveStepBudgets(source) {
     }
     const allCosts = costs.reduce((s, c) => s + Math.max(0, +c?.cost || 0), 0);
     const contingency = Math.max(0, +source.contingency || 0);
-    const week1 = buckets.security + nearReadyUnits + buckets.laundry + buckets.paperwork;
+    const week1 = buckets.security + nearReadyUnits + buckets.laundry + buckets.paperwork + buckets.eviction;
     const week2Onward = biggerUnits + buckets.building;
     return {
       units,
@@ -194,10 +194,24 @@ export function normalizeExecutionSteps(content = {}, planOrBudgets = null) {
                 const itemKey = String(item.budgetKey || '').trim();
                 const rawAmt = itemKey && budgets ? budgets[itemKey] : null;
                 const amount = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : null;
-                return text ? { text, budgetKey: itemKey || null, amount } : null;
+                const overlay = (Array.isArray(item.overlay) ? item.overlay : item.overlay ? String(item.overlay).split('\n') : [])
+                  .map((line) => String(line || '').trim())
+                  .filter(Boolean);
+                const showZero = Boolean(item.showZero);
+                const zeroText = String(item.zeroText || '').trim();
+                return text
+                  ? {
+                      text,
+                      budgetKey: itemKey || null,
+                      amount,
+                      overlay,
+                      showZero,
+                      zeroText,
+                    }
+                  : null;
               }
               const text = String(item || '').trim();
-              return text ? { text, budgetKey: null, amount: null } : null;
+              return text ? { text, budgetKey: null, amount: null, overlay: [], showZero: false, zeroText: '' } : null;
             })
             .filter(Boolean);
           const rawAmount = budgetKey && budgets ? budgets[budgetKey] : null;
@@ -274,8 +288,8 @@ export function normalizeProtections(content = {}) {
   return content.protections.map((item) => String(item ?? '').trim()).filter(Boolean);
 }
 
-export function SellerProtectionsCard({ content }) {
-  const [open, setOpen] = useState(false);
+export function SellerProtectionsCard({ content, defaultOpen = false }) {
+  const [open, setOpen] = useState(Boolean(defaultOpen));
   const items = normalizeProtections(content);
   if (items.length === 0) return null;
   return (
@@ -307,10 +321,10 @@ export function SellerProtectionsCard({ content }) {
   );
 }
 
-export const coveredWord = (c) => (c === 'yes' ? 'covered' : c);
+export const coveredWord = (c) => (c === 'yes' ? 'Yes' : c === 'partly' ? 'Partly' : c === 'no' ? 'No' : c);
 
 // Single plain-English offer card shown to the seller. Never renders multiple options.
-export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false, coveredLabel = 'Your costs covered' }) {
+export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOnly = false, coveredLabel = 'Covered?' }) {
   const lead = normalizeLeadOffer(content);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
@@ -320,10 +334,9 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
   const hasSellerTable = Boolean(summary && Array.isArray(summary.sellerTable) && summary.sellerTable.length > 0);
   const hasSummary = Boolean(summary && Array.isArray(summary.terms) && summary.terms.length > 0);
   const firstCoveredUnits = hasSellerTable ? (summary.sellerTable.find((r) => r.covered === 'yes')?.units ?? null) : null;
-  // Seller financing rows also show the note payment and the holding bills.
+  // Seller financing rows also show the note payment and the building bills.
   const hasCosts = hasSellerTable && summary.sellerTable.some((r) => Number.isFinite(+r.note) && r.note !== null && r.note !== undefined);
   const billsFromRent = Boolean(summary?.billsFromRent);
-  const twoNotes = Boolean(summary?.renoFromSeller);
   const rows = hasSummary
     ? summary.terms.map((t) => ({
         label: String(t?.label || '').trim(),
@@ -340,6 +353,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
         { label: 'If the timeline slips', value: lead.timeline_slip, overlay: [] },
         { label: 'Lender clearance condition', value: lead.lender_condition, overlay: [] },
       ];
+  const gridCols = rows.length === 6 || (rows.length % 3 === 0 && rows.length % 4 !== 0) ? 'sm:grid-cols-3' : 'sm:grid-cols-4';
 
   const cleanTitle = (hasSummary || hasSellerTable) && summary?.title
     ? String(summary.title).replace(/^(Option\s+)?[A-Z]\s*:\s*/i, '').trim()
@@ -367,7 +381,7 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
       {hasSellerTable ? (
         <div className="space-y-4">
           {hasSummary && rows.length > 0 && (
-            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <dl className={`grid grid-cols-2 gap-2 ${gridCols}`}>
               {rows.map((row) => (
                 <div key={row.label} className="rounded-2xl bg-paper p-3">
                   <dt className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{row.label}</dt>
@@ -382,13 +396,21 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
           )}
           <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Units rented">
             <table className="w-full border-collapse text-right text-sm tabular-nums">
-              <thead className="bg-ink text-xs text-white">
+              <thead className="bg-ink text-[11px] text-white sm:text-xs">
                 <tr>
-                  <th scope="col" className="px-3 py-2.5 text-left">Units rented</th>
-                  <th scope="col" className="px-3 py-2.5">Rent in</th>
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">{twoNotes ? 'Your note payments' : 'Your note payment'}</th>}
-                  {hasCosts && <th scope="col" className="px-3 py-2.5">{billsFromRent ? 'Bills added to your payoff' : 'Taxes, insurance, utilities (buyer pays)'}</th>}
-                  <th scope="col" className="px-3 py-2.5 text-center">{coveredLabel}</th>
+                  <th scope="col" className="px-2 py-2 text-left sm:px-3 sm:py-2.5" aria-label="Units rented">Units</th>
+                  <th scope="col" className="px-2 py-2 sm:px-3 sm:py-2.5">Rent in</th>
+                  {hasCosts && <th scope="col" className="px-2 py-2 sm:px-3 sm:py-2.5">Paid to you</th>}
+                  {hasCosts && (
+                    <th scope="col" className="px-2 py-2 sm:px-3 sm:py-2.5">
+                      {billsFromRent
+                        ? (OverlayTrigger
+                            ? <OverlayTrigger className="text-white" lines={['Any unpaid property tax, insurance, water, trash, or monthly note payments while units fill are added to your final payoff — you never pay out of pocket.']}>Added to payoff</OverlayTrigger>
+                            : 'Added to payoff')
+                        : 'Buyer pays bills'}
+                    </th>
+                  )}
+                  <th scope="col" className="px-2 py-2 text-center sm:px-3 sm:py-2.5">{coveredLabel}</th>
                 </tr>
               </thead>
               <tbody>
@@ -396,17 +418,17 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
                   const isFirstYes = firstCoveredUnits !== null && row.units === firstCoveredUnits;
                   return (
                     <tr key={row.units} className={`border-t border-line ${isFirstYes ? 'bg-emerald-50 font-semibold' : 'bg-white'}`}>
-                      <th scope="row" className="px-3 py-2 text-left">{row.units}</th>
-                      <td className="px-3 py-2">{fmtDollars(row.rentIn)}</td>
-                      {hasCosts && <td className="px-3 py-2">{row.noteWaits > 0 && OverlayTrigger ? <OverlayTrigger lines={[`Paid from rent: ${fmtDollars(row.note)}`, `${fmtDollars(row.noteWaits)} is added to your payoff`]}>{fmtDollars(row.note)}</OverlayTrigger> : fmtDollars(row.note)}</td>}
+                      <th scope="row" className="px-2 py-2 text-left sm:px-3">{row.units}</th>
+                      <td className="px-2 py-2 sm:px-3">{fmtDollars(row.rentIn)}</td>
+                      {hasCosts && <td className="px-2 py-2 sm:px-3">{row.noteWaits > 0 && OverlayTrigger ? <OverlayTrigger lines={[`Paid from rent: ${fmtDollars(row.note)}/mo`, `${fmtDollars(row.noteWaits)}/mo added to your payoff`]}>{fmtDollars(row.note)}</OverlayTrigger> : fmtDollars(row.note)}</td>}
                       {hasCosts && (
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-2 sm:px-3">
                           {Array.isArray(row.billsLines) && row.billsLines.length > 0 && OverlayTrigger
                             ? <OverlayTrigger lines={row.billsLines}>{fmtDollars(row.bills)}</OverlayTrigger>
                             : fmtDollars(row.bills)}
                         </td>
                       )}
-                      <td className={`px-3 py-2 text-center ${row.covered === 'yes' ? 'text-good font-semibold' : row.covered === 'partly' ? 'text-amber-800' : 'text-ink-soft'}`}>
+                      <td className={`px-2 py-2 text-center sm:px-3 ${row.covered === 'yes' ? 'text-good font-semibold' : row.covered === 'partly' ? 'text-amber-800' : 'text-ink-soft'}`}>
                         {coveredWord(row.covered)}
                       </td>
                     </tr>
@@ -493,10 +515,39 @@ export function resolveLaundryItems(source) {
   return [];
 }
 
+export function resolvePaperworkItems(source) {
+  if (!source || typeof source !== 'object') return [];
+  const raw = source.paperworkItems
+    || source.costSummary?.paperworkItems
+    || source.guide?.costSummary?.paperworkItems
+    || source.stepBudgets?.paperworkItems;
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .map((item) => ({
+        label: String(item?.label || item?.title || '').trim(),
+        cost: Math.max(0, +(item?.cost ?? item?.amount ?? 0) || 0),
+        source: String(item?.source || '').trim(),
+      }))
+      .filter((item) => item.label && item.cost > 0);
+  }
+  if (Array.isArray(source.costs)) {
+    return source.costs
+      .filter((c) => classifyCostBucket(c) === 'paperwork' && +c?.cost > 0)
+      .map((c) => ({
+        label: String(c?.label || '').trim(),
+        cost: Math.max(0, +c?.cost || 0),
+        source: String(c?.source || '').trim(),
+      }))
+      .filter((item) => item.label && item.cost > 0);
+  }
+  return [];
+}
+
 // "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
 export function ExecutionPlanCard({ content, summary, sellerOnly = false, lenderMode = false, plan = null, stepBudgets = null }) {
   const [openSteps, setOpenSteps] = useState({});
   const [openLaundry, setOpenLaundry] = useState({});
+  const [openPaperwork, setOpenPaperwork] = useState({});
   const hasContentSteps = Array.isArray(content?.execution_steps) && content.execution_steps.length > 0;
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
   if (sellerOnly && !hasContentSteps && !hasSummarySteps) return null;
@@ -507,6 +558,11 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, lender
     : resolveLaundryItems(plan).length
       ? resolveLaundryItems(plan)
       : resolveLaundryItems(stepBudgets);
+  const paperworkItems = resolvePaperworkItems(summary).length
+    ? resolvePaperworkItems(summary)
+    : resolvePaperworkItems(plan).length
+      ? resolvePaperworkItems(plan)
+      : resolvePaperworkItems(stepBudgets);
   const toLines = (v) => (Array.isArray(v) ? v : v ? String(v).split('\n') : []).map((x) => String(x || '').trim()).filter(Boolean);
   const rawSteps = hasContentSteps
     ? normalizeExecutionSteps(content, budgetSource).map((s) => ({ ...s, overlay: [] }))
@@ -531,6 +587,7 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, lender
   const showPlanTotals = Boolean(hasContentSteps && budgets && budgets.total > 0);
   const toggleStep = (k) => setOpenSteps((prev) => ({ ...prev, [k]: !prev[k] }));
   const toggleLaundry = (k) => setOpenLaundry((prev) => ({ ...prev, [k]: !prev[k] }));
+  const togglePaperwork = (k) => setOpenPaperwork((prev) => ({ ...prev, [k]: !prev[k] }));
   return (
     <Card>
       <CardTitle>The plan</CardTitle>
@@ -539,6 +596,7 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, lender
           const hasItems = s.items.length > 0;
           const isStepOpen = Boolean(openSteps[s.key]);
           const isLaundryOpen = Boolean(openLaundry[s.key]);
+          const isPaperworkOpen = Boolean(openPaperwork[s.key]);
           return (
             <li key={s.key} className="flex gap-3">
               <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
@@ -589,32 +647,50 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, lender
                         const text = typeof item === 'object' ? item.text : item;
                         const itemKey = typeof item === 'object' ? item.budgetKey : null;
                         const amt = typeof item === 'object' && Number.isFinite(item.amount) && item.amount > 0 ? item.amount : null;
+                        const itemOverlay = typeof item === 'object' && Array.isArray(item.overlay) ? item.overlay : [];
+                        const zeroText = typeof item === 'object' && item.zeroText ? item.zeroText : '';
                         const showLaundryLines = itemKey === 'laundry' && laundryItems.length > 0;
+                        const showPaperworkLines = itemKey === 'paperwork' && paperworkItems.length > 0;
+                        const isExpandable = showLaundryLines || showPaperworkLines;
+                        const isExpanded = showLaundryLines ? isLaundryOpen : isPaperworkOpen;
+                        const nestedItems = showLaundryLines ? laundryItems : paperworkItems;
+                        const toggleNested = () => (showLaundryLines ? toggleLaundry(s.key) : togglePaperwork(s.key));
                         return (
                           <li key={j} className="rounded-xl bg-paper px-3 py-2">
-                            {showLaundryLines ? (
+                            {isExpandable ? (
                               <button
                                 type="button"
-                                aria-expanded={isLaundryOpen}
-                                data-plan-laundry={s.key}
-                                onClick={() => toggleLaundry(s.key)}
+                                aria-expanded={isExpanded}
+                                {...(showLaundryLines ? { 'data-plan-laundry': s.key } : {})}
+                                {...(showPaperworkLines ? { 'data-plan-paperwork': s.key } : {})}
+                                onClick={toggleNested}
                                 className="flex min-h-[40px] w-full items-baseline justify-between gap-x-3 gap-y-0.5 text-left"
                               >
                                 <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-                                  <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{isLaundryOpen ? '▴' : '▾'}</span>
+                                  <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{isExpanded ? '▴' : '▾'}</span>
                                   <span className="min-w-0 flex-1">{text}</span>
                                 </span>
                                 {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
                               </button>
                             ) : (
                               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                                <span className="min-w-0 flex-1">{text}</span>
-                                {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                                <span className="min-w-0 flex-1">
+                                  {itemOverlay.length > 0 && OverlayTrigger
+                                    ? <OverlayTrigger lines={itemOverlay}>{text}</OverlayTrigger>
+                                    : text}
+                                </span>
+                                {amt !== null ? (
+                                  <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>
+                                ) : zeroText ? (
+                                  itemOverlay.length > 0 && OverlayTrigger
+                                    ? <OverlayTrigger lines={itemOverlay} className="shrink-0 font-semibold tabular-nums text-ink">{zeroText}</OverlayTrigger>
+                                    : <span className="shrink-0 font-semibold tabular-nums text-ink">{zeroText}</span>
+                                ) : null}
                               </div>
                             )}
-                            {showLaundryLines && isLaundryOpen && (
+                            {isExpandable && isExpanded && (
                               <ul className="mt-2 space-y-1 border-t border-line/70 pt-2 text-xs leading-snug text-ink-soft">
-                                {laundryItems.map((li, k) => (
+                                {nestedItems.map((li, k) => (
                                   <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                                     <span className="min-w-0 flex-1">
                                       {li.source && OverlayTrigger

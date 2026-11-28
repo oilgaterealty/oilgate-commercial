@@ -143,9 +143,9 @@ test('planStepBudgets sums cleanly to $145,850 across all mutually exclusive buc
   assert.equal(b.building, 11000);
   assert.equal(b.leaseUp, 2000);
   assert.equal(b.contingency, 20000);
-  assert.equal(b.week1, 10000 + 22000 + 19800 + 6550);
+  assert.equal(b.week1, 10000 + 22000 + 19800 + 6550 + 2500);
   assert.equal(b.week2Onward, 52000 + 11000);
-  assert.equal(b.week1 + b.eviction + b.week2Onward + b.leaseUp + b.contingency, b.total);
+  assert.equal(b.week1 + b.week2Onward + b.leaseUp + b.contingency, b.total);
   assert.equal(b.total, 145850);
 });
 
@@ -194,7 +194,7 @@ test('ExecutionPlanCard prefers content.execution_steps over summary.steps on se
   }
 
   // Step totals visible on load, step items collapsed by default, single Contingency + Total
-  assert.match(html, /\$58,350/); // week1
+  assert.match(html, /\$60,850/); // week1
   assert.match(html, /\$2,500/);
   assert.match(html, /\$63,000/); // week2Onward
   assert.match(html, /\$2,000/);

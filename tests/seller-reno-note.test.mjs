@@ -91,21 +91,21 @@ test('seller page: two notes, no regular lender rate, no buyer numbers, no carry
   const s = offerSellerSummary({ name: 'A: Seller financing', ...LEAD }, BASE, PLAN, [], false);
   assert.equal(s.renoFromSeller, true);
   const labels = s.terms.map((x) => x.label);
-  for (const l of ['Purchase note', 'Renovation note', 'Renovation note rate', 'Your payments', 'Paid back in full']) assert.ok(labels.includes(l), l);
-  assert.equal(s.terms.find((x) => x.label === 'Renovation note rate').value, '8% a year');
+  assert.deepEqual(labels, ['Purchase note', 'Renovation note', 'Rate', 'Your monthly payment', 'Building bills paid first', 'Paid back in full']);
+  assert.equal(s.terms.find((x) => x.label === 'Rate').value, '8% a year');
   assert.ok(!labels.includes('Regular lender'));
   const seen = ['title', 'intro', 'sellerTable', 'refiLine', 'terms', 'steps'].map((k) => JSON.stringify(s[k])).join(' ');
-  assert.doesNotMatch(seen, /11%|2\.5 points|regular|lender/i);
+  assert.doesNotMatch(seen, /11%|2\.5 points|regular|lender|up to /i);
   assert.ok(!labels.includes('You can also fund the repairs'));
   assert.deepEqual(s.steps.map((x) => x.title), ['Seller financing', 'Repairs', 'Paid as units are rented', 'Paid back in full']);
   assert.match(s.refiLine, /paid back in full/);
-  assert.match(s.steps[1].detail, /at 8% a year, plus a \$20,000 contingency only if it's needed\. The buyer runs the work\./);
+  assert.match(s.steps[1].detail, /at 8% a year \(\$20,000 contingency only added if used\)\. The buyer manages all work\./);
   assert.doesNotMatch(seen, /\b(me|I|my)\b/);  // the buyer is spoken of in third person on the seller page
-  assert.match(s.steps[0].detail, /Your purchase note is reported as \$250,000\. You can change this if it's not accurate\./);
-  assert.doesNotMatch(seen, /no points|every month|paid to you monthly|monthly payments|once all|when all/i);
+  assert.match(s.steps[0].detail, /Your purchase note is \$250,000\./);
+  assert.doesNotMatch(seen, /no points|every month|paid to you monthly|holding bills|deferred holding|interest|reserve|lease/i);
   assert.match(s.steps[2].detail, /^Your payments start as units are rented and grow with each one\./);
-  assert.match(s.steps[2].detail, /At \d+ units rented you get the full \$[0-9,]+ a month: \$[0-9,]+ on the purchase note and \$[0-9,]+ on the renovation note/);
-  assert.match(s.refiLine, /^Your payments grow as units are rented, up to \$[0-9,]+ a month, then you are paid back in full: \$[0-9,]+\./);
+  assert.match(s.steps[2].detail, /Once \d+ units are rented you receive the full \$[0-9,]+ a month: \$[0-9,]+ on the purchase note and \$[0-9,]+ on the renovation note/);
+  assert.match(s.refiLine, /^Your monthly payments grow as units are rented to \$[0-9,]+\/mo when all 10 are rented, then you are paid back in full: \$[0-9,]+\./);
   const visible = JSON.stringify([s.intro, s.terms, s.steps, s.refiLine, s.sellerTable]);
   assert.doesNotMatch(visible, /carr(y|ies|ied)|refi|net\b|cash flow|left for you|DSCR|reserve/i);
   const t = unitsRentedTable(BASE, PLAN, LEAD);
@@ -185,16 +185,19 @@ test('contingency counts in the seller renovation note only if used', () => {
   near(rf.renoCompare.sellerMo, (85000 * 8) / 100 / 12);
   const s = offerSellerSummary({ name: 'A: Seller financing', ...LEAD }, BASE, PLAN, [], false);
   const t = s.terms.find((x) => x.label === 'Renovation note');
-  assert.ok(t.overlay.some((l) => /Repair budget: \$100,000/.test(l)));
-  assert.ok(t.overlay.some((l) => /Contingency: \$20,000, added only if used/.test(l)));
+  assert.ok(t.overlay.some((l) => /Planned repairs & permits: \$80,000/.test(l)));
+  assert.ok(t.overlay.some((l) => /Contingency \(\$20,000, bringing total repair budget to \$100,000\): only added to the renovation note if actually used\./.test(l)));
   const st = applyGuideRefi(buildLeadStory('wrap', evaluate('wrap', LEAD.inputs, BASE), { base: BASE }), rf, g);
   const rehab = st.steps.find((x) => x.title === 'Rehab').lines.map((l) => l.label);
   assert.ok(rehab.includes('Contingency'));
 });
 
-test('seller page uses single Offer view with Cover PhotoViewer, Documents/Messages sheets, and Photos exports PhotoGrid', () => {
+test('seller page uses 2 focused tabs (The offer & Your loan) with Cover PhotoViewer, Documents/Messages sheets, and Photos exports PhotoGrid', () => {
   const src = readFileSync(join(root, 'src/views/Seller.jsx'), 'utf8');
-  assert.doesNotMatch(src, /role="tablist"/);
+  assert.match(src, /role="tablist"/);
+  assert.match(src, /'The offer'/);
+  assert.match(src, /'Your loan'/);
+  assert.doesNotMatch(src, /role="tab"[^>]*>Photos/);
   assert.match(src, /<Cover items=\{gallery\.items\} compact open=\{photoViewerOpen\} onOpenChange=\{setPhotoViewerOpen\} \/>/);
   assert.match(src, /<OverviewActionButtons/);
   assert.match(src, /<OverlaySheet open=\{activeSheet === 'documents'\}/);

@@ -176,8 +176,8 @@ test('Task 2 & 3: buildSellerSummary produces plain seller table/terms/steps, re
   ));
   assert.match(html, /The offer: Lease now, buy later/);
   assert.doesNotMatch(html, /or what you owe|\(estimate\)/);
-  assert.match(html, /Units rented/);
-  assert.match(html, /Your costs covered/);
+  assert.match(html, /Units/);
+  assert.match(html, /Covered\?/);
   assert.match(html, /I pay for the repairs, \$\d/);
   assert.doesNotMatch(html, /Month 12/);
 
