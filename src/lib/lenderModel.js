@@ -8,6 +8,11 @@ export const LENDER_DEFAULTS = {
   bridgeProcessing: 1295,
   bridgeDeferredMonths: 2,
   bridgeTermMonths: 12,
+  bridgePrepayment: 'None',
+  bridgeExtensionCount: 1,
+  bridgeExtensionMonths: 3,
+  bridgeExtensionFeePct: 1.25,
+  bridgeDrawFee: 0,
   privateRate: 8,
   privatePointsPct: 0,
   privateMinParticipation: 20000,
@@ -79,6 +84,12 @@ const firstSet = (...vals) => {
   }
   return null;
 };
+const firstText = (...vals) => {
+  for (const v of vals) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+};
 
 export function buildLenderPackage({ base = {}, offer = null, guide = null, valSummary = null, lens = 'bridge' } = {}) {
   const baseLens = LENDER_LENSES[lens] || LENDER_LENSES.bridge;
@@ -118,6 +129,15 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const ratePct = firstSet(base?.bridgeRate, gb.ratePct) ?? LENDER_DEFAULTS.bridgeRate;
   const deferredMonths = firstSet(base?.bridgeDeferredMonths, gb.deferredMonths) ?? LENDER_DEFAULTS.bridgeDeferredMonths;
   const termMonths = pos(base?.bridgeTermMonths, gb.termMonths, LENDER_DEFAULTS.bridgeTermMonths);
+  const prepayment = firstText(base?.bridgePrepayment, gb.prepayment, x.bridgePrepayment, LENDER_DEFAULTS.bridgePrepayment);
+  const extensionCount = firstSet(base?.bridgeExtensionCount, gb.extensionCount, x.bridgeExtensionCount) ?? LENDER_DEFAULTS.bridgeExtensionCount;
+  const extensionMonths = pos(base?.bridgeExtensionMonths, gb.extensionMonths, x.bridgeExtensionMonths, LENDER_DEFAULTS.bridgeExtensionMonths);
+  const extensionFeePct = firstSet(base?.bridgeExtensionFeePct, gb.extensionFeePct, x.bridgeExtensionFeePct) ?? LENDER_DEFAULTS.bridgeExtensionFeePct;
+  const drawFee = firstSet(base?.bridgeDrawFee, gb.drawFee, x.bridgeDrawFee) ?? LENDER_DEFAULTS.bridgeDrawFee;
+  const extensionDisplay = extensionCount > 0
+    ? `${extensionCount} × ${extensionMonths} ${extensionMonths === 1 ? 'month' : 'months'} at ${extensionFeePct}%`
+    : 'None';
+  const drawFeeDisplay = `${money(drawFee)} per draw`;
 
   const subtotal = purchase + repairs + closing + processing;
   const pointsRate = pointsPct / 100;
@@ -379,6 +399,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       overlay: [`${money(repairs)} repair budget released in inspection draws; interest accrues only on drawn funds.`],
     },
     {
+      key: 'drawFee',
+      label: 'Draw fee',
+      value: drawFee,
+      display: drawFeeDisplay,
+      overlay: [drawFee === 0 ? '$0 per inspection draw.' : `${drawFeeDisplay} on repair inspection draws.`],
+    },
+    {
       key: 'deferred',
       label: 'Deferred interest',
       value: deferredMonths,
@@ -394,7 +421,29 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Loan term',
       value: termMonths,
       display: `${termMonths} months`,
-      overlay: [`${termMonths}-month bridge term with extension options in Your terms.`],
+      overlay: [
+        extensionCount > 0
+          ? `${termMonths}-month bridge term with ${extensionDisplay} extension option.`
+          : `${termMonths}-month bridge term.`,
+      ],
+    },
+    {
+      key: 'extension',
+      label: 'Extension',
+      value: extensionCount,
+      display: extensionDisplay,
+      overlay: [
+        extensionCount > 0
+          ? `${extensionCount} ${extensionCount === 1 ? 'extension' : 'extensions'} of ${extensionMonths} ${extensionMonths === 1 ? 'month' : 'months'} at ${extensionFeePct}% of principal.`
+          : 'No extension option requested.',
+      ],
+    },
+    {
+      key: 'prepayment',
+      label: 'Prepayment penalty',
+      value: prepayment,
+      display: prepayment,
+      overlay: [prepayment === 'None' ? 'No prepayment penalty.' : `Prepayment penalty: ${prepayment}.`],
     },
     {
       key: 'exit',
@@ -613,6 +662,18 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     deferredMonths,
     deferredInterest,
     termMonths,
+    prepayment,
+    extension: {
+      count: extensionCount,
+      months: extensionMonths,
+      feePct: extensionFeePct,
+      display: extensionDisplay,
+      pillCount: extensionCount > 0 ? String(extensionCount) : 'None',
+      pillMonths: `${extensionMonths} mo`,
+      pillFee: `${extensionFeePct}%`,
+    },
+    drawFee,
+    drawFeeDisplay,
     minParticipation,
     feesTotal,
     subtotal,

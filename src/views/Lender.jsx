@@ -372,7 +372,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                   <div>
                     <dt className="text-xs text-white/65">Term</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.bridgeTermsRows[4]?.overlay || []} className="text-white">
+                      <OverlayTrigger lines={pkg.bridgeTermsRows.find((r) => r.key === 'term')?.overlay || []} className="text-white">
                         {pkg.termMonths} months
                       </OverlayTrigger>
                     </dd>
@@ -512,7 +512,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                 <Card data-wb="bridge-terms">
                   <CardTitle
                     aside={
-                      <OverlayTrigger lines={pkg.bridgeTermsRows[0]?.overlay || []} className="text-sm font-medium text-ink-soft">
+                      <OverlayTrigger lines={pkg.bridgeTermsRows.find((r) => r.key === 'ltc')?.overlay || []} className="text-sm font-medium text-ink-soft">
                         {pkg.ltcPct}% LTC · $0 down
                       </OverlayTrigger>
                     }

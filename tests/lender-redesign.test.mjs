@@ -108,6 +108,11 @@ test('LENDER_DEFAULTS and LENDER_LENSES reflect owner-confirmed Bridge (10%), Pr
   assert.equal(LENDER_DEFAULTS.bridgeProcessing, 1295);
   assert.equal(LENDER_DEFAULTS.bridgeDeferredMonths, 2);
   assert.equal(LENDER_DEFAULTS.bridgeTermMonths, 12);
+  assert.equal(LENDER_DEFAULTS.bridgePrepayment, 'None');
+  assert.equal(LENDER_DEFAULTS.bridgeExtensionCount, 1);
+  assert.equal(LENDER_DEFAULTS.bridgeExtensionMonths, 3);
+  assert.equal(LENDER_DEFAULTS.bridgeExtensionFeePct, 1.25);
+  assert.equal(LENDER_DEFAULTS.bridgeDrawFee, 0);
   assert.equal(LENDER_DEFAULTS.privateRate, 8);
   assert.equal(LENDER_DEFAULTS.privatePointsPct, 0);
   assert.equal(LENDER_DEFAULTS.privateMinParticipation, 20000);
@@ -136,7 +141,32 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8% no po
   assert.equal(Math.round(bridgePkg.initialMonthlyInterest), 2382);
   assert.equal(Math.round(bridgePkg.deferredInterest), 4765);
   assert.equal(Math.round(bridgePkg.bridgePayoff), 414709);
+  assert.equal(bridgePkg.prepayment, 'None');
+  assert.equal(bridgePkg.extension.display, '1 × 3 months at 1.25%');
+  assert.equal(bridgePkg.drawFee, 0);
+  assert.equal(bridgePkg.drawFeeDisplay, '$0 per draw');
+  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'drawFee')?.display, '$0 per draw');
+  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'extension')?.display, '1 × 3 months at 1.25%');
+  assert.equal(bridgePkg.bridgeTermsRows.find((r) => r.key === 'prepayment')?.display, 'None');
   assert.equal(bridgePkg.bridgeTermsRows.at(-1).display, 'Paid off by refinance after lease-up');
+
+  const customBridgePkg = buildLenderPackage({
+    base: {
+      ...WHITEBOARD_BASE,
+      bridgePrepayment: '1%',
+      bridgeExtensionCount: 2,
+      bridgeExtensionMonths: 6,
+      bridgeExtensionFeePct: 0.5,
+      bridgeDrawFee: 150,
+    },
+    offer: WHITEBOARD_OFFER,
+    guide,
+    lens: 'bridge',
+  });
+  assert.equal(customBridgePkg.prepayment, '1%');
+  assert.equal(customBridgePkg.extension.display, '2 × 6 months at 0.5%');
+  assert.equal(customBridgePkg.drawFee, 150);
+  assert.equal(customBridgePkg.drawFeeDisplay, '$150 per draw');
 
   // Bridge rows & steps never expose LTV-of-value, DSCR, amortization, or refi fee numbers
   const bridgeText = JSON.stringify({ steps: bridgePkg.steps, loanAskRows: bridgePkg.loanAskRows, bridgeTermsRows: bridgePkg.bridgeTermsRows });
@@ -272,12 +302,17 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(bSec.overview, /\$409,944/);
   assert.match(bSec.overview, /\$1,295/);
   assert.match(bSec.overview, /rolled into the loan/);
+  assert.match(bSec.overview, /\$0 per draw/);
+  assert.match(bSec.overview, /1 × 3 months at 1\.25%/);
+  assert.match(bSec.overview, /Prepayment penalty/);
   assert.match(bSec.overview, /Paid off by refinance after lease-up/);
   assert.doesNotMatch(bSec.overview, /data-wb="private-protections"/);
   assert.match(bSec.terms, /Bridge terms/);
   assert.match(bSec.terms, /LTC \(% of cost\)/);
   assert.match(bSec.terms, /Number of extensions/);
   assert.match(bSec.terms, /Rehab draws/);
+  assert.match(bSec.terms, /Draw fee/);
+  assert.match(bSec.terms, /Prepayment penalty/);
   assert.match(bSec.plan, /Bridge loan plan/);
   assert.match(bSec.whatIf, /Loan assumptions/);
   assert.match(bSec.whatIf, /Deferred interest/);
@@ -397,6 +432,11 @@ test('seller, realtor, and shared What-if fields never expose bridge ask or lend
     'bridgeRate',
     'bridgeDeferredMonths',
     'bridgeTermMonths',
+    'bridgePrepayment',
+    'bridgeExtensionCount',
+    'bridgeExtensionMonths',
+    'bridgeExtensionFeePct',
+    'bridgeDrawFee',
     'privateRate',
     'privateTermMonths',
     'privateMinParticipation',
@@ -405,6 +445,6 @@ test('seller, realtor, and shared What-if fields never expose bridge ask or lend
   }
   for (const file of ['src/views/Seller.jsx', 'src/views/Realtor.jsx', 'src/components/Switches.jsx']) {
     const src = read(file);
-    assert.doesNotMatch(src, /lenderModel|LenderWhatIf|Refinance check|Pays off bridge|bridgeProcessing|bridgePointsPct|bridgeRate|bridgeDeferredMonths|privateMinParticipation|non-Dutch/i, file);
+    assert.doesNotMatch(src, /lenderModel|LenderWhatIf|Refinance check|Pays off bridge|bridgeProcessing|bridgePointsPct|bridgeRate|bridgeDeferredMonths|bridgePrepayment|bridgeExtensionCount|bridgeExtensionMonths|bridgeExtensionFeePct|bridgeDrawFee|privateMinParticipation|non-Dutch/i, file);
   }
 });

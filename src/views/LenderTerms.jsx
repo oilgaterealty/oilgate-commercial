@@ -56,6 +56,17 @@ export const LENDER_FIELDS = [
     choices: ['In draws (non-Dutch)', 'In draws (Dutch)', 'At closing', 'No rehab funding'],
   },
   {
+    key: 'draw_fee',
+    label: 'Draw fee',
+    programs: ['bridge'],
+    inputType: 'number',
+    unit: '$',
+    unitSuffix: 'per draw',
+    step: 50,
+    min: 0,
+    placeholder: 'e.g. 0',
+  },
+  {
     key: 'lien_position',
     label: 'Lien position',
     programs: ['private'],
@@ -65,9 +76,12 @@ export const LENDER_FIELDS = [
   {
     key: 'prepayment',
     label: 'Prepayment penalty',
-    programs: ['dscr'],
+    programs: ['bridge', 'dscr'],
     inputType: 'choice',
-    choices: ['None', '3-2-1', '5-4-3-2-1', 'Yield maintenance'],
+    choicesByProgram: {
+      bridge: ['None', '1%', '2%', '3 months interest', '6 months interest'],
+      dscr: ['None', '3-2-1', '5-4-3-2-1', 'Yield maintenance'],
+    },
   },
   {
     key: 'refi_fees',
@@ -87,7 +101,7 @@ export const LENDER_FIELDS = [
 
 export const EXTENSION_COUNTS = ['None', '1', '2', '3'];
 export const EXTENSION_MONTHS = ['3 mo', '6 mo'];
-export const EXTENSION_FEES = ['0%', '0.25%', '0.5%', '1%'];
+export const EXTENSION_FEES = ['0%', '0.25%', '0.5%', '1%', '1.25%'];
 
 export const COLLATERAL_QUESTION = {
   key: 'both_parcels',
@@ -118,12 +132,31 @@ export function formatExtensionSummary({ count, months, fee } = {}) {
   return `${c} × ${m} at ${f}`;
 }
 
+export function defaultBridgeExtensions(pkg) {
+  const ext = pkg?.extension;
+  if (!ext) return { count: 'None', months: '3 mo', fee: '0%' };
+  return {
+    count: ext.pillCount,
+    months: ext.pillMonths,
+    fee: ext.pillFee,
+  };
+}
+
+export function parseExtensionSummary(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  if (/^none$/i.test(s)) return { count: 'None', months: '3 mo', fee: '0%' };
+  const m = s.match(/^(\d+)\s*[×x]\s*(\d+)\s*(?:mo|months?)\s*at\s*([0-9.]+%)/i);
+  if (!m) return null;
+  return { count: m[1], months: `${m[2]} mo`, fee: m[3] };
+}
+
 function formatFieldOutput(field, raw) {
   const s = String(raw || '').trim();
   if (!s) return '';
   if (field?.inputType === 'number' && /^-?\d+(\.\d+)?$/.test(s)) {
     const n = Number(s);
-    if (field.unit === '$') return money(n);
+    if (field.unit === '$') return field.unitSuffix ? `${money(n)} ${field.unitSuffix}` : money(n);
     if (field.unit === '%') return `${s}%`;
     if (field.unit === 'pts') return `${s} ${n === 1 ? 'point' : 'points'}`;
   }
@@ -149,6 +182,8 @@ export function wantedTerms(program, guide, base, offer = null) {
       term: `${pkg.termMonths} months`,
       deferred_interest: pkg.deferredMonths > 0 ? `${pkg.deferredMonths} months · rolled into the loan (due at payoff)` : 'None',
       rehab_draws: pkg.repairs > 0 ? `Repairs ${money(pkg.repairs)} in draws (non-Dutch)` : 'In draws (non-Dutch)',
+      draw_fee: pkg.drawFeeDisplay,
+      prepayment: pkg.prepayment,
     };
   } else if (program === 'private') {
     byKey = {
@@ -331,7 +366,7 @@ export function buildTermsSubmission({
   const bothParcels = String(values?.[COLLATERAL_QUESTION.label] || '').trim();
   if (bothParcels) answered[COLLATERAL_QUESTION.label] = bothParcels;
   for (const opt of OPTIONAL_FIELDS) {
-    if (program === 'dscr' && opt.key === 'prepayment') continue;
+    if ((program === 'bridge' || program === 'dscr') && opt.key === 'prepayment') continue;
     const val = String(values?.[opt.label] || '').trim();
     if (val) answered[opt.label] = val;
   }
@@ -368,6 +403,7 @@ function ChoicePills({ label, choices, value, preview, onSelect }) {
           <button
             key={choice}
             type="button"
+            aria-pressed={active}
             disabled={preview}
             onClick={() => onSelect(active ? '' : choice)}
             className={`min-h-[40px] rounded-full border px-3 py-1.5 text-sm font-medium transition ${
@@ -522,8 +558,8 @@ export function LenderTermField({ field, program, ask, value, countering, previe
                 }`}
               />
             </div>
-            {field.unit && field.unit !== '$' && (
-              <span className="shrink-0 text-sm font-medium text-ink-soft">{field.unit}</span>
+            {((field.unit && field.unit !== '$') || field.unitSuffix) && (
+              <span className="shrink-0 text-sm font-medium text-ink-soft">{field.unitSuffix || field.unit}</span>
             )}
           </div>
         </div>
@@ -552,7 +588,7 @@ export default function LenderTerms({
   const [savedType, setSavedType] = useState(null);
   const [drafts, setDrafts] = useState({});
   const [editing, setEditing] = useState({});
-  const [ext, setExt] = useState({ count: '', months: '3 mo', fee: '0.5%' });
+  const [extDraft, setExtDraft] = useState(null);
   const [company, setCompany] = useState(() => identity.company);
   const [name, setName] = useState(() => identity.name);
   const [status, setStatus] = useState('');
@@ -581,6 +617,8 @@ export default function LenderTerms({
   }, [isControlled, controlledProgram, savedType]);
 
   const pkg = buildLenderPackage({ base, offer, guide, lens: program });
+  const defaultExt = defaultBridgeExtensions(pkg);
+  const ext = extDraft || defaultExt;
   const fields = fieldsForProgram(program);
   const asks = wantedTerms(program, guide, base, offer);
   const progDraft = drafts[program] || {};
@@ -602,6 +640,8 @@ export default function LenderTerms({
         if (!isControlled) setInternalProgram(data.lender_type);
       }
       setDrafts(data.terms || {});
+      const parsedExt = parseExtensionSummary(data.terms?.bridge?.Extensions);
+      if (parsedExt) setExtDraft(parsedExt);
     });
   }, [deal.id, me?.uid, preview, isControlled, identity.hasRecordCompany, identity.name]);
 
@@ -672,7 +712,9 @@ export default function LenderTerms({
       ? `${pkg.refiCheck.refiLtv}% LTV · Value ${money(pkg.value)} · Loan ${money(pkg.refiCheck.newLoan)}`
       : `${money(pkg.totalLoan)} · 100% LTC`;
 
-  const visibleOptionalFields = OPTIONAL_FIELDS.filter((opt) => !(program === 'dscr' && opt.key === 'prepayment'));
+  const visibleOptionalFields = OPTIONAL_FIELDS.filter(
+    (opt) => !((program === 'bridge' || program === 'dscr') && opt.key === 'prepayment'),
+  );
 
   return (
     <div className="space-y-5">
@@ -751,7 +793,7 @@ export default function LenderTerms({
             {/* Group 3: Extensions (Bridge only) */}
             {program === 'bridge' && (
               <div className="rounded-xl border border-line bg-paper p-3 space-y-2.5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Extension options (optional)</div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-ink-soft">Extension options</div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <div className="text-sm font-medium text-ink">Number of extensions</div>
@@ -760,7 +802,7 @@ export default function LenderTerms({
                       choices={EXTENSION_COUNTS}
                       value={ext.count}
                       preview={preview}
-                      onSelect={(next) => setExt((prev) => ({ ...prev, count: next }))}
+                      onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), count: next }))}
                     />
                   </div>
                   {ext.count && ext.count !== 'None' && (
@@ -772,7 +814,7 @@ export default function LenderTerms({
                           choices={EXTENSION_MONTHS}
                           value={ext.months}
                           preview={preview}
-                          onSelect={(next) => setExt((prev) => ({ ...prev, months: next || '3 mo' }))}
+                          onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), months: next || defaultExt.months }))}
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -782,7 +824,7 @@ export default function LenderTerms({
                           choices={EXTENSION_FEES}
                           value={ext.fee}
                           preview={preview}
-                          onSelect={(next) => setExt((prev) => ({ ...prev, fee: next || '0%' }))}
+                          onSelect={(next) => setExtDraft((prev) => ({ ...(prev || defaultExt), fee: next || defaultExt.fee }))}
                         />
                       </div>
                     </>
