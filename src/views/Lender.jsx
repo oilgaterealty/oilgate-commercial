@@ -195,7 +195,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
     {
       num: 2,
       title: 'Interest paid',
-      value: `${pkg.privatePool.ratePct}% · no points · ${money(pkg.privatePool.monthlyInterest)}/mo`,
+      value: `${pkg.privatePool.ratePct}% · ${money(pkg.privatePool.monthlyInterest)}/mo`,
       overlay: pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay || [],
     },
     {
@@ -307,7 +307,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                     <dt className="text-xs text-white/65">Rate</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
                       <OverlayTrigger lines={pkg.privatePoolRows[0]?.overlay || []} className="text-white">
-                        {pkg.privatePool.ratePct}% · no points
+                        {pkg.privatePool.ratePct}%
                       </OverlayTrigger>
                     </dd>
                   </div>
@@ -588,7 +588,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Total funds needed" value={money(pkg.privatePool.totalFunds)} overlay={pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay} />
                 <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
-                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}% · no points`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
+                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}%`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
                 <Stat label="Minimum share" value={money(pkg.minParticipation)} overlay={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay} />
               </dl>
 

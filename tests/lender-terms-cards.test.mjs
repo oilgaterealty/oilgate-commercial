@@ -1,5 +1,5 @@
 // Lender "Your terms" tab isolation tests:
-// Bridge (9 asks + pre-selected extensions; NO LTV/DSCR/amortization), Private (4 asks, 8% no points; NO processing/points/extensions),
+// Bridge (9 asks + pre-selected extensions; NO LTV/DSCR/amortization), Private (4 asks, 8%; NO processing/points/extensions),
 // DSCR (8 asks with 75%/80% LTV presets, prepayment, refi fees; NO points/processing/deferred),
 // one-tap Change + Use ours with no prefilled deletable text, untouched asks submit cleanly under each tab's program key, preview name blank.
 import { test } from 'node:test';
@@ -150,11 +150,11 @@ test('Your terms strictly isolates Bridge, Private, and DSCR fields and asks', a
   assert.match(html, /aria-pressed="true"[^>]*>1\.25%<\/button>/);
   assert.equal((html.match(/Prepayment penalty/g) || []).length, 2); // ask card label + aria-label only (not duplicated in optional terms)
 
-  // Private tab: 4 asks, 8% no points, no processing fee, no extensions
+  // Private tab: 4 asks, 8%, no processing fee, no extensions
   const privAsks = lt.wantedTerms('private', GUIDE, BASE);
   assert.equal(Object.keys(privAsks).length, 4);
   assert.equal(privAsks['Your participation'], 'Min $20,000 · Pool $404,550');
-  assert.equal(privAsks['Interest rate'], '8% · no points');
+  assert.equal(privAsks['Interest rate'], '8%');
   assert.equal(privAsks['Lien position'], 'First-lien pooled');
   const privHtml = renderToStaticMarkup(React.createElement(lt.default, {
     deal: { id: 'd1', slug: 'charlotte' },
@@ -166,7 +166,7 @@ test('Your terms strictly isolates Bridge, Private, and DSCR fields and asks', a
     hideProgramTabs: true,
   }));
   assert.equal((privHtml.match(/>Change<\/button>/g) || []).length, 4);
-  assert.doesNotMatch(privHtml, /Processing fee|Origination points|Number of extensions|Minimum DSCR|Amortization/i);
+  assert.doesNotMatch(privHtml, /points|Processing fee|Number of extensions|Minimum DSCR|Amortization/i);
 
   // DSCR tab: 8 asks, 75% LTV Value $586,000 Loan $439,500, no points/processing/deferred/extensions
   const dscrAsks = lt.wantedTerms('dscr', GUIDE, BASE);
@@ -355,7 +355,7 @@ test('each tab saves under its own program key without overwriting sibling progr
     existingTerms: subDscr.terms,
     nowIso: '2026-11-27T21:10:00.000Z',
   });
-  assert.equal(subPriv.terms.private['Interest rate'], '8% · no points');
+  assert.equal(subPriv.terms.private['Interest rate'], '8%');
   assert.equal(subPriv.terms.private.Extensions, undefined);
   assert.equal(subPriv.terms.dscr['Max LTV (% of value)'], '80%');
   assert.equal(subPriv.terms.bridge['Interest rate'], '10.5%');
@@ -376,7 +376,7 @@ test('Your terms removes Your name input, hides Company when record has company,
 
   // Short ask -> inline single row; long ask -> stacked two lines
   assert.equal(lt.isShortAsk('Loan term', '12 months'), true);
-  assert.equal(lt.isShortAsk('Interest rate', '8% · no points'), true);
+  assert.equal(lt.isShortAsk('Interest rate', '8%'), true);
   assert.equal(lt.isShortAsk('Origination points', '1 point · rolled into the loan · Fee $4,099'), false);
 
   // Member WITH company: zero Company or Your name inputs shown

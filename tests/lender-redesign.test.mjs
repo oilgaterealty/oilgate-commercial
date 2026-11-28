@@ -1,6 +1,6 @@
 // Charlotte lender view tab-isolation tests:
 // Bridge (10% non-Dutch, 1 pt, $1,295, 12 mo, 2-mo deferred due at payoff, $0 down, LTC, draws, extensions; NO LTV/DSCR/amortization/refi table),
-// Private (8%, no points, $20k min, first-lien pooled, total funds needed, surplus at refinance; NO processing/DSCR/amortization/refi table),
+// Private (8%, $20k min, first-lien pooled, total funds needed, surplus at refinance; NO processing/DSCR/amortization/refi table),
 // DSCR (75% LTV of $586k = $439,500 changeable to 80%, DSCR min, rate, 30-yr amort, prepayment, refi fees, pays off bridge; NO points/processing/deferred),
 // percent-next-to-dollar always labels both, Owner 75%/80% LTV toggle, zero subtext, strict privacy isolation.
 import { test } from 'node:test';
@@ -121,7 +121,7 @@ test('LENDER_DEFAULTS and LENDER_LENSES reflect owner-confirmed Bridge (10%), Pr
   assert.equal(LENDER_DEFAULTS.refiFeesPct, 2.1);
 });
 
-test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8% no points), and DSCR (75%/80% LTV) packages', () => {
+test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8%), and DSCR (75%/80% LTV) packages', () => {
   const guide = buildLeadGuide(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
   const bridgePkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'bridge' });
 
@@ -172,7 +172,7 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8% no po
   const bridgeText = JSON.stringify({ steps: bridgePkg.steps, loanAskRows: bridgePkg.loanAskRows, bridgeTermsRows: bridgePkg.bridgeTermsRows });
   assert.doesNotMatch(bridgeText, /\bLTV\b|DSCR|amortiz|Refi fees/i);
 
-  // Private: 275,000 + 124,050 + 5,500 = 404,550; 8% = 2,697/mo; no points; no processing
+  // Private: 275,000 + 124,050 + 5,500 = 404,550; 8% = 2,697/mo; no processing
   const privPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'private' });
   assert.equal(privPkg.privatePool.ratePct, 8);
   assert.equal(privPkg.privatePool.pointsPct, 0);
@@ -181,9 +181,10 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8% no po
   assert.equal(Math.round(privPkg.privatePool.monthlyInterest), 2697);
   assert.ok(privPkg.privatePool.surplusAtRefi > 0);
   const privText = JSON.stringify({ steps: privPkg.steps, privateFundsRows: privPkg.privateFundsRows, privatePoolRows: privPkg.privatePoolRows });
-  assert.match(privText, /8% · no points/);
+  assert.match(privText, /"display":"8%"/);
   assert.match(privText, /First-lien pooled/);
-  assert.doesNotMatch(privText, /processing|\$1,295|1 point|DSCR|amortiz/i);
+  assert.doesNotMatch(privText, /points|processing|\$1,295|DSCR|amortiz/i);
+  assert.doesNotMatch(privPkg.lens.lead, /points/i);
 
   // DSCR: 75% of 586,000 = 439,500; 80% of 586,000 = 468,800; pays off bridge 414,709; refi fees 5000 + 2.1%
   const dscrPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'dscr' });
@@ -344,15 +345,15 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(pSec.overview, /Private pooled loan/);
   assert.match(pSec.overview, /\$404,550/);
   assert.match(pSec.overview, /\$20,000/);
-  assert.match(pSec.overview, /8% · no points/);
+  assert.match(pSec.overview, />8%</);
   assert.match(pSec.overview, /First-lien pooled/);
   assert.match(pSec.overview, /Surplus at refinance/);
   assert.match(pSec.terms, /Private terms/);
   assert.match(pSec.terms, /Your participation/);
-  assert.match(pSec.terms, /8% · no points/);
+  assert.match(pSec.terms, />8%</);
   assert.match(pSec.plan, /Private pool plan/);
   assert.match(pSec.whatIf, /Your share/);
-  assert.doesNotMatch(pAll, /processing|\$1,295|Origination points|1 point|DSCR|amortiz|Refinance check|Refi fees|Number of extensions/i);
+  assert.doesNotMatch(pAll, /points|processing|\$1,295|DSCR|amortiz|Refinance check|Refi fees|Number of extensions/i);
 
   // 3. DSCR TAB
   const dscrHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {

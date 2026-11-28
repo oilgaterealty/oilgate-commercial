@@ -192,7 +192,7 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
       return [
         `Lender what-if (${simPkg.lens.label}, nothing was saved):`,
         `- Your share: ${money(share)}`,
-        `- Rate: ${simPkg.privatePool.ratePct}% (no points)`,
+        `- Rate: ${simPkg.privatePool.ratePct}%`,
         `- Term: ${simPkg.privatePool.termMonths} months`,
         `- Total funds needed: ${money(simPkg.privatePool.totalFunds)}`,
         `- Your monthly return: ${money(shareMonthly)}/mo`,

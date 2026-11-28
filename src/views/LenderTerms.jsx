@@ -190,7 +190,7 @@ export function wantedTerms(program, guide, base, offer = null) {
       participation: pkg.privatePool.totalFunds > 0
         ? `Min ${money(pkg.minParticipation)} · Pool ${money(pkg.privatePool.totalFunds)}`
         : `Min ${money(pkg.minParticipation)}`,
-      rate: `${pkg.privatePool.ratePct}% · no points`,
+      rate: `${pkg.privatePool.ratePct}%`,
       term: `${pkg.privatePool.termMonths} months`,
       lien_position: 'First-lien pooled',
     };

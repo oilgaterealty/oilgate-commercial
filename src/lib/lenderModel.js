@@ -40,7 +40,7 @@ export const LENDER_LENSES = {
     label: 'Private',
     program: 'private',
     title: 'Private pooled loan',
-    lead: 'First-lien pool at 8% interest, no points, $20,000 minimum',
+    lead: 'First-lien pool at 8% interest, $20,000 minimum',
     heroLabel: 'Total funds needed',
     ctaLabel: 'Send private terms',
   },
@@ -153,7 +153,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const downPayment = 0;
   const ltcPct = totalLoan > 0 ? 100 : 0;
 
-  // 2. Private (individuals pooling: 8%, no points, no processing, $20,000 minimum)
+  // 2. Private (individuals pooling: 8%, no processing, $20,000 minimum)
   const privateRate = firstSet(base?.privateRate, gb.privateRate) ?? LENDER_DEFAULTS.privateRate;
   const privatePointsPct = LENDER_DEFAULTS.privatePointsPct;
   const privateTermMonths = pos(base?.privateTermMonths, gb.privateTermMonths, LENDER_DEFAULTS.privateTermMonths);
@@ -183,7 +183,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const privateIsGap = privateSurplusAtRefi < 0;
 
   const activeLens = baseLens.key === 'private'
-    ? { ...baseLens, lead: `First-lien pool at ${privateRate}% interest, no points, ${money(minParticipation)} minimum` }
+    ? { ...baseLens, lead: `First-lien pool at ${privateRate}% interest, ${money(minParticipation)} minimum` }
     : baseLens.key === 'bridge'
       ? { ...baseLens, lead: `Purchase + repairs + fees rolled in, $0 down · ${ratePct}% non-Dutch` }
       : { ...baseLens, heroLabel: `Takeout loan (${refiLtv}% LTV)` };
@@ -238,9 +238,9 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     {
       num: '02',
       title: 'Interest earned',
-      figure: `${privateRate}% · no points`,
+      figure: `${privateRate}%`,
       overlay: [
-        `${money(minParticipation)} minimum participation earns ${money(privateMinMonthlyReturn)}/mo at ${privateRate}% (no points).`,
+        `${money(minParticipation)} minimum participation earns ${money(privateMinMonthlyReturn)}/mo at ${privateRate}%.`,
       ],
     },
     {
@@ -488,12 +488,12 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       emphasis: 'total',
       overlay: [
         `${money(purchase)} purchase + ${money(repairs)} repairs + ${money(closing)} title/closing = ${money(privateTotalFunds)}.`,
-        'No points or extra upfront fees.',
+        'No extra upfront fees.',
       ],
     },
     {
       key: 'interest',
-      label: `Interest (${privateRate}% · no points)`,
+      label: `Interest (${privateRate}%)`,
       value: privateMonthlyInterest,
       display: `${money(privateMonthlyInterest)}/mo`,
       emphasis: 'accent',
@@ -509,8 +509,8 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       key: 'rate',
       label: 'Interest rate',
       value: privateRate,
-      display: `${privateRate}% · no points`,
-      overlay: [`${privateRate}% annual interest, no points, no upfront fees.`],
+      display: `${privateRate}%`,
+      overlay: [`${privateRate}% annual interest, no upfront fees.`],
     },
     {
       key: 'minParticipation',
