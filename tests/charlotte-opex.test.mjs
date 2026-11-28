@@ -23,7 +23,7 @@ import {
 } from '../src/lib/dealmath.js';
 import { computeOpex } from '../src/lib/opex.js';
 import { buildLeadGuide, overallRepairBudget } from '../src/lib/dealplan.js';
-import { defaultMarketRent, effectiveMarketRange, rangeSummary, rangeValue, whatIfGrid, whatIfViews } from '../src/lib/rangeValue.js';
+import { defaultMarketRent, effectiveMarketRange, operatingBreakdownFor, rangeSummary, rangeValue, whatIfGrid, whatIfViews } from '../src/lib/rangeValue.js';
 import { LENDER_LENSES, buildFallbackRentValue, buildLenderPackage, computePrivateReturn, parseLenderProtections } from '../src/lib/lenderModel.js';
 
 const require = createRequire(import.meta.url);
@@ -248,7 +248,7 @@ test('RentValue component uses opex math, All in $420,850, zero subtext, and put
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': SHELL_STUB,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
-    '../lib/rangeValue.js': { defaultMarketRent, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
+    '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
   });
   const guide = buildLeadGuide(CHARLOTTE_BASE, CHARLOTTE_PLAN, { structure: 'cash', inputs: { price: 275000 } });
   const html = renderToStaticMarkup(React.createElement(RentValueMod.default, { data: guide.rentValue, showMarket: true }));
@@ -256,8 +256,8 @@ test('RentValue component uses opex math, All in $420,850, zero subtext, and put
   assert.doesNotMatch(html, /<p\b|<small\b|<caption\b/i);
   assert.doesNotMatch(html, /\$774,436|\$399,050|\$3,045|\$69,699/);
   assert.match(html, /\$420,850/);
-  assert.match(html, /\$640,760/);
-  assert.match(html, /\$57,668/);
+  assert.match(html, /\$700,733/);
+  assert.match(html, /\$63,066/);
 
   // Sources live ONLY inside data-overlay attributes, never outside tags as visible text
   const strippedOverlays = html.replace(/data-overlay="[^"]*"/g, '');
@@ -281,7 +281,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': SHELL_STUB,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
-    '../lib/rangeValue.js': { defaultMarketRent, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
+    '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
   });
   const CostSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': SHELL_STUB });
   const LenderWhatIfMod = loadJsx('src/components/LenderWhatIf.jsx', {
@@ -323,6 +323,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': CostSummaryMod,
+    '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': { isUnitsGuide: (g) => Boolean(g && Array.isArray(g.rows) && g.rows.length > 0 && g.refi) },
     '../components/RentValue.jsx': RentValueMod,
     '../components/LenderWhatIf.jsx': LenderWhatIfMod,

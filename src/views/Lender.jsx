@@ -11,6 +11,7 @@ import { useUploads, FileList } from '../components/Files.jsx';
 import { Cover, photosOf } from '../components/Photos.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
 import CostSummary from '../components/CostSummary.jsx';
+import { ExecutionPlanCard } from '../components/LeadOfferCard.jsx';
 import { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
 import RentValue, { isRentValue } from '../components/RentValue.jsx';
 import LenderWhatIf from '../components/LenderWhatIf.jsx';
@@ -38,6 +39,7 @@ function LedgerRows({ rows }) {
       {rows.map((row) => {
         const isTotal = row.emphasis === 'total';
         const isAccent = row.emphasis === 'accent';
+        const isLong = !isTotal && String(row.display || '').length > 24;
         const valCls = row.tone === 'good'
           ? 'text-good'
           : row.tone === 'warn'
@@ -46,12 +48,16 @@ function LedgerRows({ rows }) {
         return (
           <div
             key={row.key}
-            className={`flex items-baseline justify-between gap-4 py-2.5 first:pt-0 last:pb-0 ${
+            className={`${
+              isLong
+                ? 'flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4'
+                : 'flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5'
+            } py-2.5 first:pt-0 last:pb-0 ${
               isTotal ? 'border-t-2 border-ink/20 pt-3 font-semibold' : isAccent ? 'rounded-xl bg-warm-soft/70 px-3 py-2.5 my-1 font-semibold' : ''
             }`}
           >
             <dt className={`min-w-0 text-sm ${isTotal || isAccent ? 'font-semibold text-ink' : 'text-ink-soft'}`}>{row.label}</dt>
-            <dd className={`shrink-0 text-right tabular-nums ${isTotal ? 'font-display text-xl font-semibold' : 'text-sm font-semibold'} ${valCls}`}>
+            <dd className={`min-w-0 max-w-full break-words tabular-nums ${isLong ? 'text-left sm:text-right' : 'text-right'} ${isTotal ? 'font-display text-xl font-semibold' : 'text-sm font-semibold'} ${valCls}`}>
               <OverlayTrigger lines={row.overlay} className={valCls}>{row.display}</OverlayTrigger>
             </dd>
           </div>
@@ -212,6 +218,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
   const { offers, base, error } = useDealModel(deal, { owner: false, onlyShared: preview ? 'lender' : undefined });
   const [leadGuide, setLeadGuide] = useState(null);
   const [loadedProtections, setLoadedProtections] = useState([]);
+  const [sharedRent, setSharedRent] = useState(null);
 
   useEffect(() => {
     if (LENDER_LENSES[urlLens]) setLenderLens(urlLens);
@@ -250,16 +257,34 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
   const b = { ...base, units: 10 };
   const plan = offers?.[0] || null;
   const rawGuide = isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null);
-  const opexSource = rawGuide?.opex || b?.opex || null;
-  const effectiveBase = opexSource && !b?.opex ? { ...b, opex: opexSource } : b;
-  const e = plan && evaluate(plan.structure, plan.inputs, effectiveBase);
+  const opexSource = b?.opex || rawGuide?.opex || null;
+  const laundrySource = b?.laundry || rawGuide?.laundry || opexSource?.laundry || null;
+  const effectiveBase = {
+    ...b,
+    ...(opexSource && !b?.opex ? { opex: opexSource } : {}),
+    ...(laundrySource && !b?.laundry ? { laundry: laundrySource } : {}),
+  };
+  const baseDefaultRent = Number.isFinite(+effectiveBase?.rent) && +effectiveBase.rent > 0
+    ? +effectiveBase.rent
+    : (Number.isFinite(+rawGuide?.rentValue?.ourRent) && +rawGuide.rentValue.ourRent > 0
+        ? +rawGuide.rentValue.ourRent
+        : (Number.isFinite(+rawGuide?.rent) && +rawGuide.rent > 0 ? +rawGuide.rent : 1000));
+  const activeRent = sharedRent !== null && Number.isFinite(+sharedRent) ? +sharedRent : baseDefaultRent;
+  const activeBase = { ...effectiveBase, rent: activeRent };
+  const e = plan && evaluate(plan.structure, plan.inputs, activeBase);
   const o = e?.operating;
-  const val = o ? valueSummary({ base: effectiveBase, noi: o.noi, units: 10 }) : null;
+  const val = o ? valueSummary({ base: activeBase, noi: o.noi, units: 10 }) : null;
   const liftedRentValue = rawGuide?.rentValue
-    ? { ...rawGuide.rentValue, marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, effectiveBase) }
+    ? {
+        ...rawGuide.rentValue,
+        ourRent: activeRent,
+        ...(opexSource && !rawGuide.rentValue.opex ? { opex: opexSource } : {}),
+        ...(laundrySource && !rawGuide.rentValue.laundry ? { laundry: laundrySource } : {}),
+        marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, activeBase),
+      }
     : null;
   const effectiveGuide = rawGuide
-    ? { ...rawGuide, ...(liftedRentValue ? { rentValue: liftedRentValue } : {}) }
+    ? { ...rawGuide, rent: activeRent, ...(liftedRentValue ? { rentValue: liftedRentValue } : {}) }
     : null;
   const guide = effectiveGuide || plan?.seller_summary?.guide || null;
   const guideCostSummary = guide?.costSummary || (guide?.cost?.length
@@ -267,13 +292,13 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
     : null);
 
   const pkg = buildLenderPackage({
-    base: effectiveBase,
+    base: activeBase,
     offer: plan,
     guide: effectiveGuide,
     valSummary: val,
     lens: lenderLens,
   });
-  const fallbackRent = !isRentValue(effectiveGuide?.rentValue) ? buildFallbackRentValue(effectiveBase, pkg) : null;
+  const fallbackRent = !isRentValue(effectiveGuide?.rentValue) ? buildFallbackRentValue(activeBase, pkg) : null;
 
   const heroFigure = lenderLens === 'dscr'
     ? money(pkg.refiCheck.newLoan)
@@ -680,8 +705,8 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
             {(isRentValue(effectiveGuide?.rentValue) || fallbackRent) && (
               <div data-wb="rent-plan">
                 {isRentValue(effectiveGuide?.rentValue)
-                  ? <RentValue data={effectiveGuide.rentValue} showMarket hideUnits />
-                  : <RentValue data={fallbackRent} showMarket hideUnits />}
+                  ? <RentValue data={effectiveGuide.rentValue} showMarket hideUnits rent={activeRent} onRentChange={setSharedRent} />
+                  : <RentValue data={fallbackRent} showMarket hideUnits rent={activeRent} onRentChange={setSharedRent} />}
               </div>
             )}
           </>
@@ -695,7 +720,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
           member={member}
           preview={preview}
           guide={effectiveGuide}
-          base={effectiveBase}
+          base={activeBase}
           offer={plan}
           lenderLens={lenderLens}
           onLensChange={setLenderLens}
@@ -706,120 +731,130 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
       <section id="sec-plan" data-section="plan" className="scroll-mt-20 space-y-5">
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {offers === null ? <Empty>Loading…</Empty> : !plan ? <Card><Empty>{buyerName()} will share the plan here.</Empty></Card> : (
-          lenderLens === 'private' ? (
-            <Card data-plan="private">
-              <CardTitle
-                aside={
-                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
-                    First-lien pooled
-                  </span>
-                }
-              >
-                Private pool plan
-              </CardTitle>
-
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Total funds needed" value={money(pkg.privatePool.totalFunds)} overlay={pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay} />
-                <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
-                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}% a year`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
-                <Stat label="Minimum share" value={money(pkg.minParticipation)} overlay={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay} />
-              </dl>
-
-              {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
-
-              <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                {privatePlanSteps.map((step) => (
-                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                      {step.num}
+          <>
+            {lenderLens === 'private' ? (
+              <Card data-plan="private">
+                <CardTitle
+                  aside={
+                    <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                      First-lien pooled
                     </span>
-                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-semibold text-ink">{step.title}</span>
-                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                        {step.value}
-                      </OverlayTrigger>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </Card>
-          ) : lenderLens === 'dscr' ? (
-            <Card data-plan="dscr">
-              <CardTitle
-                aside={
-                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
-                    {pkg.refiCheck.refiYears}-yr · {pkg.refiCheck.refiRate}%
-                  </span>
-                }
-              >
-                DSCR refinance plan
-              </CardTitle>
+                  }
+                >
+                  Private pool plan
+                </CardTitle>
 
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label={`Takeout loan (${pkg.refiCheck.refiLtv}% LTV)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.overlay} />
-                <Stat label="Stabilized value" value={money(pkg.value)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'value')?.overlay} />
-                <Stat label="Monthly payment (P&I)" value={`${money(pkg.refiCheck.refiPayment)}/mo`} overlay={pkg.dscrLoanRows.find((r) => r.key === 'payment')?.overlay} />
-                <Stat label="Pays off bridge" value={money(pkg.refiCheck.bridgePayoff)} overlay={pkg.refiCheckRows.find((r) => r.key === 'payoff')?.overlay} />
-              </dl>
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat label="Total funds needed" value={money(pkg.privatePool.totalFunds)} overlay={pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay} />
+                  <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
+                  <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}% a year`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
+                  <Stat label="Minimum share" value={money(pkg.minParticipation)} overlay={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay} />
+                </dl>
 
-              <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                {dscrPlanSteps.map((step) => (
-                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                      {step.num}
+                {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
+
+                <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                  {privatePlanSteps.map((step) => (
+                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                        {step.num}
+                      </span>
+                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-sm font-semibold text-ink">{step.title}</span>
+                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                          {step.value}
+                        </OverlayTrigger>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </Card>
+            ) : lenderLens === 'dscr' ? (
+              <Card data-plan="dscr">
+                <CardTitle
+                  aside={
+                    <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                      {pkg.refiCheck.refiYears}-yr · {pkg.refiCheck.refiRate}%
                     </span>
-                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-semibold text-ink">{step.title}</span>
-                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                        {step.value}
-                      </OverlayTrigger>
-                    </div>
-                  </li>
-                ))}
-              </ol>
+                  }
+                >
+                  DSCR refinance plan
+                </CardTitle>
 
-              <div className="mt-5 border-t border-line pt-4">
-                <LedgerRows rows={pkg.refiCheckRows} />
-              </div>
-            </Card>
-          ) : (
-            <Card data-plan="1a">
-              <CardTitle
-                aside={
-                  <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
-                    {pkg.ltcPct}% LTC · $0 down
-                  </span>
-                }
-              >
-                Bridge loan plan
-              </CardTitle>
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat label={`Takeout loan (${pkg.refiCheck.refiLtv}% LTV)`} value={money(pkg.refiCheck.newLoan)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'loan')?.overlay} />
+                  <Stat label="Stabilized value" value={money(pkg.value)} overlay={pkg.dscrLoanRows.find((r) => r.key === 'value')?.overlay} />
+                  <Stat label="Monthly payment (P&I)" value={`${money(pkg.refiCheck.refiPayment)}/mo`} overlay={pkg.dscrLoanRows.find((r) => r.key === 'payment')?.overlay} />
+                  <Stat label="Pays off bridge" value={money(pkg.refiCheck.bridgePayoff)} overlay={pkg.refiCheckRows.find((r) => r.key === 'payoff')?.overlay} />
+                </dl>
 
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
-                <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
-                <Stat label={`Interest (${pkg.ratePct}% IO · non-Dutch)`} value={`${money(pkg.initialMonthlyInterest)}/mo`} overlay={pkg.loanAskRows.find((r) => r.key === 'interest')?.overlay} />
-                <Stat label={`Deferred (${pkg.deferredMonths} mo · due at payoff)`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
-              </dl>
+                {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
 
-              {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
+                <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                  {dscrPlanSteps.map((step) => (
+                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                        {step.num}
+                      </span>
+                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-sm font-semibold text-ink">{step.title}</span>
+                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                          {step.value}
+                        </OverlayTrigger>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
 
-              <ol className="mt-5 space-y-3 border-t border-line pt-4">
-                {bridgePlanSteps.map((step) => (
-                  <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-                      {step.num}
+                <div className="mt-5 border-t border-line pt-4">
+                  <LedgerRows rows={pkg.refiCheckRows} />
+                </div>
+              </Card>
+            ) : (
+              <Card data-plan="1a">
+                <CardTitle
+                  aside={
+                    <span className="rounded-full bg-ink px-2.5 py-0.5 text-xs font-medium text-white">
+                      {pkg.ltcPct}% LTC · $0 down
                     </span>
-                    <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-semibold text-ink">{step.title}</span>
-                      <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
-                        {step.value}
-                      </OverlayTrigger>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </Card>
-          )
+                  }
+                >
+                  Bridge loan plan
+                </CardTitle>
+
+                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat label="Total bridge loan" value={money(pkg.totalLoan)} overlay={pkg.loanAskRows.find((r) => r.key === 'total')?.overlay} />
+                  <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
+                  <Stat label={`Interest (${pkg.ratePct}% IO · non-Dutch)`} value={`${money(pkg.initialMonthlyInterest)}/mo`} overlay={pkg.loanAskRows.find((r) => r.key === 'interest')?.overlay} />
+                  <Stat label={`Deferred (${pkg.deferredMonths} mo · due at payoff)`} value={money(pkg.deferredInterest)} overlay={pkg.loanAskRows.find((r) => r.key === 'deferredInterest')?.overlay} />
+                </dl>
+
+                {guideCostSummary && <CostSummary summary={guideCostSummary} className="mt-5" />}
+
+                <ol className="mt-5 space-y-3 border-t border-line pt-4">
+                  {bridgePlanSteps.map((step) => (
+                    <li key={step.num} className="flex gap-3 rounded-xl bg-paper p-3">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                        {step.num}
+                      </span>
+                      <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-2">
+                        <span className="text-sm font-semibold text-ink">{step.title}</span>
+                        <OverlayTrigger lines={step.overlay} className="text-sm font-semibold tabular-nums text-ink">
+                          {step.value}
+                        </OverlayTrigger>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </Card>
+            )}
+            <ExecutionPlanCard
+              content={deal.seller_content}
+              summary={guideCostSummary ? { ...guideCostSummary, steps: plan?.seller_summary?.steps } : plan?.seller_summary}
+              stepBudgets={guideCostSummary?.stepBudgets || plan?.seller_summary?.stepBudgets}
+              lenderMode
+            />
+          </>
         )}
       </section>
 
@@ -831,7 +866,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
             me={me}
             preview={preview}
             pkg={pkg}
-            base={effectiveBase}
+            base={activeBase}
             offer={plan}
             guide={effectiveGuide}
             lens={lenderLens}

@@ -337,7 +337,12 @@ function LoadedDealPlan({ deal }) {
   const selected = model.offers.find((offer) => offer.id === chosen && offer.structure === structure)
     || model.offers.find((offer) => offer.structure === structure) || model.offers[0];
   if (!selected) return <Card><Empty>No offers yet</Empty></Card>;
-  const planBase = { ...model.base, units: 10 };
+  const planBase = {
+    ...model.base,
+    units: 10,
+    ...(state.plan?.opex && !model.base?.opex ? { opex: state.plan.opex } : {}),
+    ...(state.plan?.laundry && !model.base?.laundry ? { laundry: state.plan.laundry } : {}),
+  };
   const result = monthlyPlan(selected.structure, selected.inputs, planBase, state.plan);
   const saveShortCarry = (val) => {
     const nextInputs = { ...selected.inputs, shortCarry: val };

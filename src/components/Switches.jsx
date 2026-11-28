@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, syncOpexOverride, valueSummary } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { sendToOwner } from './Messages.jsx';
-import { Button, Card, CardTitle } from './Shell.jsx';
+import { Button, Card, CardTitle, OverlayTrigger } from './Shell.jsx';
 
 const num = (v) => (v === '' ? '' : +v);
 const stepFor = (unit, label) => (unit === '%' ? 0.25 : unit === 'x' ? 0.05 : unit === 'n' ? 1 : /\/ mo/.test(label) ? 25 : 1000);
@@ -135,6 +135,67 @@ export function WhatIfNumbers({ deal, me, role, preview, planRepairBudget = 0 })
             <dd className="mt-1 font-display text-xl font-semibold">{money(o.b.rehab)}</dd>
           </div>
         </dl>
+        {o.opexCalc && (
+          <dl data-wb="opex-breakdown" className="mt-4 divide-y divide-line border-t border-line pt-3 text-sm tabular-nums">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+              <dt className="min-w-0 text-ink-soft">Gross rent ({o.opexCalc.units} units)</dt>
+              <dd className="shrink-0 font-semibold text-ink">{money(o.opexCalc.grossAnnual)}/yr</dd>
+            </div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+              <dt className="min-w-0 text-ink-soft">
+                <OverlayTrigger lines={[o.opexCalc.vacancyOverlayLine].filter(Boolean)}>Vacancy ({o.opexCalc.vacancyPct}%)</OverlayTrigger>
+              </dt>
+              <dd className="shrink-0 font-semibold text-ink">−{money(o.opexCalc.vacancyAnnual)}/yr</dd>
+            </div>
+            {o.opexCalc.lines.map((line) => (
+              <div key={line.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+                <dt className="min-w-0 text-ink-soft">
+                  <OverlayTrigger lines={[line.text]}>{line.label}</OverlayTrigger>
+                </dt>
+                <dd className="shrink-0 font-medium text-ink">−{money(line.annual)}/yr</dd>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 font-semibold">
+              <dt className="min-w-0 text-ink">Total operating costs</dt>
+              <dd className="shrink-0 text-ink">
+                <OverlayTrigger lines={o.opexCalc.costsOverlay}>−{money(o.opexCalc.totalExpensesAnnual)}/yr</OverlayTrigger>
+              </dd>
+            </div>
+            {o.opexCalc.laundry?.enabled && (
+              <div data-wb="laundry-income" className="space-y-1 py-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                  Laundry income ({o.opexCalc.laundry.stacks} stacks)
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <dt className="min-w-0 text-ink-soft">
+                    <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Loads ({o.opexCalc.laundry.rentedUnits} rented)</OverlayTrigger>
+                  </dt>
+                  <dd className="shrink-0 font-medium text-ink">{Math.round(o.opexCalc.laundry.loads).toLocaleString('en-US')}/yr</dd>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <dt className="min-w-0 text-ink-soft">
+                    <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry gross</OverlayTrigger>
+                  </dt>
+                  <dd className="shrink-0 font-medium text-ink">{money(o.opexCalc.laundry.grossAnnual)}/yr</dd>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <dt className="min-w-0 text-ink-soft">
+                    <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry costs</OverlayTrigger>
+                  </dt>
+                  <dd className="shrink-0 font-medium text-ink">−{money(o.opexCalc.laundry.costsAnnual)}/yr</dd>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 font-semibold">
+                  <dt className="min-w-0 text-ink">
+                    <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry net</OverlayTrigger>
+                  </dt>
+                  <dd className="shrink-0 text-good">
+                    <OverlayTrigger lines={o.opexCalc.laundry.overlay} className="text-good">+{money(o.opexCalc.laundry.netAnnual)}/yr</OverlayTrigger>
+                  </dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        )}
         <div className="mt-3 border-t border-line pt-2.5">
           <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
             <span>Assumptions</span>

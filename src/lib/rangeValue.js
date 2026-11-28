@@ -5,6 +5,13 @@ export function defaultMarketRent(mr) {
   if (!mr) return 0;
   const low = +mr.low;
   const high = +mr.high;
+  const def = +mr.defaultRent;
+  if (Number.isFinite(def) && def > 0) {
+    if (Number.isFinite(low) && Number.isFinite(high) && high >= low && low > 0) {
+      return Math.round(Math.min(high, Math.max(low, def)));
+    }
+    return Math.round(def);
+  }
   if (!Number.isFinite(low) || !Number.isFinite(high)) return 0;
   if (high <= low) return Math.round(low);
   return Math.round((low + high) / 2);
@@ -20,8 +27,18 @@ export function effectiveMarketRange(mr, base = null) {
   const high = Number.isFinite(baseHigh) && baseHigh > 0
     ? baseHigh
     : (Number.isFinite(+mr.high) && +mr.high > 0 ? +mr.high : 0);
-  if (!(low > 0) || !(high >= low)) return mr;
-  return { ...mr, low, high };
+  const baseRent = +base?.rent;
+  const defaultRent = Number.isFinite(baseRent) && baseRent > 0
+    ? baseRent
+    : (Number.isFinite(+mr.defaultRent) && +mr.defaultRent > 0 ? +mr.defaultRent : undefined);
+  const laundry = base?.laundry || mr?.laundry || mr?.opex?.laundry || null;
+  const baseMerged = {
+    ...mr,
+    ...(defaultRent !== undefined ? { defaultRent } : {}),
+    ...(laundry ? { laundry } : {}),
+  };
+  if (!(low > 0) || !(high >= low)) return baseMerged;
+  return { ...baseMerged, low, high };
 }
 
 export function rangeSummary(mr, rent) {
@@ -32,6 +49,7 @@ export function rangeSummary(mr, rent) {
   if (hasOpex(mr)) {
     const calc = computeOpex({
       opex: mr.opex,
+      laundry: mr.laundry || mr.opex?.laundry || null,
       units,
       rentedUnits: units,
       grossRentMonthly: units * r,
@@ -47,6 +65,7 @@ export function rangeSummary(mr, rent) {
       vacancyPct: calc.vacancyPct,
       costsOverlay: calc.costsOverlay,
       rentOverlay: [`${units} × ${money(r)}/mo = ${money(calc.grossMonthly)}/mo`, calc.vacancyOverlayLine].filter(Boolean),
+      opexCalc: calc,
     };
   }
   const grossMo = units * r;
@@ -62,7 +81,28 @@ export function rangeSummary(mr, rent) {
     vacancyPct: mr.vacancyPct,
     costsOverlay: [`Operating costs: ${money(mr.costsMo)}/mo`],
     rentOverlay: [`${units} × ${money(r)}/mo = ${money(grossMo)}/mo`, `Less ${mr.vacancyPct}% vacancy: ${money(rentMo)}/mo`],
+    opexCalc: null,
   };
+}
+
+export function operatingBreakdownFor(data, rent = null) {
+  if (!data) return null;
+  const mr = data.marketRange || null;
+  const opex = mr?.opex || data.opex || null;
+  if (!opex) return null;
+  const laundry = mr?.laundry || data.laundry || opex.laundry || null;
+  const units = mr?.units || (Array.isArray(data.units) && data.units.length ? data.units.length : 10);
+  const capRate = (mr?.capRate > 0 ? mr.capRate : data.capRate) || 9;
+  const activeRent = Number.isFinite(+rent) && +rent > 0 ? +rent : (Number.isFinite(+data.ourRent) ? +data.ourRent : 0);
+  return computeOpex({
+    opex,
+    laundry,
+    units,
+    rentedUnits: units,
+    grossRentMonthly: units * activeRent,
+    applyVacancy: true,
+    capRate,
+  });
 }
 
 export function rangeValue(mr, rent) {
@@ -80,6 +120,7 @@ export function whatIfViews(data, rent) {
   if (!mr || !Number.isFinite(r) || !Array.isArray(data?.views)) return data?.views;
   const capRate = mr.capRate > 0 ? mr.capRate : data.capRate;
   const allInAfter = data.allIn ?? mr.allIn;
+  const laundrySrc = mr.laundry || data?.laundry || mr.opex?.laundry || null;
   return data.views.map((v) => {
     if (v.key === 'asis') {
       const hasPayingUnit = Array.isArray(data?.units) && data.units.some((u) => (u.rentToday ?? 0) > 0);
@@ -93,12 +134,14 @@ export function whatIfViews(data, rent) {
     if (hasOpex(mr)) {
       const calc = computeOpex({
         opex: mr.opex,
+        laundry: laundrySrc,
         units,
         rentedUnits: units,
         grossRentMonthly: units * r,
         applyVacancy: true,
         capRate,
       });
+      const laundryPart = calc.laundry?.active ? ` + ${money(calc.laundryNetMonthly)} laundry` : '';
       return {
         ...v,
         rentMo: calc.effectiveRentMonthly,
@@ -111,7 +154,7 @@ export function whatIfViews(data, rent) {
           calc.vacancyOverlayLine,
         ].filter(Boolean),
         costsOverlay: calc.costsOverlay,
-        netOverlay: [`(${money(calc.effectiveRentMonthly)} − ${money(calc.totalExpensesMonthly)}) × 12 = ${money(calc.noiAnnual)}/yr`],
+        netOverlay: [`(${money(calc.effectiveRentMonthly)}${laundryPart} − ${money(calc.totalExpensesMonthly)}) × 12 = ${money(calc.noiAnnual)}/yr`],
         valueOverlay: [`${money(calc.noiAnnual)}/yr ÷ ${capRate}% cap rate = ${money(calc.value)}`],
       };
     }
@@ -145,6 +188,7 @@ export function whatIfGrid(data, rent) {
   const caps = Array.isArray(data.caps) ? data.caps : [];
   const allIn = data.allIn ?? mr.allIn;
   const baseCap = data.capRate ?? mr.capRate;
+  const laundrySrc = mr.laundry || data?.laundry || mr.opex?.laundry || null;
   const maxRent = mr.high > 0 ? mr.high : Infinity;
   const clampedBase = Math.min(baseRent, maxRent);
   const rents = [...new Set(
@@ -154,12 +198,13 @@ export function whatIfGrid(data, rent) {
   )].sort((a, b) => a - b);
   return rents.map((r) => {
     const calc = hasOpex(mr)
-      ? computeOpex({ opex: mr.opex, units, rentedUnits: units, grossRentMonthly: units * r, applyVacancy: true, capRate: baseCap })
+      ? computeOpex({ opex: mr.opex, laundry: laundrySrc, units, rentedUnits: units, grossRentMonthly: units * r, applyVacancy: true, capRate: baseCap })
       : null;
     const rentMo = calc ? calc.effectiveRentMonthly : units * r * (1 - vacancyPct / 100);
     const rowVacPct = calc ? calc.vacancyPct : vacancyPct;
     const rowCosts = calc ? calc.totalExpensesMonthly : fullCosts;
     const netYr = calc ? calc.noiAnnual : (rentMo - fullCosts) * 12;
+    const laundryNote = calc?.laundry?.active ? [`Laundry net: +${money(calc.laundryNetMonthly)}/mo`] : [];
     return {
       rent: r,
       cells: caps.map((c) => {
@@ -171,6 +216,7 @@ export function whatIfGrid(data, rent) {
           stabilized: r === clampedBase && c === baseCap,
           overlay: [
             `${units} units × ${money(r)}/mo, less ${rowVacPct}% vacancy: ${money(rentMo)}/mo`,
+            ...laundryNote,
             `Less costs: ${money(rowCosts)}/mo`,
             `${money(netYr)}/yr ÷ ${c}% = ${money(value)}`,
             `All in: ${money(allIn)}`,

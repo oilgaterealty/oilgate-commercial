@@ -1,6 +1,6 @@
 // Deal math. Pure functions, no network. Every default is labeled with where it came from.
-import { computeOpex, hasOpex, normalizeOpex, syncOpexOverride } from './opex.js';
-export { computeOpex, hasOpex, normalizeOpex, syncOpexOverride };
+import { DEFAULT_LAUNDRY, computeLaundry, computeOpex, hasOpex, normalizeLaundry, normalizeOpex, syncOpexOverride } from './opex.js';
+export { DEFAULT_LAUNDRY, computeLaundry, computeOpex, hasOpex, normalizeLaundry, normalizeOpex, syncOpexOverride };
 
 // Building numbers shared by every offer. Each deal's real numbers live in its private database row,
 // never in this (public) code. These blanks are only a starting template.
@@ -122,7 +122,7 @@ export function operating(baseIn = {}) {
   const b = {
     ...BASE_DEFAULTS,
     ...Object.fromEntries(
-      Object.entries(baseIn).map(([k, v]) => (k === 'opex' || k.startsWith('_') ? [k, v] : [k, num(v, BASE_DEFAULTS[k])])),
+      Object.entries(baseIn).map(([k, v]) => (k === 'opex' || k === 'laundry' || k.startsWith('_') ? [k, v] : [k, num(v, BASE_DEFAULTS[k])])),
     ),
   };
   // All units are long-term rentals; ignore any legacy short-term values.
@@ -130,8 +130,10 @@ export function operating(baseIn = {}) {
   const ltrUnits = b.units;
   if (hasOpex(baseIn)) {
     const capRate = num(baseIn.valueCapRate, 9) > 0 ? num(baseIn.valueCapRate, 9) : 9;
+    const laundry = baseIn.laundry || baseIn.opex?.laundry || null;
     const opexCalc = computeOpex({
       opex: baseIn.opex,
+      laundry,
       units: b.units,
       rentedUnits: b.units,
       grossRentMonthly: ltrUnits * b.rent,
@@ -144,7 +146,7 @@ export function operating(baseIn = {}) {
     const fixed = opexCalc.fixedAnnual + opexCalc.repairsMaintAnnual;
     const reserves = opexCalc.reservesAnnual;
     const noi = opexCalc.noiAnnual;
-    const cashFlow = noi; // reserves are already included inside opex total expenses
+    const cashFlow = noi; // reserves and laundry net are already included inside opexCalc
     const effectiveValue = baseIn._valueOverride && b.value > 0 ? b.value : (opexCalc.value > 0 ? opexCalc.value : b.value);
     const loanByDscr = Math.max(0, pv(b.refiRate, b.refiYears, cashFlow / b.refiDscr / 12));
     const loanByLtv = (b.refiLtv / 100) * effectiveValue;
@@ -180,8 +182,12 @@ export function operating(baseIn = {}) {
 const breakEven = (o, debtYearly) => {
   if (!o.gpr) return null;
   if (o.opexCalc) {
-    const netRate = (1 - o.opexCalc.normalized.repairsMaintPct / 100 - o.opexCalc.normalized.mgmtHelpPct / 100);
-    return netRate > 0 ? (o.opexCalc.fixedAnnual + o.reserves + debtYearly) / (o.gpr * netRate) : null;
+    const oc = o.opexCalc;
+    const pctExpenses = oc.normalized.repairsMaintPct / 100 + (oc.isFlatMgmtHelp ? 0 : oc.normalized.mgmtHelpPct / 100);
+    const laundryVarNet = oc.laundry?.active ? (oc.laundry.grossAnnual - oc.laundry.utilityAnnual - oc.laundry.cardFeeAnnual) : 0;
+    const laundryFixed = oc.laundry?.enabled ? (oc.laundry.config.readerFeesAnnual + oc.laundry.config.stacks * oc.laundry.config.repairsPerStackAnnual) : 0;
+    const contribAtFull = o.gpr * (1 - pctExpenses) + laundryVarNet;
+    return contribAtFull > 0 ? (oc.fixedAnnual + laundryFixed + o.reserves + debtYearly) / contribAtFull : null;
   }
   return (o.fixed + o.reserves + debtYearly) / (o.gpr * (1 - o.b.mgmtPct / 100));
 };
@@ -341,7 +347,7 @@ export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {})
     const computed = noiAnnual / (capRate / 100);
     incomeOverlay.push(`${money(noiAnnual)} yearly NOI ÷ ${capRate}% cap rate = ${money(computed)}${unitCount > 0 ? ` (${money(computed / unitCount)}/unit across ${unitCount} units)` : ''}.`);
   }
-  if (savedVal !== null && (noiAnnual <= 0 || Math.abs(savedVal - noiAnnual / (capRate / 100)) >= 500)) {
+  if (savedVal !== null && (!hasOpex(base) || base._valueOverride) && (noiAnnual <= 0 || Math.abs(savedVal - noiAnnual / (capRate / 100)) >= 500)) {
     incomeOverlay.push(`Saved value on file: ${money(savedVal)}${unitCount > 0 ? ` (${money(savedVal / unitCount)}/unit)` : ''}.`);
   }
   if (base.valueSource) incomeOverlay.push(`Source: ${String(base.valueSource)}`);

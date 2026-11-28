@@ -243,12 +243,24 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
   const basePath = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, sections);
 
-  const b = { ...base, units: 10, ...(leadGuide?.opex && !base?.opex ? { opex: leadGuide.opex } : {}) };
+  const b = {
+    ...base,
+    units: 10,
+    ...(leadGuide?.opex && !base?.opex ? { opex: leadGuide.opex } : {}),
+    ...(leadGuide?.laundry && !base?.laundry ? { laundry: leadGuide.laundry } : {}),
+  };
   const o = operating(b);
   const val = valueSummary({ base: b, noi: o.noi, units: 10 });
   const refiGuide = leadGuide?.refi || null;
-  const shownValue = refiGuide?.estimatedValue || val.income || o.b.value;
+  const shownValue = o.opexCalc ? (val.income || o.b.value) : (refiGuide?.estimatedValue || val.income || o.b.value);
   const shownRepair = leadGuide?.costSummary?.total ?? o.b.rehab;
+  const reviewerRentValue = leadGuide?.rentValue
+    ? {
+        ...leadGuide.rentValue,
+        ...(b.opex && !leadGuide.rentValue.opex ? { opex: b.opex } : {}),
+        ...(b.laundry && !leadGuide.rentValue.laundry ? { laundry: b.laundry } : {}),
+      }
+    : null;
 
   return (
     <div className={viewer ? 'space-y-6' : 'space-y-8 pb-20'}>
@@ -292,7 +304,7 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
 
       {!viewer && role === 'reviewer' && isRentValue(leadGuide?.rentValue) && (
         <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
-          <RentValue data={leadGuide.rentValue} />
+          <RentValue data={reviewerRentValue} />
         </section>
       )}
 

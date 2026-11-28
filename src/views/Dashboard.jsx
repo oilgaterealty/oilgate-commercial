@@ -52,11 +52,13 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
   const { offers, base, setBase } = model;
   const [planRepairBudget, setPlanRepairBudget] = useState(0);
   const [planOpex, setPlanOpex] = useState(null);
+  const [planLaundry, setPlanLaundry] = useState(null);
   useEffect(() => {
     let alive = true;
     if (!owner || !loadPlanLib) {
       setPlanRepairBudget(0);
       setPlanOpex(null);
+      setPlanLaundry(null);
       return () => { alive = false; };
     }
     (async () => {
@@ -66,11 +68,13 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
         if (alive) {
           setPlanRepairBudget(plan ? lib.overallRepairBudget(plan) : 0);
           setPlanOpex(plan?.opex || null);
+          setPlanLaundry(plan?.laundry || null);
         }
       } catch {
         if (alive) {
           setPlanRepairBudget(0);
           setPlanOpex(null);
+          setPlanLaundry(null);
         }
       }
     })();
@@ -82,6 +86,7 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
     ...base,
     ...(planRepairBudget > 0 ? { rehab: planRepairBudget } : {}),
     ...(planOpex && !base?.opex ? { opex: planOpex } : {}),
+    ...(planLaundry && !base?.laundry ? { laundry: planLaundry } : {}),
   };
   const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, effectiveBase) }));
   const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);

@@ -89,6 +89,7 @@ function makeOfferMocks(touched = false) {
   const switchesMod = loadJsx('src/components/Switches.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, valueSummary },
+    '../lib/rangeValue.js': { operatingBreakdownFor: () => null },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [], base: SAMPLE_BASE, setBase: () => {}, touched, original: { list: [], base: SAMPLE_BASE }, reset: () => {} }) },
     './Messages.jsx': { sendToOwner: async () => null },
     './Shell.jsx': SHELL_MOCK,
@@ -113,6 +114,7 @@ function makeOfferMocks(touched = false) {
     },
     '../components/Switches.jsx': switchesMod,
     '../components/CostSummary.jsx': costSummaryMod,
+    '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, valueSummary },
     '../components/Shell.jsx': SHELL_MOCK,
@@ -201,6 +203,7 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
     '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [] },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'UnitGallery' }) },
     '../components/CostSummary.jsx': costSummaryMod,
+    '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../components/RentValue.jsx': { __esModule: true, default: () => null, isRentValue: () => false },
     '../components/LenderWhatIf.jsx': lenderWhatIfMod,

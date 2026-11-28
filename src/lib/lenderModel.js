@@ -180,12 +180,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const privateMinMonthlyReturn = (minParticipation * privateRate) / 100 / 12;
   const privateMinAnnualReturn = (minParticipation * privateRate) / 100;
 
-  // 3. DSCR (permanent refinance takeout, sized from single-source opex NOI when present)
-  const opexSrc = guide?.opex || (hasOpex(base) ? base.opex : null);
-  const rentPerUnit = pos(base?.rent, guide?.rent);
+  // 3. DSCR (permanent refinance takeout, sized from single-source opex + laundry NOI when present)
+  const opexSrc = base?.opex || guide?.opex || null;
+  const laundrySrc = base?.laundry || guide?.laundry || opexSrc?.laundry || null;
+  const rentPerUnit = pos(base?.rent, guide?.rentValue?.ourRent, guide?.rent);
   const capRate = pos(base?.valueCapRate, 9);
   const opexCalc = opexSrc && rentPerUnit > 0
-    ? computeOpex({ opex: opexSrc, units, rentedUnits: units, grossRentMonthly: units * rentPerUnit, applyVacancy: true, capRate })
+    ? computeOpex({ opex: opexSrc, laundry: laundrySrc, units, rentedUnits: units, grossRentMonthly: units * rentPerUnit, applyVacancy: true, capRate })
     : null;
   const dscrNoiAnnual = opexCalc ? opexCalc.noiAnnual : num(rf.dscrNoiAnnual, 0);
   const dscrNoiMo = dscrNoiAnnual / 12;
@@ -472,7 +473,6 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Exit',
       value: 0,
       display: 'Paid off by refinance after lease-up',
-      emphasis: 'total',
       tone: 'good',
       overlay: ['Paid off by refinance after lease-up.'],
     },
@@ -572,7 +572,6 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Payoff',
       value: 0,
       display: 'Principal back at payoff',
-      emphasis: 'total',
       tone: 'good',
       overlay: ['Principal paid back in full at payoff. Loan can be paid off early with no prepayment penalty.'],
     },
@@ -736,6 +735,8 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     refiCheckRows,
     hasSellerFinancingOption,
+    opexCalc,
+    laundry: opexCalc?.laundry || null,
   };
 }
 
@@ -748,6 +749,7 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
   const unitsCount = Math.max(1, num(base?.units, 10) || 10);
   const ourRent = rent > 0 ? rent : Math.round((low + high) / 2);
   const opex = hasOpex(base) ? base.opex : null;
+  const laundry = base?.laundry || opex?.laundry || null;
   const vacancyPct = opex ? num(opex.vacancyPct, BASE_DEFAULTS.vacancyPct) : num(base?.vacancyPct, BASE_DEFAULTS.vacancyPct);
   const capRate = num(base?.valueCapRate, 9) > 0 ? num(base?.valueCapRate, 9) : 9;
   const taxesMo = Math.max(0, num(base?.taxes, 0)) / 12;
@@ -755,8 +757,8 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
   const waterMo = Math.max(0, num(base?.waterMo, 0));
   const emptyUnitUtilMo = Math.max(0, num(base?.emptyUnitUtilMo, 0));
   const reservesMo = (unitsCount * Math.max(0, num(base?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit))) / 12;
-  const afterOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * ourRent, applyVacancy: true, capRate }) : null;
-  const asisOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: 0, grossRentMonthly: 0, applyVacancy: false, capRate }) : null;
+  const afterOpex = opex ? computeOpex({ opex, laundry, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * ourRent, applyVacancy: true, capRate }) : null;
+  const asisOpex = opex ? computeOpex({ opex, laundry, units: unitsCount, rentedUnits: 0, grossRentMonthly: 0, applyVacancy: false, capRate }) : null;
   const costsMo = afterOpex ? afterOpex.totalExpensesMonthly : (taxesMo + insuranceMo + waterMo + reservesMo);
   const asisCostsMo = asisOpex ? asisOpex.totalExpensesMonthly : (taxesMo + insuranceMo + waterMo + unitsCount * emptyUnitUtilMo);
   const allIn = pkg?.totalLoan || (pkg?.purchase || 0) + (pkg?.repairs || 0);
@@ -825,10 +827,11 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
     ],
     caps,
     grid: rents.map((r) => {
-      const rowOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * r, applyVacancy: true, capRate }) : null;
+      const rowOpex = opex ? computeOpex({ opex, laundry, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * r, applyVacancy: true, capRate }) : null;
       const rMo = rowOpex ? rowOpex.effectiveRentMonthly : (unitsCount * r * (1 - vacancyPct / 100));
       const rCostsMo = rowOpex ? rowOpex.totalExpensesMonthly : costsMo;
       const nYr = rowOpex ? rowOpex.noiAnnual : ((rMo - costsMo) * 12);
+      const laundryNote = rowOpex?.laundry?.active ? [`Laundry net: +${money(rowOpex.laundryNetMonthly)}/mo`] : [];
       return {
         rent: r,
         cells: caps.map((c) => {
@@ -838,13 +841,15 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
             value: v,
             clears: v >= allIn,
             stabilized: r === cappedBase && c === capRate,
-            overlay: [`${unitsCount} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rMo)}/mo`, `Less costs: ${money(rCostsMo)}/mo`, `${money(nYr)}/yr ÷ ${c}% = ${money(v)}`, `All in: ${money(allIn)}`],
+            overlay: [`${unitsCount} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rMo)}/mo`, ...laundryNote, `Less costs: ${money(rCostsMo)}/mo`, `${money(nYr)}/yr ÷ ${c}% = ${money(v)}`, `All in: ${money(allIn)}`],
           };
         }),
       };
     }),
+    ...(opex ? { opex } : {}),
+    ...(laundry ? { laundry } : {}),
     marketRange: low > 0 && high >= low
-      ? { low, high, units: unitsCount, vacancyPct, costsMo, capRate, allIn, ...(opex ? { opex } : {}) }
+      ? { low, high, defaultRent: ourRent, units: unitsCount, vacancyPct, costsMo, capRate, allIn, ...(opex ? { opex } : {}), ...(laundry ? { laundry } : {}) }
       : null,
     valueRange: pkg?.value > 0 && valueAfter > pkg.value
       ? { low: pkg.value, high: valueAfter, lowOverlay: ['Value used for the refinance'], highOverlay: [`${money(netYrAfter)}/yr ÷ ${capRate}% cap rate = ${money(valueAfter)}`] }

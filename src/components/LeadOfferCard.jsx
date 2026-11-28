@@ -450,15 +450,48 @@ export function LeadOfferCard({ deal, content, summary, preview, onAsk, sellerOn
   );
 }
 
+export function resolveLaundryItems(source) {
+  if (!source || typeof source !== 'object') return [];
+  const raw = source.laundryItems
+    || source.costSummary?.laundryItems
+    || source.guide?.costSummary?.laundryItems
+    || source.stepBudgets?.laundryItems;
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .map((item) => ({
+        label: String(item?.label || item?.title || '').trim(),
+        cost: Math.max(0, +(item?.cost ?? item?.amount ?? 0) || 0),
+        source: String(item?.source || '').trim(),
+      }))
+      .filter((item) => item.label && item.cost > 0);
+  }
+  if (Array.isArray(source.costs)) {
+    return source.costs
+      .filter((c) => classifyCostBucket(c) === 'laundry' && +c?.cost > 0)
+      .map((c) => ({
+        label: String(c?.label || '').trim(),
+        cost: Math.max(0, +c?.cost || 0),
+        source: String(c?.source || '').trim(),
+      }))
+      .filter((item) => item.label && item.cost > 0);
+  }
+  return [];
+}
+
 // "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
-export function ExecutionPlanCard({ content, summary, sellerOnly = false, plan = null, stepBudgets = null }) {
+export function ExecutionPlanCard({ content, summary, sellerOnly = false, lenderMode = false, plan = null, stepBudgets = null }) {
   const hasContentSteps = Array.isArray(content?.execution_steps) && content.execution_steps.length > 0;
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
   if (sellerOnly && !hasContentSteps && !hasSummarySteps) return null;
   const budgetSource = stepBudgets || plan || summary;
   const budgets = resolveStepBudgets(budgetSource);
+  const laundryItems = resolveLaundryItems(summary).length
+    ? resolveLaundryItems(summary)
+    : resolveLaundryItems(plan).length
+      ? resolveLaundryItems(plan)
+      : resolveLaundryItems(stepBudgets);
   const toLines = (v) => (Array.isArray(v) ? v : v ? String(v).split('\n') : []).map((x) => String(x || '').trim()).filter(Boolean);
-  const steps = hasContentSteps
+  const rawSteps = hasContentSteps
     ? normalizeExecutionSteps(content, budgetSource).map((s) => ({ ...s, overlay: [] }))
     : hasSummarySteps
       ? summary.steps.map((s, i) => ({
@@ -472,6 +505,11 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, plan =
           structured: false,
         })).filter((s) => s.title)
       : normalizeExecutionSteps(content, budgetSource).map((s) => ({ ...s, overlay: [] }));
+  const steps = lenderMode
+    ? rawSteps.map((s) => (s.key === 'within_1_year_payoff'
+        ? { ...s, week: 'Within the 1-year term', title: 'Paid off in full by refinance.' }
+        : s))
+    : rawSteps;
   const proof = validProofItems(content);
   const showPlanTotals = Boolean(hasContentSteps && budgets && budgets.total > 0);
   return (
@@ -492,22 +530,40 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, plan =
               )}
               <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
               {s.detail && (
-                <p className="mt-0.5 text-sm leading-relaxed text-ink">
+                <div className="mt-0.5 text-sm leading-relaxed text-ink">
                   {s.overlay.length > 0 && OverlayTrigger
                     ? <OverlayTrigger lines={s.overlay}>{s.detail}</OverlayTrigger>
                     : s.detail}
-                </p>
+                </div>
               )}
               {s.items.length > 0 && (
                 s.structured || s.items.some((item) => item && typeof item === 'object') ? (
                   <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-ink">
                     {s.items.map((item, j) => {
                       const text = typeof item === 'object' ? item.text : item;
+                      const itemKey = typeof item === 'object' ? item.budgetKey : null;
                       const amt = typeof item === 'object' && Number.isFinite(item.amount) && item.amount > 0 ? item.amount : null;
+                      const showLaundryLines = itemKey === 'laundry' && laundryItems.length > 0;
                       return (
-                        <li key={j} className="flex items-baseline justify-between gap-3 rounded-xl bg-paper px-3 py-2">
-                          <span className="min-w-0">{text}</span>
-                          {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                        <li key={j} className="rounded-xl bg-paper px-3 py-2">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                            <span className="min-w-0 flex-1">{text}</span>
+                            {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                          </div>
+                          {showLaundryLines && (
+                            <ul className="mt-2 space-y-1 border-t border-line/70 pt-2 text-xs leading-snug text-ink-soft">
+                              {laundryItems.map((li, k) => (
+                                <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                                  <span className="min-w-0 flex-1">
+                                    {li.source && OverlayTrigger
+                                      ? <OverlayTrigger lines={[li.source]} className="text-ink-soft">{li.label}</OverlayTrigger>
+                                      : li.label}
+                                  </span>
+                                  <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(li.cost)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </li>
                       );
                     })}

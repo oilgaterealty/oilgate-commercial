@@ -15,7 +15,7 @@ import { transformSync } from 'esbuild';
 import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, moneyCents, operating, pct, valueSummary } from '../src/lib/dealmath.js';
 import { buildLenderPackage, computePrivateReturn, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
 import { buildLeadGuide, monthlyPlan, overallRepairBudget, rentValue } from '../src/lib/dealplan.js';
-import { defaultMarketRent, effectiveMarketRange, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
+import { defaultMarketRent, effectiveMarketRange, operatingBreakdownFor, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
 
 const require = createRequire(import.meta.url);
 const jsxRuntime = require('react/jsx-runtime');
@@ -219,7 +219,7 @@ async function buildLenderMocks(guide) {
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': Shell,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
-    '../lib/rangeValue.js': { defaultMarketRent, rangeValue, whatIfViews, whatIfGrid },
+    '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeValue, whatIfViews, whatIfGrid },
   });
   const CostSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': Shell });
   const LenderWhatIfMod = loadJsx('src/components/LenderWhatIf.jsx', {
@@ -263,6 +263,7 @@ async function buildLenderMocks(guide) {
     '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': CostSummaryMod,
+    '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': { isUnitsGuide: (g) => Boolean(g && Array.isArray(g.rows) && g.rows.length > 0 && g.refi) },
     '../components/RentValue.jsx': RentValueMod,
     '../components/LenderWhatIf.jsx': LenderWhatIfMod,

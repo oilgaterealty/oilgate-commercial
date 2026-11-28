@@ -6,7 +6,7 @@ import { useDealModel } from '../lib/useDealModel.js';
 import { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, syncOpexOverride, valueSummary } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, DEFAULT_LAUNDRY, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, normalizeLaundry, pct, syncOpexOverride, valueSummary } from '../lib/dealmath.js';
 import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
@@ -110,6 +110,18 @@ export function Results({ r }) {
   );
 }
 
+const LAUNDRY_FIELDS = [
+  ['enabled', 'Laundry income enabled', 'bool'],
+  ['stacks', 'Speed Queen stacks', 'n'],
+  ['pricePerLoad', 'Price per load ($)', '$'],
+  ['loadsPerUnitPerWeek', 'Loads / unit / week', 'n'],
+  ['utilityPerLoad', 'Utility / load ($)', '$'],
+  ['cardSharePct', 'Tap/card share (%)', '%'],
+  ['cardFeePct', 'Card processing fee (%)', '%'],
+  ['readerFeesAnnual', 'Reader fees / yr ($)', '$'],
+  ['repairsPerStackAnnual', 'Repairs per stack / yr ($)', '$'],
+];
+
 function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
   const [open, setOpen] = useState(false);
   const val = valueSummary({ base: { ...o.b, ...base }, noi: o.noi, units: o.b.units, comps });
@@ -119,6 +131,11 @@ function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
     ...(val.compsLine ? [val.compsLine, ...(val.compsOverlay || [])] : []),
   ];
   const activeRefiLtv = +(base.refiLtv ?? BASE_DEFAULTS.refiLtv);
+  const laundryState = normalizeLaundry ? (normalizeLaundry(base.laundry || base.opex?.laundry) || DEFAULT_LAUNDRY) : DEFAULT_LAUNDRY;
+  const setLaundryField = (k, v) => {
+    const nextLaundry = { ...laundryState, [k]: v };
+    setBase({ ...base, laundry: nextLaundry });
+  };
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -148,20 +165,104 @@ function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
           <InfoTip label="How value is figured" lines={buildingOverlay} />
         </div>
       </div>
+      {o.opexCalc && (
+        <dl data-wb="opex-breakdown" className="mt-3 divide-y divide-line border-t border-line pt-2.5 text-sm tabular-nums">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+            <dt className="min-w-0 text-ink-soft">Gross rent ({o.opexCalc.units} units)</dt>
+            <dd className="shrink-0 font-semibold text-ink">{money(o.opexCalc.grossAnnual)}/yr</dd>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+            <dt className="min-w-0 text-ink-soft">
+              <OverlayTrigger lines={[o.opexCalc.vacancyOverlayLine].filter(Boolean)}>Vacancy ({o.opexCalc.vacancyPct}%)</OverlayTrigger>
+            </dt>
+            <dd className="shrink-0 font-semibold text-ink">−{money(o.opexCalc.vacancyAnnual)}/yr</dd>
+          </div>
+          {o.opexCalc.lines.map((line) => (
+            <div key={line.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5">
+              <dt className="min-w-0 text-ink-soft">
+                <OverlayTrigger lines={[line.text]}>{line.label}</OverlayTrigger>
+              </dt>
+              <dd className="shrink-0 font-medium text-ink">−{money(line.annual)}/yr</dd>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1.5 font-semibold">
+            <dt className="min-w-0 text-ink">Total operating costs</dt>
+            <dd className="shrink-0 text-ink">
+              <OverlayTrigger lines={o.opexCalc.costsOverlay}>−{money(o.opexCalc.totalExpensesAnnual)}/yr</OverlayTrigger>
+            </dd>
+          </div>
+          {o.opexCalc.laundry?.enabled && (
+            <div data-wb="laundry-income" className="space-y-1 py-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                Laundry income ({o.opexCalc.laundry.stacks} stacks)
+              </div>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <dt className="min-w-0 text-ink-soft">
+                  <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Loads ({o.opexCalc.laundry.rentedUnits} rented)</OverlayTrigger>
+                </dt>
+                <dd className="shrink-0 font-medium text-ink">{Math.round(o.opexCalc.laundry.loads).toLocaleString('en-US')}/yr</dd>
+              </div>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <dt className="min-w-0 text-ink-soft">
+                  <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry gross</OverlayTrigger>
+                </dt>
+                <dd className="shrink-0 font-medium text-ink">{money(o.opexCalc.laundry.grossAnnual)}/yr</dd>
+              </div>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <dt className="min-w-0 text-ink-soft">
+                  <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry costs</OverlayTrigger>
+                </dt>
+                <dd className="shrink-0 font-medium text-ink">−{money(o.opexCalc.laundry.costsAnnual)}/yr</dd>
+              </div>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 font-semibold">
+                <dt className="min-w-0 text-ink">
+                  <OverlayTrigger lines={o.opexCalc.laundry.overlay}>Laundry net</OverlayTrigger>
+                </dt>
+                <dd className="shrink-0 text-good">
+                  <OverlayTrigger lines={o.opexCalc.laundry.overlay} className="text-good">+{money(o.opexCalc.laundry.netAnnual)}/yr</OverlayTrigger>
+                </dd>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-2 font-semibold">
+            <dt className="min-w-0 text-ink">Yearly NOI</dt>
+            <dd className="shrink-0 font-display text-lg text-ink">{money(o.opexCalc.noiAnnual)}/yr</dd>
+          </div>
+        </dl>
+      )}
       <div className="mt-3 border-t border-line pt-2.5">
         <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex min-h-[40px] w-full items-center justify-between rounded-xl px-1 py-1 text-left text-sm font-medium text-ink hover:bg-warm-soft/60">
           <span>Assumptions</span>
           <span aria-hidden="true" className="text-ink-soft">{open ? '▴' : '▾'}</span>
         </button>
         {open && (
-          <div className="mt-3 grid gap-x-8 md:grid-cols-2">
-            {BASE_FIELDS.map(([k, l, u]) => (
-              <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                onChange={(v) => {
-                  const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
-                  setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
-                }} />
-            ))}
+          <div className="mt-3 space-y-4">
+            <div className="grid gap-x-8 md:grid-cols-2">
+              {BASE_FIELDS.map(([k, l, u]) => (
+                <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
+                  onChange={(v) => {
+                    const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
+                    setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
+                  }} />
+              ))}
+            </div>
+            {owner && (
+              <div className="border-t border-line pt-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-soft">Laundry assumptions</div>
+                <div className="grid gap-x-8 md:grid-cols-2">
+                  {LAUNDRY_FIELDS.map(([k, l, u]) => (
+                    <NumberRow
+                      key={k}
+                      label={l}
+                      unit={u}
+                      value={laundryState[k]}
+                      changed={laundryState[k] !== DEFAULT_LAUNDRY[k]}
+                      onChange={(v) => setLaundryField(k, v)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -536,12 +637,16 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
   const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
   const planRehab = loadPlanLib && canPlan && planState.lib && planState.plan ? planState.lib.overallRepairBudget(planState.plan) : 0;
   const planOpex = loadPlanLib && canPlan && planState.plan?.opex ? planState.plan.opex : null;
+  const planLaundry = loadPlanLib && canPlan && planState.plan?.laundry ? planState.plan.laundry : null;
   const guideOpex = (leadGuideProp?.opex || fetchedLeadGuide?.opex || null);
+  const guideLaundry = (leadGuideProp?.laundry || fetchedLeadGuide?.laundry || null);
   const resolvedOpex = planOpex || guideOpex || base?.opex || null;
+  const resolvedLaundry = base?.laundry || planLaundry || guideLaundry || resolvedOpex?.laundry || null;
   const effectiveBase = {
     ...base,
     ...(planRehab > 0 ? { rehab: planRehab } : {}),
     ...(resolvedOpex ? { opex: resolvedOpex } : {}),
+    ...(resolvedLaundry ? { laundry: resolvedLaundry } : {}),
   };
   const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, effectiveBase)])), [sortedOffers, effectiveBase]);
   const useStaticGuide = owner || !model.touched;

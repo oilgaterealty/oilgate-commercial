@@ -135,20 +135,27 @@ test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fi
   const { mergeViews } = mod;
   assert.equal(mergeViews(whatIfViews(rv, 780)).length, 2);
 
-  // With slider (showMarket + marketRange): defaults to midpoint of mr.low..mr.high = 900
+  // With slider (showMarket + marketRange): defaults to unified defaultRent (1000)
   const withSlider = renderToStaticMarkup(React.createElement(mod.default, { data: rv, showMarket: true, hideUnits: true }));
-  const expectedAfterVac = money(10 * 900 * (1 - 7 / 100)); // $8,370
+  const expectedAfterVac = money(10 * 1000 * (1 - 7 / 100)); // $9,300
   assert.match(withSlider, new RegExp(`Rent in /mo</dt><dd[^>]*><span>${expectedAfterVac.replace('$', '\\$')}</span>`));
-  assert.doesNotMatch(withSlider, /Rent in \/mo<\/dt><dd[^>]*>(?:<span>)?\$9,000/);
-  const rentInOverlay = overlays.find((o) => o.text === expectedAfterVac && o.lines.some((l) => /10 × \$900\/mo = \$9,000\/mo/.test(l)));
+  assert.doesNotMatch(withSlider, /Rent in \/mo<\/dt><dd[^>]*>(?:<span>)?\$10,000/);
+  const rentInOverlay = overlays.find((o) => o.text === expectedAfterVac && o.lines.some((l) => /10 × \$1,000\/mo = \$10,000\/mo/.test(l)));
   assert.ok(rentInOverlay, 'Rent in /mo trigger has gross and vacancy overlay');
-  assert.ok(rentInOverlay.lines.some((l) => /Less 7% vacancy: \$8,370\/mo/.test(l)));
+  assert.ok(rentInOverlay.lines.some((l) => /Less 7% vacancy: \$9,300\/mo/.test(l)));
   assert.doesNotMatch(withSlider, /min-w-\[480px\]/);
-  assert.match(withSlider, /\$700<\/th>/);
-  assert.match(withSlider, /\$900<\/th>/);
+  assert.match(withSlider, /\$800<\/th>/);
+  assert.match(withSlider, /\$1,000<\/th>/);
   assert.match(withSlider, /\$1,020<\/th>/);
   assert.doesNotMatch(withSlider, /\$1,100<\/th>|\$1,220<\/th>/);
   assert.doesNotMatch(withSlider, /<p[ >]/);
+
+  // Fallback when defaultRent is omitted: uses midpoint (900)
+  const noDefault = { ...rv, ourRent: 0, marketRange: { ...rv.marketRange, defaultRent: undefined } };
+  const midHtml = renderToStaticMarkup(React.createElement(mod.default, { data: noDefault, showMarket: true, hideUnits: true }));
+  assert.match(midHtml, /\$8,370/);
+  assert.match(midHtml, /\$700<\/th>/);
+  assert.match(midHtml, /\$900<\/th>/);
 
   // Range 780..1115 starts at midpoint 948 and never shows a rent row above 1115
   const range1115 = { ...rv, marketRange: { ...rv.marketRange, low: 780, high: 1115 } };
