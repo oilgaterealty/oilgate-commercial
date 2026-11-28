@@ -1,4 +1,6 @@
-import { BASE_DEFAULTS, money, pmt } from './dealmath.js';
+import { BASE_DEFAULTS, money, pmt, pv } from './dealmath.js';
+import { computeOpex, hasOpex, moneyCents } from './opex.js';
+export { moneyCents };
 
 // Pure lender package derivation for three separate tabs: Bridge, Private, DSCR.
 // Imported only by Lender views and tests; never by Seller or Realtor.
@@ -17,6 +19,7 @@ export const LENDER_DEFAULTS = {
   privatePointsPct: 0,
   privateMinParticipation: 20000,
   privateTermMonths: 12,
+  privatePrepayment: 'None',
   refiLtv: 75,
   refiRate: 7.5,
   refiYears: 30,
@@ -40,7 +43,7 @@ export const LENDER_LENSES = {
     label: 'Private',
     program: 'private',
     title: 'Private pooled loan',
-    lead: 'First-lien pool at 8% interest, $20,000 minimum',
+    lead: 'First-lien pool at 8% a year, $20,000 minimum · First payment after month 1',
     heroLabel: 'Total funds needed',
     ctaLabel: 'Send private terms',
   },
@@ -84,6 +87,19 @@ const firstSet = (...vals) => {
   }
   return null;
 };
+export function computePrivateReturn(amount, ratePct) {
+  const amt = Math.max(0, num(amount, 0));
+  const rate = Math.max(0, num(ratePct, 0));
+  const perYearAtRate = (amt * rate) / 100;
+  return {
+    amount: amt,
+    ratePct: rate,
+    monthly: perYearAtRate / 12,
+    perYearAtRate,
+    principalBack: amt,
+  };
+}
+
 const firstText = (...vals) => {
   for (const v of vals) {
     if (typeof v === 'string' && v.trim()) return v.trim();
@@ -157,33 +173,43 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
   const privateRate = firstSet(base?.privateRate, gb.privateRate) ?? LENDER_DEFAULTS.privateRate;
   const privatePointsPct = LENDER_DEFAULTS.privatePointsPct;
   const privateTermMonths = pos(base?.privateTermMonths, gb.privateTermMonths, LENDER_DEFAULTS.privateTermMonths);
+  const privatePrepayment = firstText(base?.privatePrepayment, gb.privatePrepayment, LENDER_DEFAULTS.privatePrepayment);
   const minParticipation = pos(base?.privateMinParticipation, gb.minParticipation, LENDER_DEFAULTS.privateMinParticipation);
   const privateTotalFunds = purchase + repairs + closing;
   const privateMonthlyInterest = (privateTotalFunds * privateRate) / 100 / 12;
   const privateMinMonthlyReturn = (minParticipation * privateRate) / 100 / 12;
+  const privateMinAnnualReturn = (minParticipation * privateRate) / 100;
 
-  // 3. DSCR (permanent refinance takeout)
-  const value = pos(rf.estimatedValue, base?.value, valSummary?.income);
+  // 3. DSCR (permanent refinance takeout, sized from single-source opex NOI when present)
+  const opexSrc = guide?.opex || (hasOpex(base) ? base.opex : null);
+  const rentPerUnit = pos(base?.rent, guide?.rent);
+  const capRate = pos(base?.valueCapRate, 9);
+  const opexCalc = opexSrc && rentPerUnit > 0
+    ? computeOpex({ opex: opexSrc, units, rentedUnits: units, grossRentMonthly: units * rentPerUnit, applyVacancy: true, capRate })
+    : null;
+  const dscrNoiAnnual = opexCalc ? opexCalc.noiAnnual : num(rf.dscrNoiAnnual, 0);
+  const dscrNoiMo = dscrNoiAnnual / 12;
+  const value = opexCalc && !base?._valueOverride
+    ? pos(opexCalc.value, valSummary?.income, rf.estimatedValue, base?.value)
+    : pos(rf.estimatedValue, base?.value, valSummary?.income);
   const refiLtv = pos(base?.refiLtv, rf.ltvPct, LENDER_DEFAULTS.refiLtv);
   const newLoan = value > 0 ? (value * refiLtv) / 100 : num(rf.loan, 0);
   const refiRate = firstSet(base?.refiRate) ?? LENDER_DEFAULTS.refiRate;
   const refiYears = pos(base?.refiYears, LENDER_DEFAULTS.refiYears);
   const refiDscr = pos(base?.refiDscr, LENDER_DEFAULTS.refiDscr);
   const refiPayment = pmt(refiRate, refiYears, newLoan);
-  const loanByDscr = num(rf.loanByDscr, 0);
+  const loanByDscr = dscrNoiMo > 0 && refiDscr > 0
+    ? Math.max(0, pv(refiRate, refiYears, dscrNoiMo / refiDscr))
+    : num(rf.loanByDscr, 0);
+  const actualDscr = refiPayment > 0 && dscrNoiAnnual > 0 ? dscrNoiAnnual / (refiPayment * 12) : null;
 
   const refiFeesFlat = firstSet(base?.refiFeesFlat, rf.feesFlat) ?? LENDER_DEFAULTS.refiFeesFlat;
   const refiFeesPct = firstSet(base?.refiFeesPct, rf.feesPct) ?? LENDER_DEFAULTS.refiFeesPct;
   const refiFeesPctAmt = (newLoan * refiFeesPct) / 100;
   const refiFeesTotal = refiFeesFlat + refiFeesPctAmt;
-  const netAtRefi = newLoan - bridgePayoff - refiFeesTotal;
-  const isGap = netAtRefi < 0;
-
-  const privateSurplusAtRefi = newLoan - privateTotalFunds - refiFeesTotal;
-  const privateIsGap = privateSurplusAtRefi < 0;
 
   const activeLens = baseLens.key === 'private'
-    ? { ...baseLens, lead: `First-lien pool at ${privateRate}% interest, ${money(minParticipation)} minimum` }
+    ? { ...baseLens, lead: `First-lien pool at ${privateRate}% a year, ${money(minParticipation)} minimum · First payment after month 1` }
     : baseLens.key === 'bridge'
       ? { ...baseLens, lead: `Purchase + repairs + fees rolled in, $0 down · ${ratePct}% non-Dutch` }
       : { ...baseLens, heroLabel: `Takeout loan (${refiLtv}% LTV)` };
@@ -237,10 +263,10 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     {
       num: '02',
-      title: 'Interest earned',
-      figure: `${privateRate}%`,
+      title: 'First payment',
+      figure: 'After month 1',
       overlay: [
-        `${money(minParticipation)} minimum participation earns ${money(privateMinMonthlyReturn)}/mo at ${privateRate}%.`,
+        `First interest payment is one month after funding, then monthly at ${privateRate}% a year (${moneyCents(privateMinMonthlyReturn)}/mo per ${money(minParticipation)} share).`,
       ],
     },
     {
@@ -251,13 +277,9 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     {
       num: '04',
-      title: privateIsGap ? 'Gap at refinance' : 'Surplus at refinance',
-      figure: money(Math.abs(privateSurplusAtRefi)),
-      overlay: [
-        privateIsGap
-          ? `Takeout refinance leaves ${money(Math.abs(privateSurplusAtRefi))} gap after paying off the ${money(privateTotalFunds)} pool.`
-          : `Takeout refinance pays off the ${money(privateTotalFunds)} pool with ${money(privateSurplusAtRefi)} surplus at refinance.`,
-      ],
+      title: 'Payoff',
+      figure: 'Principal back',
+      overlay: ['Principal paid back in full at payoff. No prepayment penalty; loan can be paid off early.'],
     },
   ];
 
@@ -493,12 +515,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
     },
     {
       key: 'interest',
-      label: `Interest (${privateRate}%)`,
+      label: `Interest (${privateRate}% a year)`,
       value: privateMonthlyInterest,
-      display: `${money(privateMonthlyInterest)}/mo`,
+      display: `${moneyCents(privateMonthlyInterest)}/mo`,
       emphasis: 'accent',
       overlay: [
-        `${money(privateTotalFunds)} × ${privateRate}% ÷ 12 = ${money(privateMonthlyInterest)}/mo across the pool (${money(privateMinMonthlyReturn)}/mo per ${money(minParticipation)} share).`,
+        `${money(privateTotalFunds)} × ${privateRate}% ÷ 12 = ${moneyCents(privateMonthlyInterest)}/mo across the pool (${moneyCents(privateMinMonthlyReturn)}/mo per ${money(minParticipation)} share).`,
+        'First payment after month 1. Paid monthly, interest-only.',
       ],
     },
   ];
@@ -510,7 +533,7 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Interest rate',
       value: privateRate,
       display: `${privateRate}%`,
-      overlay: [`${privateRate}% annual interest, no upfront fees.`],
+      overlay: [`${privateRate}% a year, interest-only, paid monthly. No upfront fees.`],
     },
     {
       key: 'minParticipation',
@@ -518,8 +541,15 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       value: minParticipation,
       display: money(minParticipation),
       overlay: [
-        `Pooled private money: several lenders can combine at ${money(minParticipation)} minimum each (${money(privateMinMonthlyReturn)}/mo at ${privateRate}%).`,
+        `Pooled private money: minimum ${money(minParticipation)} earns ${moneyCents(privateMinMonthlyReturn)} a month (${moneyCents(privateMinAnnualReturn)} per year at ${privateRate}%).`,
       ],
+    },
+    {
+      key: 'firstPayment',
+      label: 'First payment',
+      value: 1,
+      display: 'First payment after month 1',
+      overlay: ['First interest payment is one month after funding, then monthly.'],
     },
     {
       key: 'poolStructure',
@@ -531,24 +561,20 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       ],
     },
     {
-      key: 'term',
-      label: 'Loan term',
-      value: privateTermMonths,
-      display: `${privateTermMonths} months`,
-      overlay: [`${privateTermMonths}-month private pool term.`],
+      key: 'prepayment',
+      label: 'Prepayment penalty',
+      value: privatePrepayment,
+      display: privatePrepayment,
+      overlay: ['No prepayment penalty; loan can be paid off early.'],
     },
     {
-      key: 'surplus',
-      label: privateIsGap ? 'Gap at refinance' : 'Surplus at refinance',
-      value: privateSurplusAtRefi,
-      display: money(Math.abs(privateSurplusAtRefi)),
-      tone: privateIsGap ? 'warn' : 'good',
+      key: 'payoff',
+      label: 'Payoff',
+      value: 0,
+      display: 'Principal back at payoff',
       emphasis: 'total',
-      overlay: [
-        privateIsGap
-          ? `Takeout refinance (${money(newLoan)}) leaves ${money(Math.abs(privateSurplusAtRefi))} gap after paying off the ${money(privateTotalFunds)} pool.`
-          : `Takeout refinance (${money(newLoan)}) pays off the ${money(privateTotalFunds)} pool in full with ${money(privateSurplusAtRefi)} surplus at refinance.`,
-      ],
+      tone: 'good',
+      overlay: ['Principal paid back in full at payoff. Loan can be paid off early with no prepayment penalty.'],
     },
   ];
 
@@ -595,7 +621,10 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       label: 'Minimum DSCR',
       value: refiDscr,
       display: `${refiDscr}x`,
-      overlay: [`Minimum debt-service coverage ratio: ${refiDscr}x.`],
+      overlay: [
+        `Minimum debt-service coverage ratio: ${refiDscr}x.`,
+        actualDscr !== null ? `Current coverage from operating NOI (${money(dscrNoiAnnual)}/yr): ${actualDscr.toFixed(2)}x.` : null,
+      ].filter(Boolean),
     },
   ];
 
@@ -629,21 +658,6 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       overlay: [
         `${money(refiFeesFlat)} flat + ${refiFeesPct}% (${money(refiFeesPctAmt)}) = ${money(refiFeesTotal)}.`,
       ],
-    },
-    {
-      key: 'gap',
-      label: isGap ? 'Gap at refinance' : 'Surplus at refinance',
-      value: netAtRefi,
-      display: isGap ? money(Math.abs(netAtRefi)) : money(netAtRefi),
-      tone: isGap ? 'warn' : 'good',
-      emphasis: 'total',
-      overlay: isGap
-        ? [
-            `Loan ${money(newLoan)} − Bridge payoff ${money(bridgePayoff)} − Refi fees ${money(refiFeesTotal)} = ${money(Math.abs(netAtRefi))} gap.`,
-          ]
-        : [
-            `Loan ${money(newLoan)} − Bridge payoff ${money(bridgePayoff)} − Refi fees ${money(refiFeesTotal)} = ${money(netAtRefi)} surplus.`,
-          ],
     },
   ];
 
@@ -693,13 +707,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       ratePct: privateRate,
       pointsPct: privatePointsPct,
       termMonths: privateTermMonths,
+      prepayment: privatePrepayment,
       minParticipation,
       totalFunds: privateTotalFunds,
       monthlyInterest: privateMonthlyInterest,
       minMonthlyReturn: privateMinMonthlyReturn,
+      minAnnualReturn: privateMinAnnualReturn,
       participantCap,
-      surplusAtRefi: privateSurplusAtRefi,
-      isGap: privateIsGap,
     },
     privateFundsRows,
     privatePoolRows,
@@ -712,13 +726,13 @@ export function buildLenderPackage({ base = {}, offer = null, guide = null, valS
       refiPayment,
       newLoan,
       loanByDscr,
+      dscrNoiAnnual,
+      actualDscr,
       refiFeesFlat,
       refiFeesPct,
       refiFeesPctAmt,
       refiFeesTotal,
       bridgePayoff,
-      netAtRefi,
-      isGap,
     },
     refiCheckRows,
     hasSellerFinancingOption,
@@ -733,20 +747,23 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
   if (!(rent > 0) && !(low > 0 && high >= low)) return null;
   const unitsCount = Math.max(1, num(base?.units, 10) || 10);
   const ourRent = rent > 0 ? rent : Math.round((low + high) / 2);
-  const vacancyPct = num(base?.vacancyPct, BASE_DEFAULTS.vacancyPct);
+  const opex = hasOpex(base) ? base.opex : null;
+  const vacancyPct = opex ? num(opex.vacancyPct, BASE_DEFAULTS.vacancyPct) : num(base?.vacancyPct, BASE_DEFAULTS.vacancyPct);
   const capRate = num(base?.valueCapRate, 9) > 0 ? num(base?.valueCapRate, 9) : 9;
   const taxesMo = Math.max(0, num(base?.taxes, 0)) / 12;
   const insuranceMo = Math.max(0, num(base?.insurance, 0)) / 12;
   const waterMo = Math.max(0, num(base?.waterMo, 0));
   const emptyUnitUtilMo = Math.max(0, num(base?.emptyUnitUtilMo, 0));
   const reservesMo = (unitsCount * Math.max(0, num(base?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit))) / 12;
-  const costsMo = taxesMo + insuranceMo + waterMo + reservesMo;
-  const asisCostsMo = taxesMo + insuranceMo + waterMo + unitsCount * emptyUnitUtilMo;
+  const afterOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * ourRent, applyVacancy: true, capRate }) : null;
+  const asisOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: 0, grossRentMonthly: 0, applyVacancy: false, capRate }) : null;
+  const costsMo = afterOpex ? afterOpex.totalExpensesMonthly : (taxesMo + insuranceMo + waterMo + reservesMo);
+  const asisCostsMo = asisOpex ? asisOpex.totalExpensesMonthly : (taxesMo + insuranceMo + waterMo + unitsCount * emptyUnitUtilMo);
   const allIn = pkg?.totalLoan || (pkg?.purchase || 0) + (pkg?.repairs || 0);
-  const rentMoAfter = unitsCount * ourRent * (1 - vacancyPct / 100);
-  const netYrAfter = (rentMoAfter - costsMo) * 12;
-  const valueAfter = Math.max(0, netYrAfter / (capRate / 100));
-  const asisNetYr = (0 - asisCostsMo) * 12;
+  const rentMoAfter = afterOpex ? afterOpex.effectiveRentMonthly : (unitsCount * ourRent * (1 - vacancyPct / 100));
+  const netYrAfter = afterOpex ? afterOpex.noiAnnual : ((rentMoAfter - costsMo) * 12);
+  const valueAfter = afterOpex ? afterOpex.value : Math.max(0, netYrAfter / (capRate / 100));
+  const asisNetYr = asisOpex ? asisOpex.noiAnnual : ((0 - asisCostsMo) * 12);
   const caps = [capRate, capRate + 1, capRate + 2, capRate + 3];
   const maxRent = high > 0 ? high : Infinity;
   const cappedBase = Math.min(ourRent, maxRent);
@@ -784,7 +801,7 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
         value: 0,
         allIn: pkg?.purchase || 0,
         rentOverlay: [`0 of ${unitsCount} rented today`],
-        costsOverlay: [`Operating costs: ${money(asisCostsMo)}/mo`],
+        costsOverlay: asisOpex ? asisOpex.costsOverlay : [`Operating costs: ${money(asisCostsMo)}/mo`],
         netOverlay: [`($0 − ${money(asisCostsMo)}) × 12 = ${money(asisNetYr)}/yr`],
         valueOverlay: ['$0/yr'],
         allInOverlay: [`Purchase: ${money(pkg?.purchase || 0)}`],
@@ -799,8 +816,8 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
         netYr: netYrAfter,
         value: valueAfter,
         allIn,
-        rentOverlay: [`${unitsCount} × ${money(ourRent)}/mo = ${money(unitsCount * ourRent)}/mo`, `Less ${vacancyPct}% vacancy: ${money(rentMoAfter)}/mo`],
-        costsOverlay: [`Operating costs: ${money(costsMo)}/mo`],
+        rentOverlay: [`${unitsCount} × ${money(ourRent)}/mo = ${money(unitsCount * ourRent)}/mo`, afterOpex ? afterOpex.vacancyOverlayLine : `Less ${vacancyPct}% vacancy: ${money(rentMoAfter)}/mo`].filter(Boolean),
+        costsOverlay: afterOpex ? afterOpex.costsOverlay : [`Operating costs: ${money(costsMo)}/mo`],
         netOverlay: [`(${money(rentMoAfter)} − ${money(costsMo)}) × 12 = ${money(netYrAfter)}/yr`],
         valueOverlay: [`${money(netYrAfter)}/yr ÷ ${capRate}% cap rate = ${money(valueAfter)}`],
         allInOverlay: [`Total cost: ${money(allIn)}`],
@@ -808,8 +825,10 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
     ],
     caps,
     grid: rents.map((r) => {
-      const rMo = unitsCount * r * (1 - vacancyPct / 100);
-      const nYr = (rMo - costsMo) * 12;
+      const rowOpex = opex ? computeOpex({ opex, units: unitsCount, rentedUnits: unitsCount, grossRentMonthly: unitsCount * r, applyVacancy: true, capRate }) : null;
+      const rMo = rowOpex ? rowOpex.effectiveRentMonthly : (unitsCount * r * (1 - vacancyPct / 100));
+      const rCostsMo = rowOpex ? rowOpex.totalExpensesMonthly : costsMo;
+      const nYr = rowOpex ? rowOpex.noiAnnual : ((rMo - costsMo) * 12);
       return {
         rent: r,
         cells: caps.map((c) => {
@@ -819,13 +838,13 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
             value: v,
             clears: v >= allIn,
             stabilized: r === cappedBase && c === capRate,
-            overlay: [`${unitsCount} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rMo)}/mo`, `Less costs: ${money(costsMo)}/mo`, `${money(nYr)}/yr ÷ ${c}% = ${money(v)}`, `All in: ${money(allIn)}`],
+            overlay: [`${unitsCount} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rMo)}/mo`, `Less costs: ${money(rCostsMo)}/mo`, `${money(nYr)}/yr ÷ ${c}% = ${money(v)}`, `All in: ${money(allIn)}`],
           };
         }),
       };
     }),
     marketRange: low > 0 && high >= low
-      ? { low, high, units: unitsCount, vacancyPct, costsMo, capRate, allIn }
+      ? { low, high, units: unitsCount, vacancyPct, costsMo, capRate, allIn, ...(opex ? { opex } : {}) }
       : null,
     valueRange: pkg?.value > 0 && valueAfter > pkg.value
       ? { low: pkg.value, high: valueAfter, lowOverlay: ['Value used for the refinance'], highOverlay: [`${money(netYrAfter)}/yr ÷ ${capRate}% cap rate = ${money(valueAfter)}`] }

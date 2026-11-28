@@ -1,6 +1,6 @@
 import { buyerName } from '../lib/people.js';
 import { useState } from 'react';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, valueSummary } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, syncOpexOverride, valueSummary } from '../lib/dealmath.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { sendToOwner } from './Messages.jsx';
 import { Button, Card, CardTitle } from './Shell.jsx';
@@ -108,7 +108,9 @@ export function WhatIfNumbers({ deal, me, role, preview, planRepairBudget = 0 })
   const o = operating({ ...effectiveBase, units: 10 });
   const val = valueSummary({ base: { ...o.b, ...effectiveBase }, noi: o.noi, units: 10 });
   const valueChanged = effectiveBase.value !== model.original?.base?.value;
-  const shownValue = o.b.value > 0 && (!model.touched || valueChanged) ? o.b.value : (val.income ?? o.b.value);
+  const shownValue = Boolean(effectiveBase?.opex) && !valueChanged
+    ? (val.income ?? o.b.value)
+    : (o.b.value > 0 && (!model.touched || valueChanged) ? o.b.value : (val.income ?? o.b.value));
   const fields = role === 'owner' ? BASE_FIELDS : BASE_FIELDS.filter(([k]) => !String(k).startsWith('refi'));
   return (
     <>
@@ -142,7 +144,10 @@ export function WhatIfNumbers({ deal, me, role, preview, planRepairBudget = 0 })
             <div className="mt-3 grid gap-x-8 md:grid-cols-2">
               {fields.map(([k, l, u]) => (
                 <WhatIfRow key={k} label={l} unit={u} value={effectiveBase[k] ?? BASE_DEFAULTS[k]} changed={effectiveBase[k] !== undefined && effectiveBase[k] !== BASE_DEFAULTS[k]}
-                  onChange={(v) => setBase({ ...base, [k]: v })} />
+                  onChange={(v) => {
+                    const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
+                    setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
+                  }} />
               ))}
             </div>
           )}

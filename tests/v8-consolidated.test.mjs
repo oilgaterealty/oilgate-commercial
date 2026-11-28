@@ -156,7 +156,7 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
   assert.deepEqual(Object.keys(ltMod.LENDER_PROGRAMS), ['bridge', 'private', 'dscr']);
   assert.equal(ltMod.LENDER_FIELDS.length, 16);
   assert.equal(ltMod.fieldsForProgram('bridge').length, 9);
-  assert.equal(ltMod.fieldsForProgram('private').length, 4);
+  assert.equal(ltMod.fieldsForProgram('private').length, 5);
   assert.equal(ltMod.fieldsForProgram('dscr').length, 8);
 
   const ltHtml = renderToStaticMarkup(React.createElement(ltMod.default, {

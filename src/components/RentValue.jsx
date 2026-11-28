@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardTitle, Button, OverlayTrigger } from './Shell.jsx';
 import { money, moneyK } from '../lib/dealmath.js';
-import { defaultMarketRent, rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
+import { defaultMarketRent, rangeSummary, rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
 
 const midRent = (mr) => (
   typeof defaultMarketRent === 'function'
@@ -30,9 +30,15 @@ function Ranges({ data, showMarket, sourceLines, Trigger, rent, setRent }) {
   const vr = data.valueRange;
   const mr = showMarket ? data.marketRange : null;
   if (!vr && !mr) return null;
-  const v = mr ? rangeValue(mr, rent) : 0;
-  const grossMo = mr ? mr.units * rent : 0;
-  const rentMo = mr ? grossMo * (1 - mr.vacancyPct / 100) : 0;
+  const summary = mr && typeof rangeSummary === 'function' ? rangeSummary(mr, rent) : null;
+  const v = summary ? summary.value : (mr ? rangeValue(mr, rent) : 0);
+  const grossMo = summary ? summary.grossMo : (mr ? mr.units * rent : 0);
+  const rentMo = summary ? summary.rentMo : (mr ? grossMo * (1 - mr.vacancyPct / 100) : 0);
+  const activeCostsMo = summary ? summary.costsMo : (mr ? mr.costsMo : 0);
+  const activeVacPct = summary ? summary.vacancyPct : (mr ? mr.vacancyPct : 0);
+  const rentOverlayLines = summary?.rentOverlay?.length
+    ? summary.rentOverlay
+    : [`${mr?.units ?? 0} × ${money(rent)}/mo = ${money(grossMo)}/mo`, `Less ${activeVacPct}% vacancy: ${money(rentMo)}/mo`];
   return (
     <Card>
       <CardTitle>Value and market rent</CardTitle>
@@ -72,12 +78,12 @@ function Ranges({ data, showMarket, sourceLines, Trigger, rent, setRent }) {
             <div>
               <dt className="text-ink-soft">Rent in /mo</dt>
               <dd className="font-semibold">
-                <Trigger lines={[`${mr.units} × ${money(rent)}/mo = ${money(grossMo)}/mo`, `Less ${mr.vacancyPct}% vacancy: ${money(rentMo)}/mo`]}>
+                <Trigger lines={rentOverlayLines}>
                   {money(rentMo)}
                 </Trigger>
               </dd>
             </div>
-            <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${mr.units} × ${money(rent)}/mo, less ${mr.vacancyPct}% vacancy`, `Less costs: ${money(mr.costsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
+            <div><dt className="text-ink-soft">Value</dt><dd className={`font-semibold ${v >= mr.allIn ? 'text-good' : ''}`}><Trigger lines={[`${mr.units} × ${money(rent)}/mo, less ${activeVacPct}% vacancy`, `Less costs: ${money(activeCostsMo)}/mo`, `÷ ${mr.capRate}% cap rate`, `All in: ${money(mr.allIn)}`]}>{money(v)}</Trigger></dd></div>
           </dl>
         </div>
       )}

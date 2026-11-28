@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { buyerName } from '../lib/people.js';
-import { money } from '../lib/dealmath.js';
-import { buildLenderPackage } from '../lib/lenderModel.js';
+import { money, moneyCents } from '../lib/dealmath.js';
+import { buildLenderPackage, computePrivateReturn } from '../lib/lenderModel.js';
 import { sendToOwner } from './Messages.jsx';
 import { Button, Card, CardTitle, OverlayTrigger } from './Shell.jsx';
+
+const fmtCents = moneyCents || money;
 
 function NumberStepRow({ label, unit, value, step, min = 0, max, onChange, changed, presets }) {
   const v = value ?? '';
@@ -136,7 +138,7 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
   const defaults = initialFromPkg(pkg);
   const keysByLens = {
     bridge: ['ratePct', 'pointsPct', 'deferredMonths', 'processing', 'repairs'],
-    private: ['participation', 'privateRate', 'repairs', 'privateTermMonths'],
+    private: ['participation', 'privateRate', 'repairs'],
     dscr: ['refiLtv', 'value', 'refiRate', 'refiYears', 'refiFeesPct', 'refiFeesFlat'],
   };
   const activeKeys = keysByLens[lens] || keysByLens.bridge;
@@ -153,11 +155,12 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
     bridgeDeferredMonths: numOr(inputs.deferredMonths, pkg.deferredMonths),
     bridgeProcessing: numOr(inputs.processing, pkg.processing),
     rehab: numOr(inputs.repairs, pkg.repairs),
-    privateMinParticipation: numOr(inputs.participation, pkg.minParticipation),
+    privateMinParticipation: pkg.minParticipation,
     privateRate: numOr(inputs.privateRate, pkg.privatePool.ratePct),
     privateTermMonths: numOr(inputs.privateTermMonths, pkg.privatePool.termMonths),
     refiLtv: numOr(inputs.refiLtv, pkg.refiCheck.refiLtv),
     value: numOr(inputs.value, pkg.value),
+    _valueOverride: +inputs.value !== +defaults.value,
     refiRate: numOr(inputs.refiRate, pkg.refiCheck.refiRate),
     refiYears: numOr(inputs.refiYears, pkg.refiCheck.refiYears),
     refiFeesPct: numOr(inputs.refiFeesPct, pkg.refiCheck.refiFeesPct),
@@ -183,20 +186,24 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
     setStatus('');
   };
 
-  const share = numOr(inputs.participation, pkg.minParticipation);
-  const shareMonthly = (share * simPkg.privatePool.ratePct) / 100 / 12;
-  const shareTotal = shareMonthly * simPkg.privatePool.termMonths;
+  const privateMax = Math.max(pkg.minParticipation || 20000, Math.round(simPkg.privatePool.totalFunds || pkg.minParticipation || 20000));
+  const share = Math.min(privateMax, Math.max(pkg.minParticipation || 20000, numOr(inputs.participation, pkg.minParticipation)));
+  const privRet = typeof computePrivateReturn === 'function'
+    ? computePrivateReturn(share, simPkg.privatePool.ratePct)
+    : { monthly: (share * simPkg.privatePool.ratePct) / 100 / 12, perYearAtRate: (share * simPkg.privatePool.ratePct) / 100, principalBack: share };
+  const shareMonthly = privRet.monthly;
+  const shareAnnual = privRet.perYearAtRate;
 
   const buildSummary = () => {
     if (lens === 'private') {
       return [
         `Lender what-if (${simPkg.lens.label}, nothing was saved):`,
         `- Your share: ${money(share)}`,
-        `- Rate: ${simPkg.privatePool.ratePct}%`,
-        `- Term: ${simPkg.privatePool.termMonths} months`,
+        `- Rate: ${simPkg.privatePool.ratePct}% a year (interest-only, paid monthly)`,
+        `- First payment: After month 1 · No prepayment penalty`,
         `- Total funds needed: ${money(simPkg.privatePool.totalFunds)}`,
-        `- Your monthly return: ${money(shareMonthly)}/mo`,
-        `- ${simPkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance'}: ${money(Math.abs(simPkg.privatePool.surplusAtRefi))}`,
+        `- Monthly income: ${fmtCents(shareMonthly)}/mo (${fmtCents(shareAnnual)} per year at ${simPkg.privatePool.ratePct}%)`,
+        `- Principal back at payoff: ${money(share)}`,
       ].join('\n');
     }
     if (lens === 'dscr') {
@@ -206,8 +213,8 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
         `- Rate & amortization: ${simPkg.refiCheck.refiRate}% over ${simPkg.refiCheck.refiYears} years (${money(simPkg.refiCheck.refiPayment)}/mo P&I)`,
         `- Refi fees: ${money(simPkg.refiCheck.refiFeesTotal)}`,
         `- Pays off bridge: ${money(simPkg.refiCheck.bridgePayoff)}`,
-        `- ${simPkg.refiCheck.isGap ? 'Gap at refinance' : 'Surplus at refinance'}: ${money(Math.abs(simPkg.refiCheck.netAtRefi))}`,
-      ].join('\n');
+        simPkg.refiCheck.actualDscr !== null ? `- Actual DSCR: ${simPkg.refiCheck.actualDscr.toFixed(2)}x` : null,
+      ].filter(Boolean).join('\n');
     }
     return [
       `Lender what-if (${simPkg.lens.label}, nothing was saved):`,
@@ -246,10 +253,9 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
       ['repairs', 'Repair budget', '$', 5000, 0, undefined],
     ],
     private: [
-      ['participation', 'Your share', '$', 5000, 0, undefined],
+      ['participation', 'Your share', '$', 5000, pkg.minParticipation || 20000, privateMax, 'slider'],
       ['privateRate', 'Interest rate', '%', 0.25, 0, 30],
       ['repairs', 'Repair budget', '$', 5000, 0, undefined],
-      ['privateTermMonths', 'Loan term', 'mo', 1, 1, 60],
     ],
     dscr: [
       ['refiLtv', 'Takeout LTV', '%', 5, 0, 100, [75, 80]],
@@ -279,28 +285,28 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
         },
         {
           key: 'shareMonthly',
-          label: `Your monthly return (${simPkg.privatePool.ratePct}%)`,
-          value: `${money(shareMonthly)}/mo`,
-          overlay: [`${money(share)} × ${simPkg.privatePool.ratePct}% ÷ 12 = ${money(shareMonthly)}/mo.`],
+          label: `Monthly income (${simPkg.privatePool.ratePct}%)`,
+          value: `${fmtCents(shareMonthly)}/mo`,
+          tone: 'good',
+          overlay: [`${money(share)} × ${simPkg.privatePool.ratePct}% ÷ 12 = ${fmtCents(shareMonthly)} a month. First payment after month 1.`],
         },
         {
-          key: 'shareTotal',
-          label: `Your interest (${simPkg.privatePool.termMonths} mo)`,
-          value: money(shareTotal),
-          overlay: [`${simPkg.privatePool.termMonths} months × ${money(shareMonthly)}/mo = ${money(shareTotal)}.`],
+          key: 'shareAnnual',
+          label: `Per year at ${simPkg.privatePool.ratePct}%`,
+          value: `${fmtCents(shareAnnual)}/yr`,
+          overlay: [`${money(share)} × ${simPkg.privatePool.ratePct}% a year = ${fmtCents(shareAnnual)}/yr annualized. Loan can be paid off early with no prepayment penalty.`],
         },
         {
-          key: 'poolMonthly',
-          label: 'Pool monthly interest',
-          value: `${money(simPkg.privatePool.monthlyInterest)}/mo`,
-          overlay: simPkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay,
+          key: 'firstPayment',
+          label: 'First payment',
+          value: 'After month 1',
+          overlay: ['First interest payment is one month after funding, then monthly.'],
         },
         {
-          key: 'surplus',
-          label: simPkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance',
-          value: money(Math.abs(simPkg.privatePool.surplusAtRefi)),
-          tone: simPkg.privatePool.isGap ? 'warn' : 'good',
-          overlay: simPkg.privatePoolRows.find((r) => r.key === 'surplus')?.overlay,
+          key: 'principalBack',
+          label: 'Principal back at payoff',
+          value: money(share),
+          overlay: [`Principal (${money(share)}) paid back in full at payoff. No prepayment penalty.`],
         },
       ]
     : lens === 'dscr'
@@ -336,11 +342,13 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
             overlay: [`Minimum debt-service coverage ratio required: ${simPkg.refiCheck.refiDscr}x.`],
           },
           {
-            key: 'surplus',
-            label: simPkg.refiCheck.isGap ? 'Gap at refinance' : 'Surplus at refinance',
-            value: money(Math.abs(simPkg.refiCheck.netAtRefi)),
-            tone: simPkg.refiCheck.isGap ? 'warn' : 'good',
-            overlay: simPkg.refiCheckRows.find((r) => r.key === 'gap')?.overlay,
+            key: 'actualDscr',
+            label: 'Actual DSCR',
+            value: simPkg.refiCheck.actualDscr !== null ? `${simPkg.refiCheck.actualDscr.toFixed(2)}x` : '—',
+            tone: simPkg.refiCheck.actualDscr !== null && simPkg.refiCheck.actualDscr >= simPkg.refiCheck.refiDscr ? 'good' : 'default',
+            overlay: simPkg.refiCheck.actualDscr !== null
+              ? [`Operating NOI ${money(simPkg.refiCheck.dscrNoiAnnual)}/yr ÷ ${money(simPkg.refiCheck.refiPayment * 12)}/yr P&I = ${simPkg.refiCheck.actualDscr.toFixed(2)}x.`]
+              : ['Minimum coverage checked against operating NOI.'],
           },
         ]
       : [
@@ -412,18 +420,42 @@ export default function LenderWhatIf({ deal, me, preview, pkg, base, offer, guid
           </CardTitle>
           <div className="divide-y divide-line">
             {rows.map(([k, label, unit, step, min, max, presets]) => (
-              <NumberStepRow
-                key={`${lens}:${k}`}
-                label={label}
-                unit={unit}
-                step={step}
-                min={min}
-                max={max}
-                presets={presets}
-                value={inputs[k]}
-                changed={+inputs[k] !== +defaults[k]}
-                onChange={(val) => setInputs((prev) => ({ ...prev, [k]: val }))}
-              />
+              presets === 'slider' ? (
+                <div key={`${lens}:${k}`} className="py-2 space-y-1.5">
+                  <label htmlFor={`wif-${k}`} className="flex items-center justify-between gap-2 text-sm">
+                    <span className={+inputs[k] !== +defaults[k] ? 'font-medium text-ink' : 'text-ink-soft'}>{label}</span>
+                    <span className="font-semibold tabular-nums">{money(share)}</span>
+                  </label>
+                  <input
+                    id={`wif-${k}`}
+                    type="range"
+                    aria-label={label}
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={share}
+                    onChange={(e) => setInputs((prev) => ({ ...prev, [k]: +e.target.value }))}
+                    className="w-full accent-ink"
+                  />
+                  <div className="flex items-center justify-between text-xs tabular-nums text-ink-soft">
+                    <span>{money(min)}</span>
+                    <span>{money(max)}</span>
+                  </div>
+                </div>
+              ) : (
+                <NumberStepRow
+                  key={`${lens}:${k}`}
+                  label={label}
+                  unit={unit}
+                  step={step}
+                  min={min}
+                  max={max}
+                  presets={presets}
+                  value={inputs[k]}
+                  changed={+inputs[k] !== +defaults[k]}
+                  onChange={(val) => setInputs((prev) => ({ ...prev, [k]: val }))}
+                />
+              )
             ))}
           </div>
         </Card>

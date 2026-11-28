@@ -1,4 +1,6 @@
 // Deal math. Pure functions, no network. Every default is labeled with where it came from.
+import { computeOpex, hasOpex, normalizeOpex, syncOpexOverride } from './opex.js';
+export { computeOpex, hasOpex, normalizeOpex, syncOpexOverride };
 
 // Building numbers shared by every offer. Each deal's real numbers live in its private database row,
 // never in this (public) code. These blanks are only a starting template.
@@ -117,10 +119,48 @@ export function pv(ratePct, years, payment) {
 }
 
 export function operating(baseIn = {}) {
-  const b = { ...BASE_DEFAULTS, ...Object.fromEntries(Object.entries(baseIn).map(([k, v]) => [k, num(v, BASE_DEFAULTS[k])])) };
+  const b = {
+    ...BASE_DEFAULTS,
+    ...Object.fromEntries(
+      Object.entries(baseIn).map(([k, v]) => (k === 'opex' || k.startsWith('_') ? [k, v] : [k, num(v, BASE_DEFAULTS[k])])),
+    ),
+  };
   // All units are long-term rentals; ignore any legacy short-term values.
   const strUnits = 0;
   const ltrUnits = b.units;
+  if (hasOpex(baseIn)) {
+    const capRate = num(baseIn.valueCapRate, 9) > 0 ? num(baseIn.valueCapRate, 9) : 9;
+    const opexCalc = computeOpex({
+      opex: baseIn.opex,
+      units: b.units,
+      rentedUnits: b.units,
+      grossRentMonthly: ltrUnits * b.rent,
+      applyVacancy: true,
+      capRate,
+    });
+    const gpr = opexCalc.grossAnnual;
+    const egi = opexCalc.effectiveRentAnnual;
+    const mgmt = opexCalc.mgmtHelpAnnual;
+    const fixed = opexCalc.fixedAnnual + opexCalc.repairsMaintAnnual;
+    const reserves = opexCalc.reservesAnnual;
+    const noi = opexCalc.noiAnnual;
+    const cashFlow = noi; // reserves are already included inside opex total expenses
+    const effectiveValue = baseIn._valueOverride && b.value > 0 ? b.value : (opexCalc.value > 0 ? opexCalc.value : b.value);
+    const loanByDscr = Math.max(0, pv(b.refiRate, b.refiYears, cashFlow / b.refiDscr / 12));
+    const loanByLtv = (b.refiLtv / 100) * effectiveValue;
+    const refiLoan = Math.min(loanByDscr, loanByLtv);
+    const refiNet = refiLoan - (refiLoan * b.refiFeesPct) / 100 - b.refiFeesFlat - b.refiReserve;
+    const refiPayment = pmt(b.refiRate, b.refiYears, refiLoan);
+    b.vacancyPct = opexCalc.vacancyPct;
+    b.reservesPerUnit = opexCalc.normalized.reservesPerUnitAnnual;
+    if (!baseIn._valueOverride && opexCalc.value > 0) b.value = opexCalc.value;
+    return {
+      b, strUnits, ltrUnits, gpr, egi, mgmt, fixed, noi, reserves, cashFlow,
+      capRate: effectiveValue ? noi / effectiveValue : null,
+      refiLoan, refiLimitedBy: loanByDscr < loanByLtv ? 'DSCR' : 'LTV', refiNet, refiPayment,
+      opexCalc,
+    };
+  }
   const gpr = ltrUnits * b.rent * 12;
   const egi = gpr * (1 - b.vacancyPct / 100);
   const mgmt = egi * (b.mgmtPct / 100);
@@ -137,7 +177,14 @@ export function operating(baseIn = {}) {
 }
 
 // Occupancy needed to cover fixed costs, reserves and the yearly payment.
-const breakEven = (o, debtYearly) => (o.gpr ? (o.fixed + o.reserves + debtYearly) / (o.gpr * (1 - o.b.mgmtPct / 100)) : null);
+const breakEven = (o, debtYearly) => {
+  if (!o.gpr) return null;
+  if (o.opexCalc) {
+    const netRate = (1 - o.opexCalc.normalized.repairsMaintPct / 100 - o.opexCalc.normalized.mgmtHelpPct / 100);
+    return netRate > 0 ? (o.opexCalc.fixedAnnual + o.reserves + debtYearly) / (o.gpr * netRate) : null;
+  }
+  return (o.fixed + o.reserves + debtYearly) / (o.gpr * (1 - o.b.mgmtPct / 100));
+};
 
 export function evaluate(structure, inputsIn = {}, baseIn = {}) {
   const o = operating(baseIn);
@@ -224,6 +271,16 @@ export function grade(metric, v) {
 }
 
 export const money = (v) => (v === null || v === undefined || !Number.isFinite(v) ? '—' : (v < 0 ? '−$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US'));
+export const moneyCents = (v) => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const sign = v < 0 ? '−$' : '$';
+  const cents = Math.round(Math.abs(v) * 100);
+  const dollars = Math.floor(cents / 100);
+  const rem = cents % 100;
+  return rem === 0
+    ? sign + dollars.toLocaleString('en-US')
+    : sign + dollars.toLocaleString('en-US') + '.' + String(rem).padStart(2, '0');
+};
 export const pct = (v, d = 0) => (v === null || !Number.isFinite(v) ? '—' : (v * 100).toFixed(d) + '%');
 
 export function moneyK(v) {
@@ -259,7 +316,9 @@ export function valueSummary({ base = {}, noi = 0, units = 0, comps = [] } = {})
   const noiAnnual = Number.isFinite(+noi) ? +noi : 0;
   const incomeFromNoi = noiAnnual > 0 ? noiAnnual / (capRate / 100) : null;
   const savedVal = Number.isFinite(+base.value) && +base.value > 0 ? +base.value : null;
-  const income = base.valueBasis === 'income' && savedVal !== null ? savedVal : (incomeFromNoi ?? savedVal);
+  const income = hasOpex(base) && !base._valueOverride && incomeFromNoi !== null
+    ? incomeFromNoi
+    : (base.valueBasis === 'income' && savedVal !== null ? savedVal : (incomeFromNoi ?? savedVal));
   const incomePerUnit = income !== null && unitCount > 0 ? income / unitCount : null;
 
   let compsCalc = compsMedian(comps, unitCount);
@@ -319,16 +378,16 @@ export function buildLeadStory(structure, evalResult, { base = {}, comps = [] } 
   const insMo = b.insurance / 12;
   const waterMo = num(b.waterMo, 0);
   const reservesMo = o.reserves / 12;
-  const runningMo = taxesMo + insMo + waterMo + reservesMo;
-  const runningParts = [
+  const runningMo = o.opexCalc ? o.opexCalc.totalExpensesMonthly : (taxesMo + insMo + waterMo + reservesMo);
+  const runningParts = o.opexCalc ? null : [
     taxesMo > 0 ? `Taxes ${money(taxesMo)}/mo` : null,
     insMo > 0 ? `Insurance ${money(insMo)}/mo` : null,
     waterMo > 0 ? `Water and trash ${money(waterMo)}/mo` : null,
     reservesMo > 0 ? `Reserves ${money(reservesMo)}/mo` : null,
   ].filter(Boolean);
-  const runningOverlay = runningParts.length
-    ? [`${runningParts.join(' + ')} = ${money(runningMo)}/mo.`]
-    : ['No running costs entered.'];
+  const runningOverlay = o.opexCalc
+    ? o.opexCalc.costsOverlay
+    : (runningParts.length ? [`${runningParts.join(' + ')} = ${money(runningMo)}/mo.`] : ['No running costs entered.']);
   const paymentMo = evalResult.sellerMonthly ?? (o.cashFlow / 12 - evalResult.keepMonthly);
   const fullLeft = evalResult.keepMonthly;
 

@@ -243,11 +243,11 @@ export default function Reviewer({ deal, me, member, role, preview, tab }) {
   const basePath = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const { activeSection, jumpTo } = useSectionScroll(tab, sections);
 
-  const b = { ...base, units: 10 };
+  const b = { ...base, units: 10, ...(leadGuide?.opex && !base?.opex ? { opex: leadGuide.opex } : {}) };
   const o = operating(b);
   const val = valueSummary({ base: b, noi: o.noi, units: 10 });
   const refiGuide = leadGuide?.refi || null;
-  const shownValue = refiGuide?.estimatedValue || o.b.value || val.income;
+  const shownValue = refiGuide?.estimatedValue || val.income || o.b.value;
   const shownRepair = leadGuide?.costSummary?.total ?? o.b.rehab;
 
   return (

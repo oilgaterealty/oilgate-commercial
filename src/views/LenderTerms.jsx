@@ -76,10 +76,11 @@ export const LENDER_FIELDS = [
   {
     key: 'prepayment',
     label: 'Prepayment penalty',
-    programs: ['bridge', 'dscr'],
+    programs: ['bridge', 'private', 'dscr'],
     inputType: 'choice',
     choicesByProgram: {
       bridge: ['None', '1%', '2%', '3 months interest', '6 months interest'],
+      private: ['None', '1%', '2%', '3 months interest'],
       dscr: ['None', '3-2-1', '5-4-3-2-1', 'Yield maintenance'],
     },
   },
@@ -193,6 +194,7 @@ export function wantedTerms(program, guide, base, offer = null) {
       rate: `${pkg.privatePool.ratePct}%`,
       term: `${pkg.privatePool.termMonths} months`,
       lien_position: 'First-lien pooled',
+      prepayment: pkg.privatePool.prepayment || 'None',
     };
   } else if (program === 'dscr') {
     byKey = {
@@ -366,7 +368,7 @@ export function buildTermsSubmission({
   const bothParcels = String(values?.[COLLATERAL_QUESTION.label] || '').trim();
   if (bothParcels) answered[COLLATERAL_QUESTION.label] = bothParcels;
   for (const opt of OPTIONAL_FIELDS) {
-    if ((program === 'bridge' || program === 'dscr') && opt.key === 'prepayment') continue;
+    if ((program === 'bridge' || program === 'private' || program === 'dscr') && opt.key === 'prepayment') continue;
     const val = String(values?.[opt.label] || '').trim();
     if (val) answered[opt.label] = val;
   }
@@ -713,7 +715,7 @@ export default function LenderTerms({
       : `${money(pkg.totalLoan)} · 100% LTC`;
 
   const visibleOptionalFields = OPTIONAL_FIELDS.filter(
-    (opt) => !((program === 'bridge' || program === 'dscr') && opt.key === 'prepayment'),
+    (opt) => !((program === 'bridge' || program === 'private' || program === 'dscr') && opt.key === 'prepayment'),
   );
 
   return (

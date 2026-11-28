@@ -4,6 +4,9 @@
 // shows a plan updates the moment any input changes. Real deal numbers live only in the owner's private
 // database row, never in this public code. Defaults below are blank templates.
 import { BASE_DEFAULTS, operating, pmt, pv, STRUCTURES, money, sellerLoanText, valueSummary } from './dealmath.js';
+import { computeOpex, hasOpex, normalizeOpex } from './opex.js';
+
+const resolveOpex = (baseIn, plan) => (plan?.opex ? plan.opex : (hasOpex(baseIn) ? normalizeOpex(baseIn.opex) : null));
 
 export const WEEKS_PER_MONTH = 52 / 12;
 export const OPTION_E_OVERLAY = 'His rehab money is only paid back through his share of the rent. It is not added to the buyout unless you turn that on.';
@@ -89,6 +92,7 @@ export function normalizePlan(raw) {
   out.marketRent = mr && optNum(mr.low) !== null && optNum(mr.high) !== null
     ? { low: optNum(mr.low), high: optNum(mr.high), source: mr.source ? String(mr.source) : '' }
     : null;
+  out.opex = p.opex && typeof p.opex === 'object' ? normalizeOpex(p.opex) : null;
   return out;
 }
 
@@ -264,9 +268,10 @@ export function buildCostSummary(baseIn = {}, planIn = {}) {
 }
 
 export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) {
-  const o = operating(baseIn);
-  const b = o.b;
   const plan = normalizePlan(planIn);
+  const opex = resolveOpex(baseIn, plan);
+  const o = operating(opex ? { ...baseIn, opex } : baseIn);
+  const b = o.b;
   const def = STRUCTURES[structure]?.defaults || {};
   const x = {
     ...def,
@@ -298,11 +303,16 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
   if (structure === 'cash') items.unshift({ label: 'Down payment and closing', group: 'closing', cost: x.price * (x.downPct / 100 + x.closingPct / 100), start: 0, end: 0 });
 
   // Stabilized: every unit renting long-term. Sizes the bank refinance and the "full" stage.
-  const fullCollected = units.reduce((s, u) => s + unitCollected(u, b), 0);
-  const fullNoi = fullCollected * (1 - b.mgmtPct / 100) - fixedMo;
-  const fullReserves = (total * b.reservesPerUnit) / 12;
+  const fullGrossMo = units.reduce((s, u) => s + u.rent, 0);
+  const fullOpex = opex
+    ? computeOpex({ opex, units: total, rentedUnits: total, grossRentMonthly: fullGrossMo, applyVacancy: true, capRate: num(baseIn?.valueCapRate, 9) > 0 ? num(baseIn.valueCapRate, 9) : 9 })
+    : null;
+  const fullCollected = fullOpex ? fullOpex.effectiveRentMonthly : units.reduce((s, u) => s + unitCollected(u, b), 0);
+  const fullNoi = fullOpex ? fullOpex.noiMonthly : fullCollected * (1 - b.mgmtPct / 100) - fixedMo;
+  const fullReserves = fullOpex ? 0 : (total * b.reservesPerUnit) / 12;
   const fullCashFlow = fullNoi - fullReserves;
-  const refiLoan = Math.min(Math.max(0, pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr)), (b.refiLtv / 100) * b.value);
+  const refiValue = fullOpex && !baseIn?._valueOverride && fullOpex.value > 0 ? fullOpex.value : b.value;
+  const refiLoan = Math.min(Math.max(0, pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr)), (b.refiLtv / 100) * refiValue);
   const refiNet = refiLoan - (refiLoan * b.refiFeesPct) / 100 - b.refiFeesFlat - b.refiReserve;
   const refiPayment = pmt(b.refiRate, b.refiYears, refiLoan);
 
@@ -334,11 +344,15 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
 
   for (let m = 1; m <= plan.months; m++) {
     const renting = units.filter((u) => u.startMonth <= m);
-    const collected = renting.reduce((s, u) => s + unitCollected(u, b), 0);
-    const mgmt = collected * (b.mgmtPct / 100);
-    const operatingCosts = fixedMo + mgmt;
-    const noi = collected - operatingCosts;
-    const reserves = (renting.length * b.reservesPerUnit) / 12;
+    const mOpex = opex
+      ? computeOpex({ opex, units: total, rentedUnits: renting.length, grossRentMonthly: renting.reduce((s, u) => s + u.rent, 0), applyVacancy: true })
+      : null;
+    const collected = mOpex ? mOpex.effectiveRentMonthly : renting.reduce((s, u) => s + unitCollected(u, b), 0);
+    const mgmt = mOpex ? mOpex.mgmtHelpAnnual / 12 : collected * (b.mgmtPct / 100);
+    const rowFixedMo = mOpex ? (mOpex.fixedAnnual + mOpex.reservesAnnual + mOpex.repairsMaintAnnual) / 12 : fixedMo;
+    const operatingCosts = rowFixedMo + mgmt;
+    const noi = mOpex ? mOpex.noiMonthly : collected - operatingCosts;
+    const reserves = mOpex ? 0 : (renting.length * b.reservesPerUnit) / 12;
     const share = total ? renting.length / total : 0;
 
     const interest = (lender * lenderRateUsed) / 100 / 12;
@@ -462,7 +476,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
     const stage = refied ? 'after' : renting.length >= total ? 'full' : renting.length > units.filter((u) => u.occupied).length ? 'partial' : 'vacant';
     rows.push({
       month: m, stage, renting: renting.length, total, rentingIds: renting.map((u) => u.id), newIds: renting.filter((u) => u.startMonth === m).map((u) => u.id),
-      collected, mgmt, fixed: fixedMo, strCosts: 0, noi, reserves, seller, bank, interest, costs, costTotal,
+      collected, mgmt, fixed: rowFixedMo, strCosts: 0, noi, reserves, seller, bank, interest, costs, costTotal,
       fromPool, draw, points, lender, lenderBeforePayoff, keeps, refi, cumulative: buyerKeepsTotal + (refi && refi.left > 0 ? refi.left : 0) + exitCash - buyerCashTotal,
       sellerGap: sellerLoanPayment ? (structure === 'seller_rehab' ? seller : seller - sellerLoanPayment) : null,
       sellerLoanRemaining: structure === 'seller_rehab' ? sellerLoanBal : null,
@@ -514,7 +528,7 @@ export function monthlyPlan(structure, inputsIn = {}, baseIn = {}, planIn = {}) 
 
   return {
     structure, inputs: x, operating: o, plan, units, items, rows, stages, exit, eligibility,
-    full: { collected: fullCollected, noi: fullNoi, reserves: fullReserves, cashFlow: fullCashFlow, refiLoan, refiNet, refiPayment, refiLimitedBy: pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr) < (b.refiLtv / 100) * b.value ? 'DSCR' : 'LTV' },
+    full: { collected: fullCollected, noi: fullNoi, reserves: fullReserves, cashFlow: fullCashFlow, refiLoan, refiNet, refiPayment, refiLimitedBy: pv(b.refiRate, b.refiYears, fullCashFlow / b.refiDscr) < (b.refiLtv / 100) * refiValue ? 'DSCR' : 'LTV' },
     totals: {
       sellerTotal,
       sellerNet: plan.sellerLoanBalance ? sellerTotal - plan.sellerLoanBalance : null,
@@ -554,9 +568,14 @@ export function derivations(p) {
   const L = [];
   const full = p.full;
   const ob = p.operating?.b || {};
-  const costWords = [num(ob.mgmtPct) > 0 ? 'management' : null, 'taxes', 'insurance', num(ob.utilities) > 0 ? 'water and trash' : null, num(ob.admin) > 0 ? 'admin' : null, num(ob.turns) > 0 ? 'turns' : null].filter(Boolean);
-  const costList = costWords.length > 1 ? `${costWords.slice(0, -1).join(', ')} and ${costWords[costWords.length - 1]}` : costWords[0];
-  L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy. Less ${costList} leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
+  const opexCalc = p.operating?.opexCalc || null;
+  if (opexCalc) {
+    L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after ${opexCalc.vacancyPct}% vacancy. Less ${$(opexCalc.totalExpensesMonthly)}/mo operating costs leaves ${$(full.noi)}/mo before any payment.`]);
+  } else {
+    const costWords = [num(ob.mgmtPct) > 0 ? 'management' : null, 'taxes', 'insurance', num(ob.utilities) > 0 ? 'water and trash' : null, num(ob.admin) > 0 ? 'admin' : null, num(ob.turns) > 0 ? 'turns' : null].filter(Boolean);
+    const costList = costWords.length > 1 ? `${costWords.slice(0, -1).join(', ')} and ${costWords[costWords.length - 1]}` : costWords[0];
+    L.push(['Rent once full', `${p.units.length} units collect ${$(full.collected)}/mo after vacancy. Less ${costList} leaves ${$(full.noi)}/mo. Less reserves leaves ${$(full.cashFlow)}/mo before any payment.`]);
+  }
   if (p.structure === 'master_lease') {
     L.push(['Seller payment', `${$(x.payment)}/mo is the payment once all ${p.units.length} units rent. Each month the seller gets that times the share of units renting, so it grows as units fill. ${x.creditPct}% of every payment comes off the price.`]);
     if (p.exit) L.push(['Buy price', `${$(x.optionPrice)} locked price + ${$(x.sellerAdvances)} the seller fronted − ${$(p.exit.credits)} already credited = ${$(p.exit.sellerPayoff)} due in month ${p.exit.month}.`]);
@@ -615,7 +634,11 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
   const exit = result.exit;
   const totals = result.totals;
   const rows = result.rows;
-  const effectiveBase = base && Object.keys(base).length ? { ...b, ...base } : b;
+  const effectiveBase = {
+    ...b,
+    ...(base && Object.keys(base).length ? base : {}),
+    ...(plan.opex && !base?.opex ? { opex: plan.opex } : {}),
+  };
   const costSummary = buildCostSummary(effectiveBase, plan);
   const val = valueSummary({ base: effectiveBase, noi: full.noi * 12, units: result.units.length || b.units, comps });
   const row1 = rows[0] || {
@@ -824,9 +847,16 @@ export function buildOfferStory(result, { base = {}, comps = [], offer = null } 
           ]
         : [sellerFormula];
 
+  const fullOpexCalc = result.operating?.opexCalc || null;
   const fullLines = [
     { label: 'Rent in', value: `${money(full.collected)}/mo`, overlay: [`${result.units.length} units after ${b.vacancyPct}% vacancy = ${money(full.collected)}/mo.`] },
-    { label: 'Running costs', value: `${money(fullRunning)}/mo`, overlay: [`${b.mgmtPct > 0 ? `Management ${money(full.collected * (b.mgmtPct / 100))}/mo + ` : ''}taxes, insurance and water and trash ${money((b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12)}/mo + reserves ${money(full.reserves)}/mo = ${money(fullRunning)}/mo.`] },
+    {
+      label: 'Running costs',
+      value: `${money(fullRunning)}/mo`,
+      overlay: fullOpexCalc
+        ? fullOpexCalc.costsOverlay
+        : [`${b.mgmtPct > 0 ? `Management ${money(full.collected * (b.mgmtPct / 100))}/mo + ` : ''}taxes, insurance and water and trash ${money((b.taxes + b.insurance + b.utilities + b.admin + b.turns) / 12)}/mo + reserves ${money(full.reserves)}/mo = ${money(fullRunning)}/mo.`],
+    },
     ...(result.structure === 'seller_rehab' && result.sellerLoanPayment > 0
       ? [{ label: 'Seller loan payment', value: `${money(result.sellerLoanPayment)}/mo`, overlay: [`Paid from rent toward ${sellerLoanText(plan.sellerLoanBalance, false)}.`] }]
       : []),
@@ -1063,7 +1093,14 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
   const waterMo = Math.max(0, num(baseIn?.waterMo, 0));
   const reservesPerUnit = Math.max(0, num(baseIn?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit));
 
-  const estimatedValue = Math.max(0, num(baseIn?.value, 0));
+  const opex = resolveOpex(baseIn, plan);
+  const capRate = num(baseIn?.valueCapRate, 9) > 0 ? num(baseIn.valueCapRate, 9) : 9;
+  const opexCalc = opex
+    ? computeOpex({ opex, units: 10, rentedUnits: 10, grossRentMonthly: 10 * rent, applyVacancy: true, capRate })
+    : null;
+  const estimatedValue = opexCalc && !baseIn?._valueOverride && opexCalc.value > 0
+    ? opexCalc.value
+    : Math.max(0, num(baseIn?.value, 0));
   const refiRate = num(baseIn?.refiRate, BASE_DEFAULTS.refiRate);
   const refiYears = num(baseIn?.refiYears, BASE_DEFAULTS.refiYears);
   const refiLtv = num(baseIn?.refiLtv, BASE_DEFAULTS.refiLtv);
@@ -1072,12 +1109,12 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
   const refiFeesFlat = Math.max(0, num(baseIn?.refiFeesFlat, BASE_DEFAULTS.refiFeesFlat));
   const refiReserve = Math.max(0, num(baseIn?.refiReserve, BASE_DEFAULTS.refiReserve));
 
-  // DSCR NOI at full occupancy: rent less vacancy, taxes, insurance, water and reserves. No management, admin, turnover or old utilities.
+  // DSCR NOI at full occupancy: single-source opex when present, otherwise legacy fields.
   const fullRentMo = 10 * rent;
-  const fullCollectedMo = fullRentMo * (1 - vacancyPct / 100);
+  const fullCollectedMo = opexCalc ? opexCalc.effectiveRentMonthly : fullRentMo * (1 - vacancyPct / 100);
   const fullReservesMo = (10 * reservesPerUnit) / 12;
-  const dscrNoiMo = fullCollectedMo - taxesMo - insuranceMo - waterMo - fullReservesMo;
-  const dscrNoiAnnual = dscrNoiMo * 12;
+  const dscrNoiMo = opexCalc ? opexCalc.noiMonthly : (fullCollectedMo - taxesMo - insuranceMo - waterMo - fullReservesMo);
+  const dscrNoiAnnual = opexCalc ? opexCalc.noiAnnual : dscrNoiMo * 12;
 
   const loanByDscr = refiDscr > 0 ? Math.max(0, pv(refiRate, refiYears, dscrNoiMo / refiDscr)) : 0;
   const loanByLtv = (refiLtv / 100) * estimatedValue;
@@ -1102,8 +1139,12 @@ export function refi(baseIn = {}, planIn = {}, offerIn = {}) {
 
   const estimatedValueOverlay = [
     'Value by income',
-    dscrNoiAnnual > 0 ? `Full-occupancy NOI ${money(dscrNoiAnnual)}/yr (${money(dscrNoiMo)}/mo after vacancy, taxes, insurance, water and reserves)` : null,
-    baseIn?.valueSource ? `Source: ${String(baseIn.valueSource)}` : null,
+    dscrNoiAnnual > 0
+      ? opexCalc
+        ? `Full-occupancy NOI ${money(dscrNoiAnnual)}/yr (${money(dscrNoiMo)}/mo after operating costs) ÷ ${capRate}% cap rate = ${money(estimatedValue)}.`
+        : `Full-occupancy NOI ${money(dscrNoiAnnual)}/yr (${money(dscrNoiMo)}/mo after vacancy, taxes, insurance, water and reserves)`
+      : null,
+    !opexCalc && baseIn?.valueSource ? `Source: ${String(baseIn.valueSource)}` : null,
   ].filter(Boolean);
 
   const loanOverlay = [
@@ -1417,13 +1458,14 @@ export function unitsRentedTable(baseIn = {}, planIn = {}, offerIn = {}) {
 export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   const loanInfo = repairLoanNumbers(baseIn, planIn, offerIn);
   const { plan, rehabBudget, contingency } = loanInfo;
+  const opex = resolveOpex(baseIn, plan);
   const ourRent = Math.max(0, num(baseIn?.rent, 0));
-  const vacancyPct = num(baseIn?.vacancyPct, BASE_DEFAULTS.vacancyPct);
+  const vacancyPct = opex ? opex.vacancyPct : num(baseIn?.vacancyPct, BASE_DEFAULTS.vacancyPct);
   const taxesMo = Math.max(0, num(baseIn?.taxes, 0)) / 12;
   const insuranceMo = Math.max(0, num(baseIn?.insurance, 0)) / 12;
   const waterMo = Math.max(0, num(baseIn?.waterMo, 0));
   const emptyUnitUtilMo = Math.max(0, num(baseIn?.emptyUnitUtilMo, 0));
-  const reservesPerUnit = Math.max(0, num(baseIn?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit));
+  const reservesPerUnit = opex ? opex.reservesPerUnitAnnual : Math.max(0, num(baseIn?.reservesPerUnit, BASE_DEFAULTS.reservesPerUnit));
   const capRate = num(baseIn?.valueCapRate, 9) > 0 ? num(baseIn?.valueCapRate, 9) : 9;
   const noteInfo = sellerNote(offerIn, plan);
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
@@ -1470,6 +1512,22 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   };
 
   const view = (key, label, rented, grossMo, applyVacancy, allIn, rentOverlay) => {
+    if (opex) {
+      const calc = computeOpex({ opex, units: total, rentedUnits: rented, grossRentMonthly: grossMo, applyVacancy, capRate });
+      return {
+        key, label, rented, total,
+        rentMo: calc.effectiveRentMonthly,
+        costsMo: calc.totalExpensesMonthly,
+        netYr: calc.noiAnnual,
+        value: calc.value,
+        allIn,
+        rentOverlay: [...rentOverlay, applyVacancy ? calc.vacancyOverlayLine : null].filter(Boolean),
+        costsOverlay: calc.costsOverlay,
+        netOverlay: [`(${money(calc.effectiveRentMonthly)} − ${money(calc.totalExpensesMonthly)}) × 12 = ${money(calc.noiAnnual)}/yr`],
+        valueOverlay: [`${money(calc.noiAnnual)}/yr ÷ ${capRate}% cap rate = ${money(calc.value)}`],
+        allInOverlay: allIn > buyout ? [`${buyoutWord} ${money(buyout)}`, `Repairs ${money(repairs)}`] : [`${buyoutWord} ${money(buyout)}`],
+      };
+    }
     const rentMo = applyVacancy ? grossMo * (1 - vacancyPct / 100) : grossMo;
     const costs = costsFor(rented);
     const netYr = (rentMo - costs.amount) * 12;
@@ -1496,7 +1554,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
       units.map((u) => `Unit ${u.id}: ${money(u.marketRent ?? u.ourRent)}/mo${u.marketRent === null ? ' (our rent)' : ''}`)),
   ];
 
-  const fullCosts = costsFor(total).amount;
+  const fullCosts = views[1].costsMo;
   const allInAfter = buyout + repairs;
   // Market rent range per unit (lender and owner only; the reviewer's copy drops it) and the value range:
   // the locked value is the floor, the high end is value by income after repairs.
@@ -1505,7 +1563,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   const lowRent = baseLowRent && baseLowRent > 0 ? baseLowRent : (plan.marketRent ? plan.marketRent.low : null);
   const highRent = baseHighRent && baseHighRent > 0 ? baseHighRent : (plan.marketRent ? plan.marketRent.high : null);
   const marketRange = lowRent !== null && highRent !== null && highRent >= lowRent && lowRent > 0
-    ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter }
+    ? { low: lowRent, high: highRent, units: total, vacancyPct, costsMo: fullCosts, capRate, allIn: allInAfter, ...(opex ? { opex } : {}) }
     : null;
 
   const step = 100;
@@ -1517,8 +1575,12 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
   )].sort((a, b) => a - b);
   const caps = [capRate, capRate + 1, capRate + 2, capRate + 3];
   const grid = rents.map((r) => {
-    const rentMo = total * r * (1 - vacancyPct / 100);
-    const netYr = (rentMo - fullCosts) * 12;
+    const calc = opex
+      ? computeOpex({ opex, units: total, rentedUnits: total, grossRentMonthly: total * r, applyVacancy: true, capRate })
+      : null;
+    const rentMo = calc ? calc.effectiveRentMonthly : total * r * (1 - vacancyPct / 100);
+    const rowCosts = calc ? calc.totalExpensesMonthly : fullCosts;
+    const netYr = calc ? calc.noiAnnual : (rentMo - fullCosts) * 12;
     return {
       rent: r,
       cells: caps.map((c) => {
@@ -1530,7 +1592,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
           stabilized: r === ourRent && c === capRate,
           overlay: [
             `${total} units × ${money(r)}/mo, less ${vacancyPct}% vacancy: ${money(rentMo)}/mo`,
-            `Less costs: ${money(fullCosts)}/mo`,
+            `Less costs: ${money(rowCosts)}/mo`,
             `${money(netYr)}/yr ÷ ${c}% = ${money(value)}`,
             `All in: ${money(allInAfter)}`,
           ],
@@ -1539,7 +1601,7 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
     };
   });
 
-  const floor = Math.max(0, num(baseIn?.value, 0));
+  const floor = opex && !baseIn?._valueOverride ? views[1].value : Math.max(0, num(baseIn?.value, 0));
   const top = views[1].value;
   const valueRange = floor > 0 && top > floor
     ? { low: floor, high: top, lowOverlay: ['Value used for the refinance'], highOverlay: [...views[1].netOverlay, ...views[1].valueOverlay] }
@@ -1550,8 +1612,10 @@ export function rentValue(baseIn = {}, planIn = {}, offerIn = {}) {
 
 export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = []) {
   const plan = normalizePlan(planIn);
-  const cs = buildCostSummary(baseIn, plan);
-  const table = unitsRentedTable(baseIn, plan, offerIn);
+  const opex = resolveOpex(baseIn, plan);
+  const effectiveBase = opex && !baseIn?.opex ? { ...baseIn, opex } : baseIn;
+  const cs = buildCostSummary(effectiveBase, plan);
+  const table = unitsRentedTable(effectiveBase, plan, offerIn);
   const x = offerIn?.inputs && typeof offerIn.inputs === 'object' ? offerIn.inputs : {};
   const bridge = {
     purchase: Math.max(0, num(baseIn?.purchasePrice, 0))
@@ -1612,7 +1676,8 @@ export function buildLeadGuide(baseIn = {}, planIn = {}, offerIn = {}, _comps = 
     renoFromSeller: table.renoFromSeller,
     refi: table.refi,
     bridge,
-    rentValue: rentValue(baseIn, plan, offerIn),
+    ...(opex ? { opex } : {}),
+    rentValue: rentValue(effectiveBase, plan, offerIn),
   };
 }
 
@@ -1621,7 +1686,11 @@ export function buildSellerSummary(offer, result, { base = {}, comps = [] } = {}
   const x = result.inputs;
   const b = result.operating.b;
   const plan = result.plan;
-  const effectiveBase = base && Object.keys(base).length ? { ...b, ...base } : b;
+  const effectiveBase = {
+    ...b,
+    ...(base && Object.keys(base).length ? base : {}),
+    ...(plan.opex && !base?.opex ? { opex: plan.opex } : {}),
+  };
   const structure = offer?.structure || result.structure;
   const title = STRUCTURES[structure]?.label || String(offer?.name || '').replace(/^[A-Z]\s*:\s*/, '');
 
@@ -1861,13 +1930,15 @@ export function nextSellerSummary(offer, result, opts = {}) {
 
 // Convenience wrappers used by Offers.jsx so the owner-only dynamic module never exposes monthlyPlan/buildOfferStory identifiers in public/seller bundles.
 export function offerPlanStory(offer, base, plan, comps) {
-  const planRes = monthlyPlan(offer.structure, offer.inputs, base, plan);
-  return buildOfferStory(planRes, { base, comps, offer });
+  const b = plan?.opex && !base?.opex ? { ...base, opex: plan.opex } : base;
+  const planRes = monthlyPlan(offer.structure, offer.inputs, b, plan);
+  return buildOfferStory(planRes, { base: b, comps, offer });
 }
 
 export function offerSellerSummary(offer, base, plan, comps, force = false) {
-  const planRes = monthlyPlan(offer.structure, offer.inputs, base, plan);
+  const b = plan?.opex && !base?.opex ? { ...base, opex: plan.opex } : base;
+  const planRes = monthlyPlan(offer.structure, offer.inputs, b, plan);
   return force
-    ? buildSellerSummary(offer, planRes, { base, comps })
-    : nextSellerSummary(offer, planRes, { base, comps });
+    ? buildSellerSummary(offer, planRes, { base: b, comps })
+    : nextSellerSummary(offer, planRes, { base: b, comps });
 }

@@ -1,8 +1,10 @@
 import { buyerName } from '../lib/people.js';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { evaluate, money, valueSummary } from '../lib/dealmath.js';
-import { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES, parseLenderProtections } from '../lib/lenderModel.js';
+import { evaluate, money, moneyCents, valueSummary } from '../lib/dealmath.js';
+import { computePrivateReturn, buildFallbackRentValue, buildLenderPackage, LENDER_LENSES, parseLenderProtections } from '../lib/lenderModel.js';
+
+const fmtCents = moneyCents || money;
 import { effectiveMarketRange } from '../lib/rangeValue.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { useUploads, FileList } from '../components/Files.jsx';
@@ -56,6 +58,132 @@ function LedgerRows({ rows }) {
         );
       })}
     </dl>
+  );
+}
+
+function PrivateReturnCard({ pkg }) {
+  const min = Math.max(1000, pkg.minParticipation || 20000);
+  const max = Math.max(min, Math.round(pkg.privatePool.totalFunds || min));
+  const ratePct = pkg.privatePool.ratePct;
+  const [amount, setAmount] = useState(min);
+
+  useEffect(() => {
+    setAmount((cur) => {
+      if (!Number.isFinite(cur) || cur < min) return min;
+      if (cur > max) return max;
+      return cur;
+    });
+  }, [min, max]);
+
+  const calc = typeof computePrivateReturn === 'function'
+    ? computePrivateReturn(amount, ratePct)
+    : { amount, ratePct, monthly: (amount * ratePct) / 100 / 12, perYearAtRate: (amount * ratePct) / 100, principalBack: amount };
+  const mid = Math.max(min, Math.min(max, Math.round((min + max) / 2 / 5000) * 5000));
+
+  return (
+    <Card data-wb="private-return">
+      <CardTitle
+        aside={
+          <OverlayTrigger
+            lines={[
+              `${ratePct}% a year, interest-only, paid monthly.`,
+              'First payment after month 1. No prepayment penalty; loan can be paid off early.',
+            ]}
+            className="text-sm font-medium text-ink-soft"
+          >
+            {ratePct}% a year · IO
+          </OverlayTrigger>
+        }
+      >
+        Your return
+      </CardTitle>
+
+      <div className="rounded-2xl border border-line bg-paper p-3.5">
+        <label htmlFor="private-return-slider" className="flex items-center justify-between gap-2 text-sm font-medium text-ink">
+          <span>Your participation</span>
+          <span className="font-display text-xl font-semibold tabular-nums">{money(amount)}</span>
+        </label>
+        <input
+          id="private-return-slider"
+          type="range"
+          min={min}
+          max={max}
+          step={5000}
+          value={amount}
+          onChange={(e) => setAmount(+e.target.value)}
+          className="mt-2 w-full accent-ink"
+        />
+        <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-ink-soft">
+          <button type="button" onClick={() => setAmount(min)} className="underline decoration-dotted underline-offset-4 hover:text-ink">
+            {money(min)}
+          </button>
+          <button type="button" onClick={() => setAmount(mid)} className="underline decoration-dotted underline-offset-4 hover:text-ink">
+            {money(mid)}
+          </button>
+          <button type="button" onClick={() => setAmount(max)} className="underline decoration-dotted underline-offset-4 hover:text-ink">
+            {money(max)}
+          </button>
+        </div>
+      </div>
+
+      <dl className="mt-4 grid gap-3 sm:grid-cols-3 tabular-nums">
+        <div className="rounded-xl border border-line bg-paper p-3">
+          <dt className="text-xs text-ink-soft">Monthly income</dt>
+          <dd className="mt-1 font-display text-2xl font-semibold text-good">
+            <OverlayTrigger
+              lines={[
+                `${money(amount)} × ${ratePct}% ÷ 12 = ${fmtCents(calc.monthly)} a month.`,
+                'First payment after month 1.',
+              ]}
+              className="text-good"
+            >
+              {fmtCents(calc.monthly)}/mo
+            </OverlayTrigger>
+          </dd>
+        </div>
+        <div className="rounded-xl border border-line bg-paper p-3">
+          <dt className="text-xs text-ink-soft">Per year at {ratePct}%</dt>
+          <dd className="mt-1 font-display text-2xl font-semibold text-ink">
+            <OverlayTrigger
+              lines={[
+                `${money(amount)} × ${ratePct}% a year = ${fmtCents(calc.perYearAtRate)}/yr annualized.`,
+                'Loan can be paid off early with no prepayment penalty; 12 months is not guaranteed.',
+              ]}
+            >
+              {fmtCents(calc.perYearAtRate)}/yr
+            </OverlayTrigger>
+          </dd>
+        </div>
+        <div className="rounded-xl border border-line bg-paper p-3">
+          <dt className="text-xs text-ink-soft">Principal back at payoff</dt>
+          <dd className="mt-1 font-display text-2xl font-semibold text-ink">
+            <OverlayTrigger
+              lines={[
+                `Principal (${money(calc.principalBack)}) returned in full at payoff.`,
+                'No prepayment penalty.',
+              ]}
+            >
+              {money(calc.principalBack)}
+            </OverlayTrigger>
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 text-sm sm:grid-cols-3">
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 sm:block">
+          <dt className="text-xs text-ink-soft">Schedule</dt>
+          <dd className="font-medium text-ink">First payment after month 1</dd>
+        </div>
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 sm:block">
+          <dt className="text-xs text-ink-soft">Rate &amp; structure</dt>
+          <dd className="font-medium text-ink">{ratePct}% a year, interest-only</dd>
+        </div>
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2 sm:block">
+          <dt className="text-xs text-ink-soft">Early payoff</dt>
+          <dd className="font-medium text-ink">No prepayment penalty</dd>
+        </div>
+      </dl>
+    </Card>
   );
 }
 
@@ -121,12 +249,14 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
 
   const b = { ...base, units: 10 };
   const plan = offers?.[0] || null;
-  const e = plan && evaluate(plan.structure, plan.inputs, b);
-  const o = e?.operating;
-  const val = o ? valueSummary({ base: b, noi: o.noi, units: 10 }) : null;
   const rawGuide = isUnitsGuide(leadGuide) ? leadGuide : (isUnitsGuide(plan?.seller_summary?.guide) ? plan.seller_summary.guide : null);
+  const opexSource = rawGuide?.opex || b?.opex || null;
+  const effectiveBase = opexSource && !b?.opex ? { ...b, opex: opexSource } : b;
+  const e = plan && evaluate(plan.structure, plan.inputs, effectiveBase);
+  const o = e?.operating;
+  const val = o ? valueSummary({ base: effectiveBase, noi: o.noi, units: 10 }) : null;
   const liftedRentValue = rawGuide?.rentValue
-    ? { ...rawGuide.rentValue, marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, b) }
+    ? { ...rawGuide.rentValue, marketRange: effectiveMarketRange(rawGuide.rentValue.marketRange, effectiveBase) }
     : null;
   const effectiveGuide = rawGuide
     ? { ...rawGuide, ...(liftedRentValue ? { rentValue: liftedRentValue } : {}) }
@@ -137,13 +267,13 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
     : null);
 
   const pkg = buildLenderPackage({
-    base: b,
+    base: effectiveBase,
     offer: plan,
     guide: effectiveGuide,
     valSummary: val,
     lens: lenderLens,
   });
-  const fallbackRent = !isRentValue(effectiveGuide?.rentValue) ? buildFallbackRentValue(b, pkg) : null;
+  const fallbackRent = !isRentValue(effectiveGuide?.rentValue) ? buildFallbackRentValue(effectiveBase, pkg) : null;
 
   const heroFigure = lenderLens === 'dscr'
     ? money(pkg.refiCheck.newLoan)
@@ -194,21 +324,21 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
     },
     {
       num: 2,
-      title: 'Interest paid',
-      value: `${pkg.privatePool.ratePct}% · ${money(pkg.privatePool.monthlyInterest)}/mo`,
+      title: 'First payment after month 1',
+      value: `${pkg.privatePool.ratePct}% a year · ${fmtCents(pkg.privatePool.monthlyInterest)}/mo`,
       overlay: pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay || [],
     },
     {
       num: 3,
       title: `Minimum participation (${money(pkg.minParticipation)})`,
-      value: `${money(pkg.privatePool.minMonthlyReturn)}/mo`,
+      value: `${fmtCents(pkg.privatePool.minMonthlyReturn)}/mo`,
       overlay: pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay || [],
     },
     {
       num: 4,
-      title: pkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance',
-      value: money(Math.abs(pkg.privatePool.surplusAtRefi)),
-      overlay: pkg.privatePoolRows.find((r) => r.key === 'surplus')?.overlay || [],
+      title: 'Payoff',
+      value: 'Principal back · No prepayment penalty',
+      overlay: pkg.privatePoolRows.find((r) => r.key === 'payoff')?.overlay || [],
     },
   ];
 
@@ -320,10 +450,10 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-white/65">{pkg.privatePool.isGap ? 'Gap at refinance' : 'Surplus at refinance'}</dt>
+                    <dt className="text-xs text-white/65">Monthly income (min)</dt>
                     <dd className="mt-0.5 font-display text-lg font-semibold text-white sm:text-2xl">
-                      <OverlayTrigger lines={pkg.privatePoolRows[4]?.overlay || []} className="text-white">
-                        {money(Math.abs(pkg.privatePool.surplusAtRefi))}
+                      <OverlayTrigger lines={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay || []} className="text-white">
+                        {fmtCents(pkg.privatePool.minMonthlyReturn)}/mo
                       </OverlayTrigger>
                     </dd>
                   </div>
@@ -526,7 +656,10 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
               </div>
             )}
 
-            {/* 3b. Private lender protections (Private tab only; owner-editable in commercial_settings) */}
+            {/* 3b. Private lender return slider (Private tab only) */}
+            {lenderLens === 'private' && <PrivateReturnCard pkg={pkg} />}
+
+            {/* 3c. Private lender protections (Private tab only; owner-editable in commercial_settings) */}
             {lenderLens === 'private' && protections.length > 0 && (
               <div data-wb="private-protections">
                 <Card>
@@ -562,7 +695,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
           member={member}
           preview={preview}
           guide={effectiveGuide}
-          base={b}
+          base={effectiveBase}
           offer={plan}
           lenderLens={lenderLens}
           onLensChange={setLenderLens}
@@ -588,7 +721,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Total funds needed" value={money(pkg.privatePool.totalFunds)} overlay={pkg.privateFundsRows.find((r) => r.key === 'total')?.overlay} />
                 <Stat label="Repair budget" value={money(pkg.repairs)} overlay={guideCostSummary?.headingOverlay} />
-                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}%`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
+                <Stat label="Interest rate" value={`${pkg.privatePool.ratePct}% a year`} overlay={pkg.privateFundsRows.find((r) => r.key === 'interest')?.overlay} />
                 <Stat label="Minimum share" value={money(pkg.minParticipation)} overlay={pkg.privatePoolRows.find((r) => r.key === 'minParticipation')?.overlay} />
               </dl>
 
@@ -698,7 +831,7 @@ export default function Lender({ deal, me, member = null, preview, tab, initialL
             me={me}
             preview={preview}
             pkg={pkg}
-            base={b}
+            base={effectiveBase}
             offer={plan}
             guide={effectiveGuide}
             lens={lenderLens}

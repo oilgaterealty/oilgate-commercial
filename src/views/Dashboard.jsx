@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { evaluate, money } from '../lib/dealmath.js';
+import { evaluate, money, valueSummary } from '../lib/dealmath.js';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
 import { Card, CardTitle } from '../components/Shell.jsx';
@@ -51,29 +51,44 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
   const { offers, base, setBase } = model;
   const [planRepairBudget, setPlanRepairBudget] = useState(0);
+  const [planOpex, setPlanOpex] = useState(null);
   useEffect(() => {
     let alive = true;
     if (!owner || !loadPlanLib) {
       setPlanRepairBudget(0);
+      setPlanOpex(null);
       return () => { alive = false; };
     }
     (async () => {
       try {
         const lib = await loadPlanLib();
         const plan = await lib.loadDealPlan(supabase, deal.slug);
-        if (alive) setPlanRepairBudget(plan ? lib.overallRepairBudget(plan) : 0);
+        if (alive) {
+          setPlanRepairBudget(plan ? lib.overallRepairBudget(plan) : 0);
+          setPlanOpex(plan?.opex || null);
+        }
       } catch {
-        if (alive) setPlanRepairBudget(0);
+        if (alive) {
+          setPlanRepairBudget(0);
+          setPlanOpex(null);
+        }
       }
     })();
     return () => { alive = false; };
   }, [deal.slug, owner]);
   const visible = preview ? seenBy(role, rows) : rows || [];
   const photos = photosOf(visible);
-  const effectiveBase = planRepairBudget > 0 ? { ...base, rehab: planRepairBudget } : base;
+  const effectiveBase = {
+    ...base,
+    ...(planRepairBudget > 0 ? { rehab: planRepairBudget } : {}),
+    ...(planOpex && !base?.opex ? { opex: planOpex } : {}),
+  };
   const evals = (offers || []).map((x) => ({ x, e: evaluate(x.structure, x.inputs, effectiveBase) }));
   const best = evals.reduce((a, b) => (!a || b.e.keepMonthly > a.e.keepMonthly ? b : a), null);
   const o = evaluate('cash', {}, effectiveBase).operating;
+  const shownValue = Boolean(effectiveBase?.opex)
+    ? (valueSummary({ base: { ...o.b, ...effectiveBase }, noi: o.noi, units: o.b.units }).income ?? o.b.value)
+    : o.b.value;
   const ready = offers !== null;
 
   return (
@@ -90,7 +105,7 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {OFFER_TILES.map(([f, l]) => <CurrentOffer key={f} field={f} label={l} base={base} setBase={setBase} owner={owner} />)}
           <Tile label="Best cash flow" strong>{ready ? (best ? `${money(best.e.keepMonthly)}/mo` : 'No offers yet') : '…'}</Tile>
-          <Tile label="Value after repairs">{money(o.b.value)}</Tile>
+          <Tile label="Value after repairs">{money(shownValue)}</Tile>
           <Tile label="Repair budget">{money(o.b.rehab)}</Tile>
           <Tile label="Units">{o.b.units}</Tile>
           <Tile label="Status">{cap(deal.status)}</Tile>

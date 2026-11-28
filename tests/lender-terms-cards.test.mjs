@@ -150,12 +150,13 @@ test('Your terms strictly isolates Bridge, Private, and DSCR fields and asks', a
   assert.match(html, /aria-pressed="true"[^>]*>1\.25%<\/button>/);
   assert.equal((html.match(/Prepayment penalty/g) || []).length, 2); // ask card label + aria-label only (not duplicated in optional terms)
 
-  // Private tab: 4 asks, 8%, no processing fee, no extensions
+  // Private tab: 5 asks, 8%, no processing fee, no extensions, Prepayment penalty = None
   const privAsks = lt.wantedTerms('private', GUIDE, BASE);
-  assert.equal(Object.keys(privAsks).length, 4);
+  assert.equal(Object.keys(privAsks).length, 5);
   assert.equal(privAsks['Your participation'], 'Min $20,000 · Pool $404,550');
   assert.equal(privAsks['Interest rate'], '8%');
   assert.equal(privAsks['Lien position'], 'First-lien pooled');
+  assert.equal(privAsks['Prepayment penalty'], 'None');
   const privHtml = renderToStaticMarkup(React.createElement(lt.default, {
     deal: { id: 'd1', slug: 'charlotte' },
     me: { uid: 'l1', email: 'lender@example.com', name: 'Jordan' },
@@ -165,7 +166,7 @@ test('Your terms strictly isolates Bridge, Private, and DSCR fields and asks', a
     lenderLens: 'private',
     hideProgramTabs: true,
   }));
-  assert.equal((privHtml.match(/>Change<\/button>/g) || []).length, 4);
+  assert.equal((privHtml.match(/>Change<\/button>/g) || []).length, 5);
   assert.doesNotMatch(privHtml, /points|Processing fee|Number of extensions|Minimum DSCR|Amortization/i);
 
   // DSCR tab: 8 asks, 75% LTV Value $586,000 Loan $439,500, no points/processing/deferred/extensions

@@ -87,8 +87,10 @@ export function DealPlanView({ result, base, offers, selected, onSelect, setBase
   const explain = (...titles) => explanations.filter(([title]) => titles.includes(title)).map(([title, text]) => `${title}: ${text}`);
   const sources = Object.entries(result.plan.sources).map(([key, value]) => `${key}: ${String(value)}`);
   const sellerDetails = explain('Seller payment', ...explanations.filter(([title]) => title.startsWith('Seller') && title !== 'Seller payment').map(([title]) => title));
-  const runningDetails = [...sources, base.taxesSource && `Taxes: ${base.taxesSource}`,
-    `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance and water and trash divided by 12.`];
+  const runningDetails = result.operating?.opexCalc
+    ? [...sources, ...result.operating.opexCalc.costsOverlay]
+    : [...sources, base.taxesSource && `Taxes: ${base.taxesSource}`,
+      `Management ${result.operating.b.mgmtPct}%; fixed expenses are annual taxes, insurance and water and trash divided by 12.`];
   const { exit, totals, eligibility } = result;
   const val = valueSummary({ base: { ...result.operating.b, ...base }, noi: result.full.noi * 12, units: result.units.length || result.operating.b.units, comps });
   const unitsGuide = buildLeadGuide(base, result.plan, selected, comps);

@@ -12,8 +12,8 @@ import { createRequire } from 'node:module';
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
-import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, operating, pct, valueSummary } from '../src/lib/dealmath.js';
-import { buildLenderPackage, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
+import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, moneyCents, operating, pct, valueSummary } from '../src/lib/dealmath.js';
+import { buildLenderPackage, computePrivateReturn, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
 import { buildLeadGuide, monthlyPlan, overallRepairBudget, rentValue } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
 
@@ -172,30 +172,34 @@ test('buildLenderPackage computes separate Bridge (non-Dutch), Private (8%), and
   const bridgeText = JSON.stringify({ steps: bridgePkg.steps, loanAskRows: bridgePkg.loanAskRows, bridgeTermsRows: bridgePkg.bridgeTermsRows });
   assert.doesNotMatch(bridgeText, /\bLTV\b|DSCR|amortiz|Refi fees/i);
 
-  // Private: 275,000 + 124,050 + 5,500 = 404,550; 8% = 2,697/mo; no processing
+  // Private: 275,000 + 124,050 + 5,500 = 404,550; 8% = 2,697/mo; no processing, no points, no prepayment, no deferral, no surplus line
   const privPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'private' });
   assert.equal(privPkg.privatePool.ratePct, 8);
   assert.equal(privPkg.privatePool.pointsPct, 0);
   assert.equal(privPkg.privatePool.totalFunds, 404550);
   assert.equal(privPkg.privatePool.minParticipation, 20000);
   assert.equal(Math.round(privPkg.privatePool.monthlyInterest), 2697);
-  assert.ok(privPkg.privatePool.surplusAtRefi > 0);
+  assert.equal(privPkg.privatePool.minMonthlyReturn.toFixed(2), '133.33');
+  assert.equal(privPkg.privatePool.minAnnualReturn, 1600);
+  assert.equal(privPkg.privatePool.surplusAtRefi, undefined);
   const privText = JSON.stringify({ steps: privPkg.steps, privateFundsRows: privPkg.privateFundsRows, privatePoolRows: privPkg.privatePoolRows });
   assert.match(privText, /"display":"8%"/);
   assert.match(privText, /First-lien pooled/);
-  assert.doesNotMatch(privText, /points|processing|\$1,295|DSCR|amortiz/i);
+  assert.match(privText, /First payment after month 1/);
+  assert.match(privText, /No prepayment penalty/);
+  assert.match(privText, /Principal back at payoff/);
+  assert.doesNotMatch(privText, /points|processing|\$1,295|DSCR|amortiz|Surplus at refinance|Left over at refinance|Gap at refinance|defer/i);
   assert.doesNotMatch(privPkg.lens.lead, /points/i);
 
-  // DSCR: 75% of 586,000 = 439,500; 80% of 586,000 = 468,800; pays off bridge 414,709; refi fees 5000 + 2.1%
+  // DSCR: 75% of 586,000 = 439,500; 80% of 586,000 = 468,800; pays off bridge 414,709; refi fees 5000 + 2.1%; no surplus/left-over/gap line
   const dscrPkg = buildLenderPackage({ base: WHITEBOARD_BASE, offer: WHITEBOARD_OFFER, guide, lens: 'dscr' });
   assert.equal(dscrPkg.value, 586000);
   assert.equal(dscrPkg.refiCheck.refiLtv, 75);
   assert.equal(dscrPkg.refiCheck.newLoan, 439500);
   assert.equal(Math.round(dscrPkg.refiCheck.refiFeesTotal), 14230);
-  assert.equal(Math.round(dscrPkg.refiCheck.netAtRefi), 10561);
-  assert.equal(dscrPkg.refiCheck.isGap, false);
+  assert.equal(dscrPkg.refiCheck.netAtRefi, undefined);
   const dscrText = JSON.stringify({ steps: dscrPkg.steps, dscrLoanRows: dscrPkg.dscrLoanRows, refiCheckRows: dscrPkg.refiCheckRows });
-  assert.doesNotMatch(dscrText, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b/i);
+  assert.doesNotMatch(dscrText, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b|Surplus at refinance|Left over at refinance|Gap at refinance/i);
 
   const dscr80Pkg = buildLenderPackage({ base: { ...WHITEBOARD_BASE, refiLtv: 80 }, offer: WHITEBOARD_OFFER, guide, lens: 'dscr' });
   assert.equal(dscr80Pkg.refiCheck.refiLtv, 80);
@@ -220,8 +224,8 @@ async function buildLenderMocks(guide) {
   const CostSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': Shell });
   const LenderWhatIfMod = loadJsx('src/components/LenderWhatIf.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
-    '../lib/dealmath.js': { money },
-    '../lib/lenderModel.js': { buildLenderPackage },
+    '../lib/dealmath.js': { money, moneyCents },
+    '../lib/lenderModel.js': { buildLenderPackage, computePrivateReturn },
     './Messages.jsx': { sendToOwner: async () => null },
     './Shell.jsx': Shell,
   });
@@ -251,8 +255,8 @@ async function buildLenderMocks(guide) {
   return loadJsx('src/views/Lender.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/supabase.js': { supabase: { from: () => noopQuery, rpc: () => ({ then: () => {} }) } },
-    '../lib/dealmath.js': { evaluate, money, valueSummary },
-    '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, LENDER_LENSES, parseLenderProtections },
+    '../lib/dealmath.js': { evaluate, money, moneyCents, valueSummary },
+    '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, computePrivateReturn, LENDER_LENSES, parseLenderProtections },
     '../lib/rangeValue.js': { effectiveMarketRange },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [{ ...WHITEBOARD_OFFER, seller_summary: { guide } }], base: WHITEBOARD_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
@@ -347,13 +351,18 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(pSec.overview, /\$20,000/);
   assert.match(pSec.overview, />8%</);
   assert.match(pSec.overview, /First-lien pooled/);
-  assert.match(pSec.overview, /Surplus at refinance/);
+  assert.match(pSec.overview, /Your return/);
+  assert.match(pSec.overview, /\$133\.33\/mo/);
+  assert.match(pSec.overview, /Per year at 8%/);
+  assert.match(pSec.overview, /First payment after month 1/);
+  assert.match(pSec.overview, /No prepayment penalty/);
+  assert.match(pSec.overview, /Principal back at payoff/);
   assert.match(pSec.terms, /Private terms/);
   assert.match(pSec.terms, /Your participation/);
   assert.match(pSec.terms, />8%</);
   assert.match(pSec.plan, /Private pool plan/);
   assert.match(pSec.whatIf, /Your share/);
-  assert.doesNotMatch(pAll, /points|processing|\$1,295|DSCR|amortiz|Refinance check|Refi fees|Number of extensions/i);
+  assert.doesNotMatch(pAll, /points|processing|\$1,295|DSCR|amortiz|Refinance check|Refi fees|Number of extensions|Surplus at refinance|Left over at refinance|Gap at refinance|deferred|deferral|month 3/i);
 
   // 3. DSCR TAB
   const dscrHtml = renderToStaticMarkup(React.createElement(LenderMod.default, {
@@ -382,7 +391,8 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(dSec.plan, /DSCR refinance plan/);
   assert.match(dSec.whatIf, /75%/);
   assert.match(dSec.whatIf, /80%/);
-  assert.doesNotMatch(dAll, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b|Number of extensions/i);
+  assert.doesNotMatch(dAll, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b|Number of extensions|Surplus at refinance|Left over at refinance|Gap at refinance/i);
+  assert.doesNotMatch(bAll, /Surplus at refinance|Left over at refinance|Gap at refinance/i);
   assert.doesNotMatch(dAll, /\d+%\s*LTV\s*\(\$/i);
 });
 

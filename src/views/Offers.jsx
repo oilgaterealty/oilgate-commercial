@@ -6,7 +6,7 @@ import { useDealModel } from '../lib/useDealModel.js';
 import { SendWhatIf } from '../components/Switches.jsx';
 import CostSummary from '../components/CostSummary.jsx';
 import UnitsRentedGuide, { isUnitsGuide } from '../components/UnitsRentedGuide.jsx';
-import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, valueSummary } from '../lib/dealmath.js';
+import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, applyGuideRefi, sharedRefiStory, evaluate, grade, money, pct, syncOpexOverride, valueSummary } from '../lib/dealmath.js';
 import { Card, Button, Badge, Empty, InfoTip, OverlayTrigger } from '../components/Shell.jsx';
 import { plain } from '../lib/plain.js';
 import { breakEvenCount } from '../lib/occupancy.js';
@@ -157,7 +157,10 @@ function BuildingNumbers({ base, setBase, o, owner = false, comps }) {
           <div className="mt-3 grid gap-x-8 md:grid-cols-2">
             {BASE_FIELDS.map(([k, l, u]) => (
               <NumberRow key={k} label={l} unit={u} value={base[k] ?? BASE_DEFAULTS[k]} changed={base[k] !== undefined && base[k] !== BASE_DEFAULTS[k]}
-                onChange={(v) => setBase({ ...base, [k]: v })} />
+                onChange={(v) => {
+                  const next = syncOpexOverride ? syncOpexOverride(base, k, v) : { ...base, [k]: v };
+                  setBase(k === 'value' ? { ...next, _valueOverride: true } : next);
+                }} />
             ))}
           </div>
         )}
@@ -532,7 +535,14 @@ export default function Offers({ deal, canSave, onlyShared, me, role, preview, l
 
   const sortedOffers = useMemo(() => [...(offers || [])].sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0)), [offers]);
   const planRehab = loadPlanLib && canPlan && planState.lib && planState.plan ? planState.lib.overallRepairBudget(planState.plan) : 0;
-  const effectiveBase = planRehab > 0 ? { ...base, rehab: planRehab } : base;
+  const planOpex = loadPlanLib && canPlan && planState.plan?.opex ? planState.plan.opex : null;
+  const guideOpex = (leadGuideProp?.opex || fetchedLeadGuide?.opex || null);
+  const resolvedOpex = planOpex || guideOpex || base?.opex || null;
+  const effectiveBase = {
+    ...base,
+    ...(planRehab > 0 ? { rehab: planRehab } : {}),
+    ...(resolvedOpex ? { opex: resolvedOpex } : {}),
+  };
   const evals = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => [o.id, evaluate(o.structure, o.inputs, effectiveBase)])), [sortedOffers, effectiveBase]);
   const useStaticGuide = owner || !model.touched;
   const stories = useMemo(() => Object.fromEntries((sortedOffers || []).map((o) => {
