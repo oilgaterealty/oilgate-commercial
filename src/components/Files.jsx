@@ -89,27 +89,64 @@ export function Uploader({ deal, role, me, onDone, label = 'Upload files', allow
 
 const AUD = [['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 
-const setUpload = async (r, patch, onChange) => { await supabase.from('commercial_uploads').update(patch).eq('id', r.id); onChange?.(); };
-const toggleAudience = (r, k) => ({ audience: (r.audience || []).includes(k) ? r.audience.filter((x) => x !== k) : [...(r.audience || []), k] });
+export function toggleAudience(r, k) {
+  const current = Array.isArray(r?.audience) ? r.audience : [];
+  return { audience: current.includes(k) ? current.filter((x) => x !== k) : [...current, k] };
+}
+
+export async function setUpload(r, patch, onChange, onError, client = supabase) {
+  try {
+    const { error } = await client.from('commercial_uploads').update(patch).eq('id', r.id);
+    if (error) {
+      const msg = `Could not save sharing change${error.message ? `: ${error.message}` : '.'}`;
+      if (onError) onError(msg, error);
+      else if (typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(msg);
+      return { ok: false, error: msg };
+    }
+    onError?.('');
+    await onChange?.();
+    return { ok: true, error: '' };
+  } catch (err) {
+    const msg = `Could not save sharing change${err?.message ? `: ${err.message}` : '.'}`;
+    if (onError) onError(msg, err);
+    else if (typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(msg);
+    return { ok: false, error: msg };
+  }
+}
 
 // Share toggles for one uploaded photo, as overlay / viewer buttons. Same updates as ShareChips:
-// "Seller" for anyone who can share; "Lender" only for the owner.
-export function uploadShareButtons(r, owner, onChange) {
-  const list = [{ key: 'seller', icon: 'S', label: 'Share with seller', pressed: r.visibility === 'seller', onClick: () => void setUpload(r, { visibility: r.visibility === 'seller' ? 'team' : 'seller' }, onChange) }];
-  if (owner) list.push({ key: 'realtor', icon: 'R', label: 'Share with realtor', pressed: (r.audience || []).includes('realtor'), onClick: () => void setUpload(r, toggleAudience(r, 'realtor'), onChange) });
-  if (owner) list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: (r.audience || []).includes('lender'), onClick: () => void setUpload(r, toggleAudience(r, 'lender'), onChange) });
+// "Seller" for anyone who can share; "Realtor" and "Lender" only for the owner.
+export function uploadShareButtons(r, owner, onChange, onError) {
+  const list = [{ key: 'seller', icon: 'S', label: 'Share with seller', pressed: r.visibility === 'seller', onClick: () => void setUpload(r, { visibility: r.visibility === 'seller' ? 'team' : 'seller' }, onChange, onError) }];
+  if (owner) list.push({ key: 'realtor', icon: 'R', label: 'Share with realtor', pressed: (r.audience || []).includes('realtor'), onClick: () => void setUpload(r, toggleAudience(r, 'realtor'), onChange, onError) });
+  if (owner) list.push({ key: 'lender', icon: 'L', label: 'Share with lender', pressed: (r.audience || []).includes('lender'), onClick: () => void setUpload(r, toggleAudience(r, 'lender'), onChange, onError) });
   return list;
 }
 
 export function ShareChips({ r, onChange, owner }) {
-  const set = (patch) => setUpload(r, patch, onChange);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = async (patch) => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await setUpload(r, patch, onChange, (msg) => setSaveError(msg));
+    } finally {
+      setSaving(false);
+    }
+  };
   const chip = (on, label, fn) => (
-    <button key={label} onClick={fn} className={`min-h-[40px] rounded-full px-3 py-1 text-xs font-medium ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
+    <button key={label} type="button" disabled={saving} aria-pressed={on} onClick={fn}
+      className={`min-h-[40px] rounded-full px-3 py-1 text-xs font-medium disabled:opacity-50 ${on ? 'bg-good/10 text-good' : 'bg-warm-soft text-ink-soft'}`}>{on ? '✓ ' : ''}{label}</button>
   );
   return (
-    <div className="flex flex-wrap gap-1">
-      {chip(r.visibility === 'seller', 'Seller', () => set({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }))}
-      {owner && AUD.map(([k, l]) => chip((r.audience || []).includes(k), l, () => set(toggleAudience(r, k))))}
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-1">
+        {chip(r.visibility === 'seller', 'Seller', () => set({ visibility: r.visibility === 'seller' ? 'team' : 'seller' }))}
+        {owner && AUD.map(([k, l]) => chip((r.audience || []).includes(k), l, () => set(toggleAudience(r, k))))}
+      </div>
+      {saveError && <p role="alert" className="text-xs font-medium text-red-700">{saveError}</p>}
     </div>
   );
 }

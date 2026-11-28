@@ -64,8 +64,9 @@ export default function Photos({ deal, role, me, preview }) {
   const photos = photosOf(rows);
   const owner = role === 'owner';
   const [view, setView] = useState(null);
+  const [shareError, setShareError] = useState('');
   // Same share toggles as the chips under each photo; none in the read-only preview.
-  const shareButtons = (r) => (preview ? [] : uploadShareButtons(r, owner, load));
+  const shareButtons = (r) => (preview ? [] : uploadShareButtons(r, owner, load, setShareError));
   // One cover: starring a photo un-stars the others.
   const star = async (r) => {
     if (!r.featured) {
@@ -83,6 +84,7 @@ export default function Photos({ deal, role, me, preview }) {
         <div className="mt-4">
         <Uploader deal={deal} role={role} me={me} onDone={load} allowShare label="Upload a photo" accept={IMAGES} preview={preview} />
         </div>
+        {shareError && <p role="alert" className="mt-3 text-sm font-medium text-red-700">{shareError}</p>}
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {rows === null && <Empty>Loading…</Empty>}
           {rows && !photos.length && <Empty>Nothing here yet.</Empty>}
