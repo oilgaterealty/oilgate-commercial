@@ -480,6 +480,8 @@ export function resolveLaundryItems(source) {
 
 // "The plan" right below the offer; verified proof renders ONLY when owner-approved entries exist.
 export function ExecutionPlanCard({ content, summary, sellerOnly = false, lenderMode = false, plan = null, stepBudgets = null }) {
+  const [openSteps, setOpenSteps] = useState({});
+  const [openLaundry, setOpenLaundry] = useState({});
   const hasContentSteps = Array.isArray(content?.execution_steps) && content.execution_steps.length > 0;
   const hasSummarySteps = Boolean(summary && Array.isArray(summary.steps) && summary.steps.length > 0);
   if (sellerOnly && !hasContentSteps && !hasSummarySteps) return null;
@@ -512,73 +514,119 @@ export function ExecutionPlanCard({ content, summary, sellerOnly = false, lender
     : rawSteps;
   const proof = validProofItems(content);
   const showPlanTotals = Boolean(hasContentSteps && budgets && budgets.total > 0);
+  const toggleStep = (k) => setOpenSteps((prev) => ({ ...prev, [k]: !prev[k] }));
+  const toggleLaundry = (k) => setOpenLaundry((prev) => ({ ...prev, [k]: !prev[k] }));
   return (
     <Card>
       <CardTitle>The plan</CardTitle>
       <ol className="space-y-4">
-        {steps.map((s, i) => (
-          <li key={s.key} className="flex gap-3">
-            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              {(s.week || s.amount > 0) && (
-                <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                  {s.week ? <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{s.week}</span> : <span />}
-                  {s.amount > 0 && <span className="text-sm font-semibold tabular-nums text-ink">{fmtDollars(s.amount)}</span>}
-                </div>
-              )}
-              <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
-              {s.detail && (
-                <div className="mt-0.5 text-sm leading-relaxed text-ink">
-                  {s.overlay.length > 0 && OverlayTrigger
-                    ? <OverlayTrigger lines={s.overlay}>{s.detail}</OverlayTrigger>
-                    : s.detail}
-                </div>
-              )}
-              {s.items.length > 0 && (
-                s.structured || s.items.some((item) => item && typeof item === 'object') ? (
-                  <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-ink">
-                    {s.items.map((item, j) => {
-                      const text = typeof item === 'object' ? item.text : item;
-                      const itemKey = typeof item === 'object' ? item.budgetKey : null;
-                      const amt = typeof item === 'object' && Number.isFinite(item.amount) && item.amount > 0 ? item.amount : null;
-                      const showLaundryLines = itemKey === 'laundry' && laundryItems.length > 0;
-                      return (
-                        <li key={j} className="rounded-xl bg-paper px-3 py-2">
-                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                            <span className="min-w-0 flex-1">{text}</span>
-                            {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
-                          </div>
-                          {showLaundryLines && (
-                            <ul className="mt-2 space-y-1 border-t border-line/70 pt-2 text-xs leading-snug text-ink-soft">
-                              {laundryItems.map((li, k) => (
-                                <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                                  <span className="min-w-0 flex-1">
-                                    {li.source && OverlayTrigger
-                                      ? <OverlayTrigger lines={[li.source]} className="text-ink-soft">{li.label}</OverlayTrigger>
-                                      : li.label}
-                                  </span>
-                                  <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(li.cost)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
+        {steps.map((s, i) => {
+          const hasItems = s.items.length > 0;
+          const isStepOpen = Boolean(openSteps[s.key]);
+          const isLaundryOpen = Boolean(openLaundry[s.key]);
+          return (
+            <li key={s.key} className="flex gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                {hasItems ? (
+                  <button
+                    type="button"
+                    aria-expanded={isStepOpen}
+                    data-plan-step={s.key}
+                    onClick={() => toggleStep(s.key)}
+                    className="-mx-1.5 w-[calc(100%+0.75rem)] min-h-[44px] rounded-xl px-1.5 py-0.5 text-left transition hover:bg-paper/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
+                  >
+                    {(s.week || s.amount > 0) && (
+                      <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                        {s.week ? <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{s.week}</span> : <span />}
+                        {s.amount > 0 && <span className="text-sm font-semibold tabular-nums text-ink">{fmtDollars(s.amount)}</span>}
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
+                      <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{isStepOpen ? '▴' : '▾'}</span>
+                    </div>
+                  </button>
                 ) : (
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
-                    {s.items.map((item, j) => (
-                      <li key={j}>{item}</li>
-                    ))}
-                  </ul>
-                )
-              )}
-            </div>
-          </li>
-        ))}
+                  <>
+                    {(s.week || s.amount > 0) && (
+                      <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                        {s.week ? <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{s.week}</span> : <span />}
+                        {s.amount > 0 && <span className="text-sm font-semibold tabular-nums text-ink">{fmtDollars(s.amount)}</span>}
+                      </div>
+                    )}
+                    <h3 className="text-base font-semibold leading-snug text-ink">{s.title}</h3>
+                  </>
+                )}
+                {s.detail && (
+                  <div className="mt-0.5 text-sm leading-relaxed text-ink">
+                    {s.overlay.length > 0 && OverlayTrigger
+                      ? <OverlayTrigger lines={s.overlay}>{s.detail}</OverlayTrigger>
+                      : s.detail}
+                  </div>
+                )}
+                {hasItems && isStepOpen && (
+                  s.structured || s.items.some((item) => item && typeof item === 'object') ? (
+                    <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-ink">
+                      {s.items.map((item, j) => {
+                        const text = typeof item === 'object' ? item.text : item;
+                        const itemKey = typeof item === 'object' ? item.budgetKey : null;
+                        const amt = typeof item === 'object' && Number.isFinite(item.amount) && item.amount > 0 ? item.amount : null;
+                        const showLaundryLines = itemKey === 'laundry' && laundryItems.length > 0;
+                        return (
+                          <li key={j} className="rounded-xl bg-paper px-3 py-2">
+                            {showLaundryLines ? (
+                              <button
+                                type="button"
+                                aria-expanded={isLaundryOpen}
+                                data-plan-laundry={s.key}
+                                onClick={() => toggleLaundry(s.key)}
+                                className="flex min-h-[40px] w-full items-baseline justify-between gap-x-3 gap-y-0.5 text-left"
+                              >
+                                <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                                  <span aria-hidden="true" className="shrink-0 text-xs text-ink-soft">{isLaundryOpen ? '▴' : '▾'}</span>
+                                  <span className="min-w-0 flex-1">{text}</span>
+                                </span>
+                                {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                              </button>
+                            ) : (
+                              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                                <span className="min-w-0 flex-1">{text}</span>
+                                {amt !== null && <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(amt)}</span>}
+                              </div>
+                            )}
+                            {showLaundryLines && isLaundryOpen && (
+                              <ul className="mt-2 space-y-1 border-t border-line/70 pt-2 text-xs leading-snug text-ink-soft">
+                                {laundryItems.map((li, k) => (
+                                  <li key={k} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                                    <span className="min-w-0 flex-1">
+                                      {li.source && OverlayTrigger
+                                        ? <OverlayTrigger lines={[li.source]} className="text-ink-soft">{li.label}</OverlayTrigger>
+                                        : li.label}
+                                    </span>
+                                    <span className="shrink-0 font-semibold tabular-nums text-ink">{fmtDollars(li.cost)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-relaxed text-ink">
+                      {s.items.map((item, j) => (
+                        <li key={j}>{item}</li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ol>
       {showPlanTotals && (
         <dl className="mt-5 space-y-2 border-t border-line pt-4 text-sm tabular-nums">

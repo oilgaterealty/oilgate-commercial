@@ -216,8 +216,15 @@ async function buildLenderMocks(guide) {
     OverlayTrigger: ({ children, className }) => React.createElement('span', { className }, children),
     useSectionScroll: () => ({ activeSection: 'overview', jumpTo: () => {} }),
   };
+  const opexLib = await import('../src/lib/opex.js');
+  const OperatingBreakdownMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': Shell,
+    '../lib/dealmath.js': { money },
+    '../lib/opex.js': opexLib,
+  });
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': Shell,
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
     '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeValue, whatIfViews, whatIfGrid },
   });

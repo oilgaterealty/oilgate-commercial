@@ -38,6 +38,7 @@ function cleanSourcesMap(rawSources) {
   const s = rawSources && typeof rawSources === 'object' ? rawSources : {};
   const cleanSources = {};
   for (const [k, v] of Object.entries(s)) {
+    if (k === 'heatGas') continue;
     if (typeof v === 'string' && v.trim()) cleanSources[k] = v.trim();
   }
   return cleanSources;
@@ -129,7 +130,7 @@ export function normalizeOpex(raw) {
     taxesAnnual: num(raw.taxesAnnual, 0),
     insuranceAnnual: num(raw.insuranceAnnual, 0),
     waterSewerTrashAnnual: num(raw.waterSewerTrashAnnual, 0),
-    heatGasAnnual: num(raw.heatGasAnnual, 0),
+    commonAreaUtilitiesAnnual: num(raw.commonAreaUtilitiesAnnual, 0),
     reservesPerUnitAnnual: num(raw.reservesPerUnitAnnual, 0),
     vacancyPct: num(raw.vacancyPct, 0),
     repairsMaintPct: num(raw.repairsMaintPct, 0),
@@ -148,6 +149,140 @@ function fmtLine(label, annual, sources, key, extraNote = '') {
   const src = sources?.[key] || extraNote;
   const mo = annual / 12;
   return `${label}: ${moneyRound(mo)}/mo (${moneyRound(annual)}/yr)${src ? ` — ${src}` : ''}`;
+}
+
+export function groupOpexCalc(calc) {
+  if (!calc || typeof calc !== 'object') return [];
+  const lineMap = new Map((calc.lines || []).map((l) => [l.key, l]));
+  const take = (keys) => keys.map((k) => lineMap.get(k)).filter(Boolean);
+  const sum = (items) => items.reduce((s, l) => s + (l.annual || 0), 0);
+  const perUnitMo = calc.units > 0 ? calc.grossMonthly / calc.units : calc.grossMonthly;
+
+  const groups = [
+    {
+      key: 'rent-in',
+      label: `Rent in (after ${calc.vacancyPct}% vacancy)`,
+      subtotalAnnual: calc.effectiveRentAnnual,
+      subtotalText: `${moneyRound(calc.effectiveRentAnnual)}/yr`,
+      tone: 'default',
+      items: [
+        {
+          key: 'grossRent',
+          label: `Gross rent (${calc.units} × ${moneyRound(perUnitMo)}/mo)`,
+          valueText: `${moneyRound(calc.grossAnnual)}/yr`,
+          overlay: [`${calc.units} units × ${moneyRound(perUnitMo)}/mo = ${moneyRound(calc.grossMonthly)}/mo (${moneyRound(calc.grossAnnual)}/yr)`],
+          tone: 'default',
+        },
+        {
+          key: 'vacancy',
+          label: `Vacancy (${calc.vacancyPct}%)`,
+          valueText: `−${moneyRound(calc.vacancyAnnual)}/yr`,
+          overlay: [calc.vacancyOverlayLine].filter(Boolean),
+          tone: 'default',
+        },
+      ],
+    },
+  ];
+
+  const l = calc.laundry;
+  if (l?.enabled) {
+    groups.push({
+      key: 'laundry',
+      label: 'Laundry income (net)',
+      subtotalAnnual: l.netAnnual,
+      subtotalText: `+${moneyRound(l.netAnnual)}/yr`,
+      tone: 'good',
+      items: [
+        {
+          key: 'laundryLoads',
+          label: `Loads (${l.rentedUnits} rented)`,
+          valueText: `${Math.round(l.loads).toLocaleString('en-US')}/yr`,
+          overlay: l.overlay,
+          tone: 'default',
+        },
+        {
+          key: 'laundryGross',
+          label: 'Laundry gross',
+          valueText: `${moneyRound(l.grossAnnual)}/yr`,
+          overlay: l.overlay,
+          tone: 'default',
+        },
+        {
+          key: 'laundryCosts',
+          label: 'Laundry costs',
+          valueText: `−${moneyRound(l.costsAnnual)}/yr`,
+          overlay: l.overlay,
+          tone: 'default',
+        },
+        {
+          key: 'laundryNet',
+          label: 'Laundry net',
+          valueText: `+${moneyRound(l.netAnnual)}/yr`,
+          overlay: l.overlay,
+          tone: 'good',
+        },
+      ],
+    });
+  }
+
+  const fixedLines = take(['taxes', 'insurance', 'waterSewerTrash', 'commonAreaUtilities']);
+  if (fixedLines.length) {
+    const sub = sum(fixedLines);
+    groups.push({
+      key: 'fixed',
+      label: 'Fixed costs',
+      subtotalAnnual: -sub,
+      subtotalText: `−${moneyRound(sub)}/yr`,
+      tone: 'default',
+      items: fixedLines.map((item) => ({
+        key: item.key,
+        label: item.label,
+        valueText: `−${moneyRound(item.annual)}/yr`,
+        overlay: [item.text].filter(Boolean),
+        tone: 'default',
+      })),
+    });
+  }
+
+  const upkeepLines = take(['repairsMaint', 'reserves']);
+  if (upkeepLines.length) {
+    const sub = sum(upkeepLines);
+    groups.push({
+      key: 'upkeep',
+      label: 'Upkeep',
+      subtotalAnnual: -sub,
+      subtotalText: `−${moneyRound(sub)}/yr`,
+      tone: 'default',
+      items: upkeepLines.map((item) => ({
+        key: item.key,
+        label: item.label,
+        valueText: `−${moneyRound(item.annual)}/yr`,
+        overlay: [item.text].filter(Boolean),
+        tone: 'default',
+      })),
+    });
+  }
+
+  const opsLines = take(['mgmtHelp', 'wifi', 'cameras', 'rentalReg', 'snowLawn']);
+  if (opsLines.length) {
+    const sub = sum(opsLines);
+    groups.push({
+      key: 'operations',
+      label: 'Operations',
+      subtotalAnnual: -sub,
+      subtotalText: `−${moneyRound(sub)}/yr`,
+      tone: 'default',
+      items: opsLines.map((item) => ({
+        key: item.key,
+        label: item.label,
+        valueText: `−${moneyRound(item.annual)}/yr`,
+        overlay: [item.text].filter(Boolean),
+        tone: 'default',
+      })),
+    });
+  }
+
+  return groups;
 }
 
 export function computeOpex({
@@ -173,7 +308,7 @@ export function computeOpex({
   const taxesAnnual = n.taxesAnnual;
   const insuranceAnnual = n.insuranceAnnual;
   const waterSewerTrashAnnual = n.waterSewerTrashAnnual;
-  const heatGasAnnual = n.heatGasAnnual;
+  const commonAreaUtilitiesAnnual = n.commonAreaUtilitiesAnnual;
   const reservesAnnual = rented * n.reservesPerUnitAnnual;
   const repairsMaintAnnual = grossAnnual * (n.repairsMaintPct / 100);
   const isFlatMgmtHelp = n.mgmtHelpAnnual > 0;
@@ -186,7 +321,7 @@ export function computeOpex({
   const fixedAnnual = taxesAnnual
     + insuranceAnnual
     + waterSewerTrashAnnual
-    + heatGasAnnual
+    + commonAreaUtilitiesAnnual
     + wifiAnnual
     + camerasAnnual
     + rentalRegAnnual
@@ -229,7 +364,7 @@ export function computeOpex({
     makeLine('taxes', 'Property taxes', taxesAnnual),
     makeLine('insurance', 'Insurance', insuranceAnnual),
     makeLine('waterSewerTrash', 'Water, sewer and trash', waterSewerTrashAnnual),
-    ...(heatGasAnnual > 0 || src.heatGas ? [makeLine('heatGas', 'Heat / gas', heatGasAnnual)] : []),
+    ...(commonAreaUtilitiesAnnual > 0 ? [makeLine('commonAreaUtilities', 'Common-area gas & electric', commonAreaUtilitiesAnnual)] : []),
     makeLine('reserves', reservesLabel, reservesAnnual),
     ...(repairsMaintAnnual > 0 ? [makeLine('repairsMaint', `Repairs & maintenance (${n.repairsMaintPct}%)`, repairsMaintAnnual)] : []),
     ...(mgmtHelpAnnual > 0 ? [makeLine('mgmtHelp', mgmtLabel, mgmtHelpAnnual)] : []),
@@ -258,7 +393,7 @@ export function computeOpex({
     text: vacancyOverlayLine || `Vacancy (${vacancyPct}%): $0`,
   };
 
-  return {
+  const result = {
     normalized: n,
     units: unitCount,
     rentedUnits: rented,
@@ -271,7 +406,7 @@ export function computeOpex({
     taxesAnnual,
     insuranceAnnual,
     waterSewerTrashAnnual,
-    heatGasAnnual,
+    commonAreaUtilitiesAnnual,
     reservesAnnual,
     repairsMaintAnnual,
     mgmtHelpAnnual,
@@ -296,6 +431,8 @@ export function computeOpex({
     costsOverlay,
     vacancyOverlayLine,
   };
+  result.groups = groupOpexCalc(result);
+  return result;
 }
 
 // Keep base.opex in sync when a user edits overlapping building assumptions in local what-if controls.

@@ -69,7 +69,7 @@ test('rentValue: no management, admin or turnover lines', () => {
   assert.doesNotMatch(JSON.stringify(rv), /manag|admin|turnover/i);
 });
 
-test('RentValue renders read-only and editable, no visible subtext', () => {
+test('RentValue renders read-only and editable, no visible subtext', async () => {
   const Shell = {
     Card: ({ children }) => React.createElement('section', null, children),
     CardTitle: ({ children, aside }) => React.createElement('h2', null, children, aside),
@@ -77,7 +77,13 @@ test('RentValue renders read-only and editable, no visible subtext', () => {
     OverlayTrigger: ({ children }) => React.createElement('span', null, children),
   };
   const dealmath = { money: (v) => `$${Math.round(v)}`, moneyK: (v) => `$${Math.round(v / 1000)}K` };
-  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, '../lib/dealmath.js': dealmath, '../lib/rangeValue.js': { rangeValue: () => 123456, whatIfViews, whatIfGrid } });
+  const opexLib = await import('../src/lib/opex.js');
+  const obMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': Shell,
+    '../lib/dealmath.js': dealmath,
+    '../lib/opex.js': opexLib,
+  });
+  const mod = loadJsx('src/components/RentValue.jsx', { './Shell.jsx': Shell, './OperatingBreakdown.jsx': obMod, '../lib/dealmath.js': dealmath, '../lib/rangeValue.js': { rangeValue: () => 123456, whatIfViews, whatIfGrid } });
   const rv = rentValue(BASE, PLAN, {});
   const ro = renderToStaticMarkup(React.createElement(mod.default, { data: rv }));
   assert.match(ro, /Unit by unit/);

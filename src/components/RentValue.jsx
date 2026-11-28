@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, CardTitle, Button, OverlayTrigger } from './Shell.jsx';
+import OperatingBreakdown from './OperatingBreakdown.jsx';
 import { money, moneyK } from '../lib/dealmath.js';
 import { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid } from '../lib/rangeValue.js';
 
@@ -105,114 +106,6 @@ export function mergeViews(views) {
   return out;
 }
 
-function OperatingBreakdownCard({ calc, Trigger }) {
-  if (!calc) return null;
-  const l = calc.laundry;
-  return (
-    <Card data-wb="opex-breakdown">
-      <CardTitle
-        aside={
-          <Trigger
-            lines={[`NOI ${money(calc.noiAnnual)}/yr ÷ ${calc.capRate}% cap rate = ${money(calc.value)}`]}
-            className="text-sm font-medium text-ink-soft"
-          >
-            NOI {money(calc.noiAnnual)}/yr
-          </Trigger>
-        }
-      >
-        Operating costs &amp; laundry
-      </CardTitle>
-
-      <dl className="divide-y divide-line text-sm tabular-nums">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 first:pt-0">
-          <dt className="min-w-0 text-ink-soft">
-            Gross rent ({calc.units} units × {money(calc.grossMonthly / Math.max(1, calc.units))}/mo)
-          </dt>
-          <dd className="shrink-0 font-semibold text-ink">{money(calc.grossAnnual)}/yr</dd>
-        </div>
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2">
-          <dt className="min-w-0 text-ink-soft">
-            <Trigger lines={[calc.vacancyOverlayLine].filter(Boolean)}>Vacancy ({calc.vacancyPct}%)</Trigger>
-          </dt>
-          <dd className="shrink-0 font-semibold text-ink">−{money(calc.vacancyAnnual)}/yr</dd>
-        </div>
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 font-semibold">
-          <dt className="min-w-0 text-ink">Effective rent</dt>
-          <dd className="shrink-0 text-ink">{money(calc.effectiveRentAnnual)}/yr</dd>
-        </div>
-
-        {calc.lines.map((line) => (
-          <div key={line.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2">
-            <dt className="min-w-0 text-ink-soft">
-              <Trigger lines={[line.text]}>{line.label}</Trigger>
-            </dt>
-            <dd className="shrink-0 font-medium text-ink">
-              <Trigger lines={[line.text]}>−{money(line.annual)}/yr</Trigger>
-            </dd>
-          </div>
-        ))}
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 font-semibold">
-          <dt className="min-w-0 text-ink">Total operating costs</dt>
-          <dd className="shrink-0 text-ink">
-            <Trigger lines={calc.costsOverlay}>−{money(calc.totalExpensesAnnual)}/yr</Trigger>
-          </dd>
-        </div>
-
-        {l?.enabled && (
-          <div data-wb="laundry-income" className="space-y-1.5 py-2.5">
-            <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">
-              Laundry income ({l.stacks} stacks)
-            </div>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <dt className="min-w-0 text-ink-soft">
-                <Trigger lines={l.overlay}>Loads ({l.rentedUnits} rented)</Trigger>
-              </dt>
-              <dd className="shrink-0 font-medium text-ink">{Math.round(l.loads).toLocaleString('en-US')}/yr</dd>
-            </div>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <dt className="min-w-0 text-ink-soft">
-                <Trigger lines={l.overlay}>Laundry gross</Trigger>
-              </dt>
-              <dd className="shrink-0 font-medium text-ink">{money(l.grossAnnual)}/yr</dd>
-            </div>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-              <dt className="min-w-0 text-ink-soft">
-                <Trigger lines={l.overlay}>Laundry costs</Trigger>
-              </dt>
-              <dd className="shrink-0 font-medium text-ink">−{money(l.costsAnnual)}/yr</dd>
-            </div>
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 font-semibold">
-              <dt className="min-w-0 text-ink">
-                <Trigger lines={l.overlay}>Laundry net</Trigger>
-              </dt>
-              <dd className="shrink-0 text-good">
-                <Trigger lines={l.overlay} className="text-good">+{money(l.netAnnual)}/yr</Trigger>
-              </dd>
-            </div>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-t-2 border-ink/20 pt-3 font-semibold">
-          <dt className="min-w-0 text-ink">Yearly NOI</dt>
-          <dd className="shrink-0 font-display text-lg text-ink">{money(calc.noiAnnual)}/yr</dd>
-        </div>
-
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-2 font-semibold last:pb-0">
-          <dt className="min-w-0 text-ink">Value ({calc.capRate}% cap)</dt>
-          <dd className="shrink-0 font-display text-xl text-ink">
-            <Trigger lines={[`${money(calc.noiAnnual)}/yr ÷ ${calc.capRate}% cap rate = ${money(calc.value)}`]}>
-              {money(calc.value)}
-            </Trigger>
-          </dd>
-        </div>
-      </dl>
-    </Card>
-  );
-}
-
 export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false, rent: controlledRent = null, onRentChange = null }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
@@ -265,7 +158,7 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
   return (
     <div className="space-y-5">
       <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} rent={rent} setRent={setRent} />
-      <OperatingBreakdownCard calc={opexBreakdown} Trigger={Trigger} />
+      <OperatingBreakdown calc={opexBreakdown} Trigger={Trigger} card />
       {!hideUnits && <Card>
         <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
         <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">

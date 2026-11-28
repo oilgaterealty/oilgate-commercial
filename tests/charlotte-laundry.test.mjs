@@ -7,6 +7,7 @@ import React from 'react';
 import * as JsxRuntime from 'react/jsx-runtime';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import * as opexLib from '../src/lib/opex.js';
 import {
   DEFAULT_LAUNDRY,
   computeLaundry,
@@ -67,7 +68,7 @@ const CHARLOTTE_OPEX = {
   taxesAnnual: 13544,
   insuranceAnnual: 6500,
   waterSewerTrashAnnual: 12000,
-  heatGasAnnual: 0,
+  commonAreaUtilitiesAnnual: 1800,
   reservesPerUnitAnnual: 450,
   vacancyPct: 5,
   repairsMaintPct: 8,
@@ -80,7 +81,7 @@ const CHARLOTTE_OPEX = {
   sources: {
     taxes: '2025 county bill',
     waterSewerTrash: 'Trash is billed with water; second dumpster = $0',
-    heatGas: 'Tenants pay their own',
+    commonAreaUtilities: 'Estimate until house-meter bills are read; tenants pay their own unit heat; laundry gas/electric counted per load.',
     reserves: 'CapEx / replacement reserves ($450/unit/yr; no separate 8% CapEx)',
     vacancy: '5% of rent',
     repairsMaint: '8% of rent',
@@ -314,8 +315,11 @@ test('Part B & Part G: laundry math ($4,408/yr net) and flat $1,200/yr mgmt help
   const withLaundryOpex = computeOpex({ opex: CHARLOTTE_OPEX, laundry: CHARLOTTE_LAUNDRY, units: 10, rentedUnits: 10, grossRentMonthly: 10000, applyVacancy: true, capRate: 9 });
   assert.equal(Math.round((withLaundryOpex.noiAnnual - noLaundryOpex.noiAnnual) * 100) / 100, 4408.24);
   assert.equal(Math.round((withLaundryOpex.value - noLaundryOpex.value) * 100) / 100, Math.round((4408.24 / 0.09) * 100) / 100);
-  assert.equal(Math.round(withLaundryOpex.noiAnnual), 66874);
-  assert.equal(Math.round(withLaundryOpex.value), 743047);
+  assert.equal(Math.round(withLaundryOpex.noiAnnual), 65074);
+  assert.equal(Math.round(withLaundryOpex.value), 723047);
+  assert.equal(withLaundryOpex.commonAreaUtilitiesAnnual, 1800);
+  assert.ok(!withLaundryOpex.lines.some((l) => /heat \/ gas/i.test(l.label)));
+  assert.ok(withLaundryOpex.lines.some((l) => l.label === 'Common-area gas & electric' && l.annual === 1800));
 
   // Laundry utilities stay in laundry block (water line untouched) and mgmtHelp stays flat $1,200/yr at any rent
   assert.equal(withLaundryOpex.waterSewerTrashAnnual, 12000);
@@ -341,15 +345,15 @@ test('Part E & G: unified $1,000/unit rent aligns DSCR, RentValue, Owner, Review
   const dscrPkg80 = buildLenderPackage({ base: { ...CHARLOTTE_BASE, refiLtv: 80 }, guide, offer: CHARLOTTE_OFFER, lens: 'dscr' });
   const bridgePkg1000 = buildLenderPackage({ base: CHARLOTTE_BASE, guide, offer: CHARLOTTE_OFFER, lens: 'bridge' });
 
-  assert.equal(Math.round(rsAt1000.value), 743047);
-  assert.equal(Math.round(opAt1000.opexCalc.value), 743047);
-  assert.equal(Math.round(vsAt1000.income), 743047);
-  assert.equal(Math.round(dscrPkg1000.value), 743047);
-  assert.equal(Math.round(bridgePkg1000.value), 743047);
-  assert.equal(Math.round(dscrPkg1000.refiCheck.dscrNoiAnnual), 66874);
-  assert.equal(Math.round(dscrPkg1000.refiCheck.newLoan), 557285);
+  assert.equal(Math.round(rsAt1000.value), 723047);
+  assert.equal(Math.round(opAt1000.opexCalc.value), 723047);
+  assert.equal(Math.round(vsAt1000.income), 723047);
+  assert.equal(Math.round(dscrPkg1000.value), 723047);
+  assert.equal(Math.round(bridgePkg1000.value), 723047);
+  assert.equal(Math.round(dscrPkg1000.refiCheck.dscrNoiAnnual), 65074);
+  assert.equal(Math.round(dscrPkg1000.refiCheck.newLoan), 542285);
   assert.equal(Number(dscrPkg1000.refiCheck.actualDscr.toFixed(2)), 1.43);
-  assert.equal(Math.round(dscrPkg80.refiCheck.newLoan), 594438);
+  assert.equal(Math.round(dscrPkg80.refiCheck.newLoan), 578438);
   assert.equal(Number(dscrPkg80.refiCheck.actualDscr.toFixed(2)), 1.34);
 
   // Moving shared rent moves RentValue & DSCR together in lockstep
@@ -381,8 +385,14 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
     './Shell.jsx': SHELL_STUB,
     '../lib/dealmath.js': { money },
   });
+  const OperatingBreakdownMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': SHELL_STUB,
+    '../lib/dealmath.js': { money },
+    '../lib/opex.js': opexLib,
+  });
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': SHELL_STUB,
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
     '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
   });
@@ -443,47 +453,44 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
       preview: false,
       initialLens: lens,
     }));
-    // All 4 Speed Queen laundry items + $142,440 + $743,047 + opex + laundry income rendered on every lender tab
-    assert.match(html, /Two Speed Queen stacked washer\/dryer units/);
-    assert.match(html, /\$10,154/);
-    assert.match(html, /KioSoft Ultra V2 card readers/);
-    assert.match(html, /\$1,676/);
-    assert.match(html, /240V electrical drops/);
-    assert.match(html, /\$2,560/);
-    assert.match(html, /Cleanout, epoxy floor/);
+    // Grouped collapsed-by-default opex, CostSummary Laundry ($16,390), ExecutionPlanCard ($142,440), and $723,047 across every lender tab
+    assert.match(html, /aria-expanded="false"[^>]*data-cost-group="laundry"|data-cost-group="laundry"[^>]*aria-expanded="false"/);
+    assert.match(html, />Laundry<[\s\S]*?>\$16,390</);
     assert.match(html, /\$142,440/);
-    assert.match(html, /\$743,047/);
+    assert.match(html, /\$723,047/);
     assert.match(html, /data-wb="opex-breakdown"/);
     assert.match(html, /data-wb="laundry-income"/);
-    assert.match(html, /1,560/);
-    assert.match(html, /\$6,240/);
-    assert.match(html, /\$4,408/);
-    assert.match(html, /Property taxes/);
-    assert.match(html, /Management help/);
-    assert.match(html, /\$1,200\/yr/);
+    assert.match(html, /Rent in \(after 5% vacancy\)/);
+    assert.match(html, /Laundry income \(net\)/);
+    assert.match(html, /Fixed costs/);
+    assert.match(html, /Upkeep/);
+    assert.match(html, /Operations/);
+    assert.match(html, /\$4,408\/yr/);
+    assert.match(html, /\$65,074\/yr/);
     assert.match(html, /Paid off in full by refinance\./);
     assert.doesNotMatch(html, /l-terms-row--total/);
     assert.doesNotMatch(html, /Your renovation loan is paid off in full\./);
     assert.doesNotMatch(html, /<p\b|<small\b|<caption\b/i);
 
     const noOverlay = html.replace(/data-overlay="[^"]*"/g, '');
-    assert.doesNotMatch(noOverlay, /Speed Queen Commercial Laundry proposal|2025 county bill/i);
-    assert.match(html, /Speed Queen Commercial Laundry proposal/);
+    assert.doesNotMatch(noOverlay, /Two Speed Queen stacked washer\/dryer units|Property taxes|Common-area gas &amp; electric|Management help|Heat \/ gas/);
+    assert.doesNotMatch(noOverlay, /Speed Queen Commercial Laundry proposal|2025 county bill|Estimate until house-meter/i);
   }
 
-  // Seller plan isolation: 4 laundry budget lines + $142,440, ZERO income/opex/lender/refi
+  // Seller plan isolation: step totals & $142,440 visible, step items collapsed on load, ZERO income/opex/lender/refi
   const sellerPlanHtml = renderToStaticMarkup(React.createElement(LeadOfferCardMod.ExecutionPlanCard, {
     content: { execution_steps: EXECUTION_STEPS },
     summary: sellerSummary,
     sellerOnly: true,
   }));
-  assert.match(sellerPlanHtml, /Two Speed Queen stacked washer\/dryer units/);
-  assert.match(sellerPlanHtml, /\$10,154/);
+  assert.match(sellerPlanHtml, /aria-expanded="false"[^>]*data-plan-step="week1_secure_and_start"|data-plan-step="week1_secure_and_start"[^>]*aria-expanded="false"/);
+  assert.match(sellerPlanHtml, /\$43,690/);
+  assert.doesNotMatch(sellerPlanHtml, /Two Speed Queen stacked washer\/dryer units/);
   assert.match(sellerPlanHtml, /\$142,440/);
   assert.match(sellerPlanHtml, /Your renovation loan is paid off in full\./);
-  assert.doesNotMatch(sellerPlanHtml, /\$6,240|\$4,408|1,560 loads|NOI|743,047|DSCR|refinance/i);
+  assert.doesNotMatch(sellerPlanHtml, /\$6,240|\$4,408|1,560 loads|NOI|723,047|743,047|DSCR|refinance/i);
 
-  // Realtor WhatIfNumbers shows $743,047 & $66,874 & opex/laundry breakdown
+  // Realtor WhatIfNumbers shows $723,047 & $65,074 & grouped collapsed opex/laundry breakdown
   const SwitchesMod = loadJsx('src/components/Switches.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, evaluate, money, operating, pct, syncOpexOverride, valueSummary },
@@ -497,6 +504,7 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
       }),
     },
     './Messages.jsx': { sendToOwner: async () => null },
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     './Shell.jsx': SHELL_STUB,
   });
   const realtorHtml = renderToStaticMarkup(React.createElement(SwitchesMod.WhatIfNumbers, {
@@ -506,10 +514,12 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
     preview: false,
     planRepairBudget: 142440,
   }));
-  assert.match(realtorHtml, /\$743,047/);
-  assert.match(realtorHtml, /\$66,874/);
+  assert.match(realtorHtml, /\$723,047/);
+  assert.match(realtorHtml, /\$65,074/);
   assert.match(realtorHtml, /data-wb="opex-breakdown"/);
   assert.match(realtorHtml, /data-wb="laundry-income"/);
+  assert.match(realtorHtml, /Fixed costs/);
+  assert.doesNotMatch(realtorHtml, /Property taxes|Heat \/ gas/);
 });
 
 test('migration 0036_charlotte_laundry_unified_rent.sql has Part A/B/C/G updates and zero leaks', () => {

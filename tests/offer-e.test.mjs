@@ -195,6 +195,7 @@ test('Option E includes explanatory overlay and renders in Card, Table, Plans, a
     '../lib/supabase.js': { supabase: {} },
     '../lib/useDealModel.js': { useDealModel: () => ({}) },
     '../components/Switches.jsx': { __esModule: true, default: () => null, SendWhatIf: () => null },
+    '../components/OperatingBreakdown.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, buildLeadStory, evaluate, grade, money, pct, valueSummary },

@@ -90,7 +90,8 @@ test('How I will get this done renders the owner-set step-by-step plan in order'
     })
   );
   assert.ok(html.indexOf('Check the building') < html.indexOf('Empty occupied units'));
-  assert.match(html, /<li>Gas pressure test<\/li>/);
+  assert.match(html, /aria-expanded="false"[^>]*data-plan-step="step-0"/);
+  assert.doesNotMatch(html, /Gas pressure test/);
   assert.match(html, /Court process only\./);
   assert.doesNotMatch(html, /dropped/);
   assert.doesNotMatch(html, /Getting the property ready/);

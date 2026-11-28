@@ -216,6 +216,7 @@ test('Offers OptionCard and OptionTable render the units-rented table and refina
     '../lib/supabase.js': { supabase: {} },
     '../lib/useDealModel.js': { useDealModel: () => ({}) },
     '../components/Switches.jsx': { __esModule: true, default: () => null, SendWhatIf: () => null },
+    '../components/OperatingBreakdown.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../lib/dealmath.js': { BASE_DEFAULTS, BASE_FIELDS: [], STRUCTURES: {}, buildLeadStory, evaluate, grade: () => 'none', money, pct: (v) => `${v}%`, valueSummary },

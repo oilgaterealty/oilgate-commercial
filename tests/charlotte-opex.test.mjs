@@ -22,6 +22,7 @@ import {
   valueSummary,
 } from '../src/lib/dealmath.js';
 import { computeOpex } from '../src/lib/opex.js';
+import * as opexLib from '../src/lib/opex.js';
 import { buildLeadGuide, overallRepairBudget } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, operatingBreakdownFor, rangeSummary, rangeValue, whatIfGrid, whatIfViews } from '../src/lib/rangeValue.js';
 import { LENDER_LENSES, buildFallbackRentValue, buildLenderPackage, computePrivateReturn, parseLenderProtections } from '../src/lib/lenderModel.js';
@@ -160,7 +161,7 @@ test('computeOpex matches Brief 1 formula at $8,853.60/mo (~$51,166 NOI / ~$568,
   assert.equal(atBriefRent.taxesAnnual, 13544);
   assert.equal(atBriefRent.insuranceAnnual, 6500);
   assert.equal(atBriefRent.waterSewerTrashAnnual, 12000);
-  assert.equal(atBriefRent.heatGasAnnual, 0);
+  assert.equal(atBriefRent.commonAreaUtilitiesAnnual, 0);
   assert.equal(atBriefRent.reservesAnnual, 4500);
   assert.equal(atBriefRent.wifiAnnual, 840);
   assert.equal(atBriefRent.camerasAnnual, 200);
@@ -245,8 +246,14 @@ test('all dealmath / dealplan / rangeValue / lenderModel derivations read from s
 });
 
 test('RentValue component uses opex math, All in $420,850, zero subtext, and puts sources inside overlays only', () => {
+  const OperatingBreakdownMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': SHELL_STUB,
+    '../lib/dealmath.js': { money },
+    '../lib/opex.js': opexLib,
+  });
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': SHELL_STUB,
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
     '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
   });
@@ -278,8 +285,14 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     }),
   };
 
+  const OperatingBreakdownMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': SHELL_STUB,
+    '../lib/dealmath.js': { money },
+    '../lib/opex.js': opexLib,
+  });
   const RentValueMod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': SHELL_STUB,
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     '../lib/dealmath.js': { money, moneyK: (v) => `$${Math.round(v / 1000)}K` },
     '../lib/rangeValue.js': { defaultMarketRent, operatingBreakdownFor, rangeSummary, rangeValue, whatIfViews, whatIfGrid },
   });
@@ -374,6 +387,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
       }),
     },
     './Messages.jsx': { sendToOwner: async () => null },
+    './OperatingBreakdown.jsx': OperatingBreakdownMod,
     './Shell.jsx': SHELL_STUB,
   });
   const realtorHtml = renderToStaticMarkup(React.createElement(SwitchesMod.WhatIfNumbers, {

@@ -169,14 +169,10 @@ test('ExecutionPlanCard prefers content.execution_steps over summary.steps on se
     sellerOnly: true,
   }));
 
-  // 7 steps in order with week labels
+  // 7 steps in order with week labels (step items collapsed by default on load)
   const markers = [
     'Week 1',
     'Secure the building first',
-    'Doors, locks, cameras',
-    'Same week: start the near-ready units 5, 8, 1, 2',
-    'Get laundry running: at least one stacked set taking coins, tap/card and bills',
-    '$50 zoning letter',
     'Week 2',
     'First tenant moves in',
     'Weeks 2-3',
@@ -197,17 +193,14 @@ test('ExecutionPlanCard prefers content.execution_steps over summary.steps on se
     prev = idx;
   }
 
-  // Live step + sub-item dollar figures + single Contingency (only if used) + Total
-  assert.match(html, /\$58,350/); // week1: 10000 + 22000 + 19800 + 6550 = 58350
-  assert.match(html, /\$10,000/);
-  assert.match(html, /\$22,000/);
-  assert.match(html, /\$19,800/);
-  assert.match(html, /\$6,550/);
+  // Step totals visible on load, step items collapsed by default, single Contingency + Total
+  assert.match(html, /\$58,350/); // week1
   assert.match(html, /\$2,500/);
-  assert.match(html, /\$63,000/); // week2Onward: 52000 + 11000
-  assert.match(html, /\$52,000/);
-  assert.match(html, /\$11,000/);
+  assert.match(html, /\$63,000/); // week2Onward
   assert.match(html, /\$2,000/);
+  assert.match(html, /aria-expanded="false"[^>]*data-plan-step="week1_secure_and_start"/);
+  assert.match(html, /aria-expanded="false"[^>]*data-plan-step="weeks2_onward_bigger_units"/);
+  assert.doesNotMatch(html, /Doors, locks, cameras|\$50 zoning letter/);
   assert.equal((html.match(/Contingency \(only if used\)/g) || []).length, 1);
   assert.match(html, /\$20,000/);
   assert.match(html, /Total<\/dt><dd[^>]*>\$145,850/);
@@ -231,6 +224,7 @@ test('Realtor and Switches read live plan total ($145,850) over stale base.rehab
       }),
     },
     './Messages.jsx': { sendToOwner: async () => null },
+    './OperatingBreakdown.jsx': { __esModule: true, default: () => null },
     './Shell.jsx': ShellStub,
   });
 

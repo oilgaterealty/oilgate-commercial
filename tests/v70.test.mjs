@@ -48,11 +48,12 @@ test('every src file satisfies the wording rule', () => {
 // Render the actual view with real math and React; network-loading code is excluded.
 function loadView() {
   const costSrc = read('src/components/CostSummary.jsx')
+    .replace(/import\s+\{[^}]+\}\s+from\s+'react';/, '')
     .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/Shell\.jsx';/, '');
   const costCode = transformSync(costSrc, { loader: 'jsx', format: 'cjs', jsxFactory: 'h', jsxFragment: 'Fragment' }).code;
   const costMod = { exports: {} };
   const OverlayStub = ({ children, className }) => React.createElement('button', { type: 'button', className }, children);
-  new Function('module', 'exports', 'h', 'Fragment', 'OverlayTrigger', costCode)(costMod, costMod.exports, React.createElement, React.Fragment, OverlayStub);
+  new Function('module', 'exports', 'h', 'Fragment', 'useState', 'OverlayTrigger', costCode)(costMod, costMod.exports, React.createElement, React.Fragment, React.useState, OverlayStub);
   const CostSummary = costMod.exports.default;
 
   const ugSrc = read('src/components/UnitsRentedGuide.jsx')

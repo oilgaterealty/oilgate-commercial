@@ -68,7 +68,7 @@ const SAMPLE_OFFERS = [{
 }];
 const SAMPLE_BASE = { units: 10, rent: 950, vacancyPct: 7, taxes: 12000, insurance: 6000, waterMo: 500, reservesPerUnit: 300, value: 750000, rehab: 124050, refiRate: 7.5, refiYears: 30 };
 
-function makeOfferMocks(touched = false) {
+async function makeOfferMocks(touched = false) {
   const saves = [];
   const supabaseStub = {
     from: (table) => ({
@@ -80,6 +80,12 @@ function makeOfferMocks(touched = false) {
     }),
     rpc: async () => ({ data: null, error: null }),
   };
+  const opexLib = await import('../src/lib/opex.js');
+  const operatingBreakdownMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': SHELL_MOCK,
+    '../lib/dealmath.js': { money },
+    '../lib/opex.js': opexLib,
+  });
   const costSummaryMod = loadJsx('src/components/CostSummary.jsx', { './Shell.jsx': SHELL_MOCK });
   const unitsGuideMod = loadJsx('src/components/UnitsRentedGuide.jsx', {
     './CostSummary.jsx': costSummaryMod.default,
@@ -92,6 +98,7 @@ function makeOfferMocks(touched = false) {
     '../lib/rangeValue.js': { operatingBreakdownFor: () => null },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [], base: SAMPLE_BASE, setBase: () => {}, touched, original: { list: [], base: SAMPLE_BASE }, reset: () => {} }) },
     './Messages.jsx': { sendToOwner: async () => null },
+    './OperatingBreakdown.jsx': operatingBreakdownMod,
     './Shell.jsx': SHELL_MOCK,
   });
   const offersMod = loadJsx('src/views/Offers.jsx', {
@@ -113,6 +120,7 @@ function makeOfferMocks(touched = false) {
       }),
     },
     '../components/Switches.jsx': switchesMod,
+    '../components/OperatingBreakdown.jsx': operatingBreakdownMod,
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
@@ -125,8 +133,8 @@ function makeOfferMocks(touched = false) {
   return { saves, costSummaryMod, unitsGuideMod, switchesMod, offersMod, supabaseStub };
 }
 
-test('reviewer and lender render Offers and SendWhatIf on one page without saving', () => {
-  const { offersMod, switchesMod, unitsGuideMod, costSummaryMod, supabaseStub } = makeOfferMocks(true);
+test('reviewer and lender render Offers and SendWhatIf on one page without saving', async () => {
+  const { offersMod, switchesMod, unitsGuideMod, costSummaryMod, supabaseStub } = await makeOfferMocks(true);
 
   const reviewerMod = loadJsx('src/views/Reviewer.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
@@ -227,8 +235,8 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   assert.ok(switchesMod.WhatIfNumbers);
 });
 
-test('realtor renders WorkBoard, SellerPulse, InboxSummary, SellerOffer, and WhatIfNumbers with Tenants hidden', () => {
-  const { switchesMod, supabaseStub } = makeOfferMocks(false);
+test('realtor renders WorkBoard, SellerPulse, InboxSummary, SellerOffer, and WhatIfNumbers with Tenants hidden', async () => {
+  const { switchesMod, supabaseStub } = await makeOfferMocks(false);
   const realtorMod = loadJsx('src/views/Realtor.jsx', {
     './Walkthrough.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Walkthrough' }) },
     './Tenants.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Tenants' }) },

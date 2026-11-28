@@ -112,7 +112,7 @@ test('whatIfViews and whatIfGrid return saved views and grid when marketRange is
   assert.equal(whatIfGrid(noMr, 813), noMr.grid);
 });
 
-test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fits 2-col table on phone, and leaves non-slider mode intact', () => {
+test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fits 2-col table on phone, and leaves non-slider mode intact', async () => {
   const overlays = [];
   const Shell = {
     Card: ({ children }) => React.createElement('section', null, children),
@@ -123,8 +123,15 @@ test('RentValue renders after-vacancy Rent in /mo with gross+vacancy overlay, fi
       return React.createElement('span', { className }, children);
     },
   };
+  const opexLib = await import('../src/lib/opex.js');
+  const obMod = loadJsx('src/components/OperatingBreakdown.jsx', {
+    './Shell.jsx': Shell,
+    '../lib/dealmath.js': { money, moneyK },
+    '../lib/opex.js': opexLib,
+  });
   const mod = loadJsx('src/components/RentValue.jsx', {
     './Shell.jsx': Shell,
+    './OperatingBreakdown.jsx': obMod,
     '../lib/dealmath.js': { money, moneyK },
     '../lib/rangeValue.js': { rangeValue, whatIfViews, whatIfGrid },
   });
