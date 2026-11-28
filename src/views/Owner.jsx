@@ -1,4 +1,3 @@
-import { DictatedField } from '../components/Dictation.jsx';
 import { setDealNames } from '../lib/people.js';
 import Walkthrough from './Walkthrough.jsx';
 import Tenants from './Tenants.jsx';
@@ -19,7 +18,8 @@ import {
 import { SITE_KIND, canAccessCityRecords, canAccessDealPlan, memberPageUrl, openViewerUrl, siteRules } from '../lib/site.js';
 import { LENDER_LENS_LABELS, LENDER_LENS_OPTIONS, normalizeLenderLens } from '../lib/lenderLens.js';
 import { summarizeOpenViews } from '../lib/openViewer.js';
-import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger, useSectionScroll } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Field, Empty, InfoTip, JumpNav, OverlayTrigger } from '../components/Shell.jsx';
+import { InPagePanel } from '../components/OverlaySheet.jsx';
 import Messages from '../components/Messages.jsx';
 import Files from '../components/Files.jsx';
 import Photos from '../components/Photos.jsx';
@@ -39,21 +39,34 @@ const DealPlan = import.meta.env.VITE_SITE_KIND === 'public' || import.meta.env.
 const BASE_SECTIONS = [
   ['overview', 'Overview'],
   ['offers', 'Offers'],
-  ['rent-value', 'Rent & value'],
-  ['lenders', 'Loan & lenders'],
   ['walkthrough', 'Walkthrough'],
   ['tenants', 'Tenants'],
-  ['comps', 'Comps'],
-  ['photos', 'Photos'],
-  ['messages', 'Messages'],
-  ['files', 'Files'],
-  ['activity', 'Recent activity'],
-  ['settings', 'Settings'],
 ];
 const SECTIONS = siteRules(SITE_KIND).ownerAllowed
-  ? [...BASE_SECTIONS.slice(0, 2), ['plans', 'Plans'], ...BASE_SECTIONS.slice(2, 10), ['city-records', 'City records'], ...BASE_SECTIONS.slice(10)]
+  ? [...BASE_SECTIONS, ['plans', 'Plans']]
   : BASE_SECTIONS;
-const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
+
+const PANEL_ALIASES = {
+  photos: 'photos',
+  files: 'documents',
+  documents: 'documents',
+  messages: 'messages',
+  'city-records': 'city-records',
+  comps: 'comps',
+  activity: 'activity',
+  settings: 'settings',
+  people: 'settings',
+};
+const PANEL_TITLES = {
+  photos: 'Photos by unit',
+  documents: 'Documents',
+  messages: 'Messages',
+  'city-records': 'City records',
+  comps: 'Comps',
+  activity: 'Recent activity',
+  settings: 'Settings',
+};
+
 const ALERTED = ['realtor', 'reviewer', 'lender'];
 const MEMBER_ROLES = ['reviewer', 'lender', 'realtor', 'viewer', 'seller'];
 
@@ -432,56 +445,143 @@ export default function Owner({ deal: initial, me, tab }) {
   const [deal, setDeal] = useState(initial);
   setDealNames(deal);
   const root = `#/d/${deal.slug}`;
-  // One section at a time: Overview stays short and every other section is one tap away on the sticky bar.
-  const wanted = ({ people: 'settings' })[tab] || tab;
-  const active = SECTIONS.some(([k]) => k === wanted) ? wanted : 'overview';
-  const show = (k) => active === k;
+  const routePanel = PANEL_ALIASES[tab] || null;
+  const [panel, setPanel] = useState(routePanel);
+  const [offersExtra, setOffersExtra] = useState(() => ({
+    rentValue: tab === 'rent-value',
+    lenders: tab === 'lenders',
+  }));
+
+  useEffect(() => {
+    setPanel(PANEL_ALIASES[tab] || null);
+    if (tab === 'rent-value') setOffersExtra((p) => ({ ...p, rentValue: true }));
+    if (tab === 'lenders') setOffersExtra((p) => ({ ...p, lenders: true }));
+  }, [tab]);
+
+  const mappedTab = (tab === 'rent-value' || tab === 'lenders') ? 'offers' : tab;
+  const active = panel ? 'overview' : (SECTIONS.some(([k]) => k === mappedTab) ? mappedTab : 'overview');
+  const show = (k) => !panel && active === k;
+
   const jumpTo = (k) => {
+    if (PANEL_ALIASES[k]) {
+      openPanel(PANEL_ALIASES[k]);
+      return;
+    }
+    setPanel(null);
     const next = k === 'overview' ? root : `${root}/${k}`;
     if (window.location.hash !== next) window.location.hash = next;
     try { window.scrollTo({ top: 0 }); } catch {}
   };
-  useEffect(() => { try { window.scrollTo({ top: 0 }); } catch {} }, [active]);
+
+  const openPanel = (kind) => {
+    const clean = PANEL_ALIASES[kind] || kind;
+    setPanel(clean);
+    const next = `${root}/${clean === 'documents' ? 'files' : clean}`;
+    if (typeof window !== 'undefined' && window.location.hash !== next) {
+      window.location.hash = next;
+    }
+    try { window.scrollTo({ top: 0 }); } catch {}
+  };
+
+  const closePanel = () => {
+    setPanel(null);
+    if (typeof window !== 'undefined' && window.location.hash !== root) {
+      window.location.hash = root;
+    }
+    try { window.scrollTo({ top: 0 }); } catch {}
+  };
+
+  useEffect(() => { try { window.scrollTo({ top: 0 }); } catch {} }, [active, panel]);
+
   return (
-    <div className="space-y-8">
-      <div>
-        <JumpNav sections={SECTIONS} active={active} onJump={jumpTo} base={root} />
-        {show('overview') && <div className="flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="mr-1 text-ink-soft">See as</span>
-          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
-        </div>}
-      </div>
+    <div className="space-y-6">
+      <JumpNav sections={SECTIONS} active={active} onJump={jumpTo} base={root} />
+
+      <InPagePanel open={Boolean(panel)} kind={panel || 'panel'} title={PANEL_TITLES[panel] || ''} onClose={closePanel}>
+        {panel === 'photos' && (
+          <div className="space-y-5">
+            <UnitGallery deal={deal} me={me} role="owner" />
+            <Photos deal={deal} role="owner" me={me} />
+          </div>
+        )}
+        {panel === 'documents' && (
+          <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />
+        )}
+        {panel === 'messages' && (
+          <Messages deal={deal} me={me} role="owner" />
+        )}
+        {panel === 'city-records' && CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
+          <Suspense fallback={<Empty>Loading…</Empty>}>
+            <CityRecords deal={deal} role="owner" />
+          </Suspense>
+        )}
+        {panel === 'comps' && (
+          <Comps deal={deal} me={me} role="owner" />
+        )}
+        {panel === 'activity' && (
+          <Activity deal={deal} title="Recent activity" />
+        )}
+        {panel === 'settings' && (
+          <div className="space-y-6">
+            <People deal={deal} />
+            <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+              <Settings deal={deal} onSaved={setDeal} />
+              <OwnerAlerts />
+            </div>
+            <Suspense fallback={null}>
+              <ProtectionsEditor deal={deal} onSaved={setDeal} />
+            </Suspense>
+            <Notes deal={deal} me={me} />
+          </div>
+        )}
+      </InPagePanel>
 
       {show('overview') && (
         <section id="sec-overview" data-section="overview" className="scroll-mt-20">
-          <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} />
+          <Dashboard deal={deal} me={me} role="owner" onJump={jumpTo} onOpenPanel={openPanel} />
         </section>
       )}
 
       {show('offers') && (
-        <section id="sec-offers" data-section="offers" className="scroll-mt-20">
+        <section id="sec-offers" data-section="offers" className="scroll-mt-20 space-y-5">
           <Offers deal={deal} canSave me={me} role="owner" />
-        </section>
-      )}
 
-      {show('plans') && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
-        <section id="sec-plans" data-section="plans" className="scroll-mt-20">
-          <Suspense fallback={<Empty>Loading…</Empty>}>
-            <DealPlan key={deal.id} deal={deal} role="owner" />
-          </Suspense>
-        </section>
-      )}
+          <Card>
+            <button
+              type="button"
+              aria-expanded={offersExtra.rentValue}
+              data-owner-offers-group="rent-value"
+              onClick={() => setOffersExtra((p) => ({ ...p, rentValue: !p.rentValue }))}
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+            >
+              <span className="font-display text-xl font-semibold text-ink">Rent &amp; value</span>
+              <span aria-hidden="true" className="text-sm text-ink-soft">{offersExtra.rentValue ? '▴' : '▾'}</span>
+            </button>
+            {offersExtra.rentValue && (
+              <div className="mt-4 border-t border-line pt-4">
+                <OwnerRentValue deal={deal} />
+              </div>
+            )}
+          </Card>
 
-      {show('rent-value') && (
-        <section id="sec-rent-value" data-section="rent-value" className="scroll-mt-20">
-          <OwnerRentValue deal={deal} />
-        </section>
-      )}
-
-      {show('lenders') && (
-        <section id="sec-lenders" data-section="lenders" className="scroll-mt-20 space-y-5">
-          <LoanPosition deal={deal} role="owner" />
-          <LenderBoard deal={deal} me={me} role="owner" />
+          <Card>
+            <button
+              type="button"
+              aria-expanded={offersExtra.lenders}
+              data-owner-offers-group="lenders"
+              onClick={() => setOffersExtra((p) => ({ ...p, lenders: !p.lenders }))}
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+            >
+              <span className="font-display text-xl font-semibold text-ink">Loan &amp; lenders</span>
+              <span aria-hidden="true" className="text-sm text-ink-soft">{offersExtra.lenders ? '▴' : '▾'}</span>
+            </button>
+            {offersExtra.lenders && (
+              <div className="mt-4 space-y-5 border-t border-line pt-4">
+                <LoanPosition deal={deal} role="owner" />
+                <LenderBoard deal={deal} me={me} role="owner" />
+              </div>
+            )}
+          </Card>
         </section>
       )}
 
@@ -497,56 +597,11 @@ export default function Owner({ deal: initial, me, tab }) {
         </section>
       )}
 
-      {show('comps') && (
-        <section id="sec-comps" data-section="comps" className="scroll-mt-20">
-          <Comps deal={deal} me={me} role="owner" />
-        </section>
-      )}
-
-      {show('photos') && (
-        <section id="sec-photos" data-section="photos" className="scroll-mt-20 space-y-5">
-          <UnitGallery deal={deal} me={me} role="owner" />
-          <Photos deal={deal} role="owner" me={me} />
-        </section>
-      )}
-
-      {show('messages') && (
-        <section id="sec-messages" data-section="messages" className="scroll-mt-20">
-          <Messages deal={deal} me={me} role="owner" />
-        </section>
-      )}
-
-      {show('files') && (
-        <section id="sec-files" data-section="files" className="scroll-mt-20">
-          <Files deal={deal} role="owner" me={me} title="Every upload" canShare allowShare />
-        </section>
-      )}
-
-      {show('city-records') && CityRecords && canAccessCityRecords(SITE_KIND, 'owner', false) && (
-        <section id="sec-city-records" data-section="city-records" className="scroll-mt-20">
+      {show('plans') && DealPlan && canAccessDealPlan(SITE_KIND, 'owner', false) && (
+        <section id="sec-plans" data-section="plans" className="scroll-mt-20">
           <Suspense fallback={<Empty>Loading…</Empty>}>
-            <CityRecords deal={deal} role="owner" />
+            <DealPlan key={deal.id} deal={deal} role="owner" />
           </Suspense>
-        </section>
-      )}
-
-      {show('activity') && (
-        <section id="sec-activity" data-section="activity" className="scroll-mt-20">
-          <Activity deal={deal} title="Recent activity" />
-        </section>
-      )}
-
-      {show('settings') && (
-        <section id="sec-settings" data-section="settings" className="scroll-mt-20 space-y-6">
-          <People deal={deal} />
-          <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-            <Settings deal={deal} onSaved={setDeal} />
-            <OwnerAlerts />
-          </div>
-          <Suspense fallback={null}>
-            <ProtectionsEditor deal={deal} onSaved={setDeal} />
-          </Suspense>
-          <Notes deal={deal} me={me} />
         </section>
       )}
     </div>

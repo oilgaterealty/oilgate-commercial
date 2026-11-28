@@ -96,8 +96,29 @@ export default function DealRoom({ slug, tab, sub, session, urlLens = '' }) {
     );
   }
 
+  const settingsActive = tab === 'settings' || tab === 'people';
+  const ownerHeaderAction = state.role === 'owner' ? (
+    <a
+      href={settingsActive ? `#/d/${state.deal.slug}` : `#/d/${state.deal.slug}/settings`}
+      aria-label="Settings"
+      aria-pressed={settingsActive}
+      data-settings-gear="true"
+      title="Settings"
+      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border transition ${
+        settingsActive
+          ? 'border-ink bg-ink text-white'
+          : 'border-line bg-white text-ink hover:border-ink'
+      }`}
+    >
+      <svg aria-hidden="true" viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="10" cy="10" r="2.6" />
+        <path d="M10 2.5v1.6M10 15.9v1.6M4.7 4.7l1.1 1.1M14.2 14.2l1.1 1.1M2.5 10h1.6M15.9 10h1.6M4.7 15.3l1.1-1.1M14.2 5.8l1.1-1.1" />
+      </svg>
+    </a>
+  ) : null;
+
   return (
-    <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} role={state.role} />} wide={state.role === 'seller' || state.role === 'owner'}>
+    <Shell session={session} role={roleLabel[state.role]} head={<PropertyHead deal={state.deal} role={state.role} />} headerAction={ownerHeaderAction} wide={state.role === 'seller' || state.role === 'owner'}>
       <Suspense fallback={<Empty>Loading…</Empty>}>
         <Page role={state.role} deal={state.deal} me={me} member={state.member} session={session} tab={tab} initialLens={initialLens} urlLens={cleanUrlLens} />
       </Suspense>

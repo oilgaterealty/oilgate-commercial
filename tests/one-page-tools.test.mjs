@@ -143,6 +143,7 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
     '../lib/supabase.js': { supabase: supabaseStub },
     '../lib/dealmath.js': { evaluate, operating, money, pct, valueSummary },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: SAMPLE_OFFERS, base: SAMPLE_BASE }) },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../components/Shell.jsx': SHELL_MOCK,
     '../components/Dictation.jsx': { DictatedField: ({ as: Tag = 'input', ...p }) => React.createElement(Tag, p) },
     '../components/Messages.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Messages' }), sendToOwner: async () => null },
@@ -151,7 +152,12 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
       Uploader: () => React.createElement('div', { 'data-mock': 'Uploader' }),
       FileList: () => React.createElement('div', { 'data-mock': 'FileList' }),
     },
-    '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', { 'data-mock': 'InPagePanel' }, children) : null),
+      OverviewActionButtons: () => React.createElement('div', { 'data-mock': 'OverviewActionButtons' }),
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/PropertyFacts.jsx': { __esModule: true, default: ({ slug }) => React.createElement('div', { 'data-mock': 'PropertyFacts', 'data-slug': slug }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'UnitGallery' }) },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
@@ -163,6 +169,8 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   const revHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'reviewer', preview: false }));
   assert.match(revHtml, /data-section="overview"/);
   assert.match(revHtml, /data-section="offers"/);
+  assert.match(revHtml, /data-section="comps"/);
+  assert.match(revHtml, /data-mock="OverviewActionButtons"/);
   assert.match(revHtml, /Send to Buyer/);
   assert.match(revHtml, /Quick opinion/);
   assert.match(revHtml, /Building numbers/);
@@ -171,25 +179,23 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
   assert.match(revHtml, /Yearly return on value/);
   assert.match(revHtml, /Repair budget/);
   assert.match(revHtml, /Refinance/);
-  assert.match(revHtml, /Send us files/);
   assert.match(revHtml, /data-mock="Comps"/);
-  assert.match(revHtml, /data-mock="UnitGallery"/);
-  assert.match(revHtml, /data-mock="Messages"/);
+  const revDocsHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'reviewer', preview: false, tab: 'documents' }));
+  assert.match(revDocsHtml, /Send us files/);
+  const revPhotosHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'reviewer', preview: false, tab: 'photos' }));
+  assert.match(revPhotosHtml, /data-mock="UnitGallery"/);
+  const revMsgsHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'reviewer', preview: false, tab: 'messages' }));
+  assert.match(revMsgsHtml, /data-mock="Messages"/);
   assert.doesNotMatch(revHtml, /StrategyIdeas|data-section="ideas"/);
 
   const viewerHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'viewer', preview: false }));
   assert.match(viewerHtml, /data-mock="Cover"/);
   assert.match(viewerHtml, /data-mock="PropertyFacts"/);
   assert.match(viewerHtml, /data-slug="charlotte"/);
-  assert.match(viewerHtml, /data-mock="UnitGallery"/);
   assert.match(viewerHtml, /Request access/);
-  assert.match(viewerHtml, /Lender/);
-  assert.match(viewerHtml, /Reviewer/);
   assert.doesNotMatch(viewerHtml, /The property|10-unit residential property|Building numbers|Send to Buyer|Quick opinion|data-section="offers"|data-section="messages"/);
-
-  const viewerPreviewHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'viewer', preview: true }));
-  assert.match(viewerPreviewHtml, /Request access/);
-  assert.match(viewerPreviewHtml, /<button[^>]*type="submit"[^>]*disabled=""/);
+  const viewerPhotosHtml = renderToStaticMarkup(React.createElement(reviewerMod.default, { deal: DEAL, me: ME, role: 'viewer', preview: false, tab: 'photos' }));
+  assert.match(viewerPhotosHtml, /data-mock="UnitGallery"/);
 
   const lenderWhatIfMod = loadJsx('src/components/LenderWhatIf.jsx', {
     '../lib/people.js': { buyerName: () => 'Buyer' },
@@ -205,16 +211,21 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
     '../lib/dealmath.js': { evaluate, money, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue, buildLenderPackage, LENDER_LENSES },
     '../lib/rangeValue.js': { effectiveMarketRange },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../lib/plain.js': { plain },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: SAMPLE_OFFERS, base: SAMPLE_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => React.createElement('div', { 'data-mock': 'FileList' }) },
-    '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => React.createElement('div', { 'data-mock': 'Cover' }), photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', { 'data-mock': 'InPagePanel' }, children) : null),
+      OverviewActionButtons: () => React.createElement('div', { 'data-mock': 'OverviewActionButtons' }),
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'UnitGallery' }) },
     '../components/CostSummary.jsx': costSummaryMod,
     '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': unitsGuideMod,
     '../components/RentValue.jsx': { __esModule: true, default: () => null, isRentValue: () => false },
-    '../components/LenderWhatIf.jsx': lenderWhatIfMod,
     '../components/Shell.jsx': SHELL_MOCK,
     '../components/Messages.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Messages' }) },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
@@ -224,18 +235,21 @@ test('reviewer and lender render Offers and SendWhatIf on one page without savin
 
   const lenderHtml = renderToStaticMarkup(React.createElement(lenderMod.default, { deal: DEAL, me: ME, preview: false }));
   assert.match(lenderHtml, /data-section="plan"/);
-  assert.match(lenderHtml, /data-section="what-if"/);
   assert.match(lenderHtml, /data-section="terms"/);
+  assert.doesNotMatch(lenderHtml, /data-section="what-if"/);
   assert.match(lenderHtml, /Bridge loan plan/);
-  assert.match(lenderHtml, /Loan assumptions/);
   assert.match(lenderHtml, /data-mock="LenderTerms"/);
-  assert.match(lenderHtml, /Supporting documents/);
-  assert.match(lenderHtml, /data-mock="UnitGallery"/);
-  assert.match(lenderHtml, /data-mock="Messages"/);
+  const lenderDocsHtml = renderToStaticMarkup(React.createElement(lenderMod.default, { deal: DEAL, me: ME, preview: false, tab: 'documents' }));
+  assert.match(lenderDocsHtml, /Supporting documents/);
+  const lenderPhotosHtml = renderToStaticMarkup(React.createElement(lenderMod.default, { deal: DEAL, me: ME, preview: false, tab: 'photos' }));
+  assert.match(lenderPhotosHtml, /data-mock="UnitGallery"/);
+  const lenderMsgsHtml = renderToStaticMarkup(React.createElement(lenderMod.default, { deal: DEAL, me: ME, preview: false, tab: 'messages' }));
+  assert.match(lenderMsgsHtml, /data-mock="Messages"/);
   assert.ok(switchesMod.WhatIfNumbers);
+  assert.ok(lenderWhatIfMod);
 });
 
-test('realtor renders WorkBoard, SellerPulse, InboxSummary, SellerOffer, and WhatIfNumbers with Tenants hidden', async () => {
+test('realtor renders WorkBoard, SellerPulse, Latest, SellerOffer, and WhatIfNumbers with Tenants hidden', async () => {
   const { switchesMod, supabaseStub } = await makeOfferMocks(false);
   const realtorMod = loadJsx('src/views/Realtor.jsx', {
     './Walkthrough.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Walkthrough' }) },
@@ -258,7 +272,14 @@ test('realtor renders WorkBoard, SellerPulse, InboxSummary, SellerOffer, and Wha
       default: () => React.createElement('div', { 'data-mock': 'Photos' }),
       Cover: () => React.createElement('div', { 'data-mock': 'Cover' }),
       photosOf: () => [],
+      useDealGallery: () => ({ items: [] }),
     },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', { 'data-mock': 'InPagePanel' }, children) : null),
+      OverviewActionButtons: () => React.createElement('div', { 'data-mock': 'OverviewActionButtons' }),
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'UnitGallery' }) },
     '../components/Activity.jsx': { __esModule: true, default: () => React.createElement('div', { 'data-mock': 'Activity' }) },
     '../components/Pulse.jsx': {
@@ -278,17 +299,21 @@ test('realtor renders WorkBoard, SellerPulse, InboxSummary, SellerOffer, and Wha
 
   const html = renderToStaticMarkup(React.createElement(realtorMod.default, { deal: DEAL, me: ME, preview: false }));
   assert.match(html, /data-mock="WorkBoard"/);
-  assert.match(html, /data-mock="SellerPulse"/);
-  assert.match(html, /data-mock="InboxSummary"/);
+  assert.match(html, /data-mock="Activity"/);
+  assert.match(html, /data-mock="OverviewActionButtons"/);
   assert.match(html, /data-mock="SellerOffer"/);
   assert.match(html, /What-if numbers/);
   assert.match(html, /data-mock="Walkthrough"/);
-  assert.match(html, /data-mock="Comps"/);
-  assert.match(html, /data-mock="Files"/);
-  assert.match(html, /data-mock="Messages"/);
   assert.doesNotMatch(html, /data-mock="Tenants"/);
   assert.doesNotMatch(read('src/views/Realtor.jsx'), /<Offers\b/);
-  assert.doesNotMatch(html.slice(html.indexOf('data-section="overview"'), html.indexOf('data-section="tasks"')), /data-mock="Activity"/);
+  const compsPanel = renderToStaticMarkup(React.createElement(realtorMod.default, { deal: DEAL, me: ME, preview: false, tab: 'comps' }));
+  assert.match(compsPanel, /data-mock="Comps"/);
+  const filesPanel = renderToStaticMarkup(React.createElement(realtorMod.default, { deal: DEAL, me: ME, preview: false, tab: 'documents' }));
+  assert.match(filesPanel, /data-mock="Files"/);
+  const msgsPanel = renderToStaticMarkup(React.createElement(realtorMod.default, { deal: DEAL, me: ME, preview: false, tab: 'messages' }));
+  assert.match(msgsPanel, /data-mock="Messages"/);
+  const activityPanel = renderToStaticMarkup(React.createElement(realtorMod.default, { deal: DEAL, me: ME, preview: false, tab: 'activity' }));
+  assert.match(activityPanel, /data-mock="SellerPulse"/);
 });
 
 test('owner Building numbers include editable rent and exclude tenthUnitRepair; Owner keeps Activity lower', () => {
@@ -302,9 +327,8 @@ test('owner Building numbers include editable rent and exclude tenthUnitRepair; 
 
   const ownerSrc = read('src/views/Owner.jsx');
   assert.match(ownerSrc, /<OwnerRentValue deal=\{deal\} \/>/);
-  assert.match(ownerSrc, /id="sec-activity"[\s\S]*?<Activity deal=\{deal\} title="Recent activity" \/>/);
-  assert.ok(ownerSrc.indexOf('sec-overview') < ownerSrc.indexOf('sec-activity'));
-  assert.doesNotMatch(read('src/views/Dashboard.jsx'), /<Activity/);
+  assert.match(ownerSrc, /panel === 'activity'[\s\S]*?<Activity deal=\{deal\} title="Recent activity"/);
+  assert.match(read('src/views/Dashboard.jsx'), /<Activity deal=\{deal\} title="Latest" compactLimit=\{3\}/);
   assert.match(read('src/views/Dashboard.jsx'), /<WorkBoard/);
 });
 

@@ -13,12 +13,14 @@ function LinkedText({ text }) {
 }
 
 // Separate, explicitly shared working material. Never pulls private owner notes or offers.
-export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tasks' }) {
+export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tasks', compactLimit = null }) {
   const [rows, setRows] = useState(null);
   const [body, setBody] = useState('');
   const [audience, setAudience] = useState(kind === 'task' ? 'shared' : 'realtor');
   const [error, setError] = useState('');
   const [pending, setPending] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const load = async () => {
     const r = await supabase.from('commercial_work_items').select('*').eq('deal_id', deal.id).eq('kind', kind).order('created_at', { ascending: false });
     setError(r.error ? 'This list didn’t load. Please refresh, or message the buyer.' : '');
@@ -34,7 +36,9 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
     let r = await supabase.from('commercial_work_items').insert(row);
     if (r.error && row.assignee) { delete row.assignee; r = await supabase.from('commercial_work_items').insert(row); }
     if (r.error) return setError('Could not save. Your text is still here; try again.');
-    setBody(''); await load();
+    setBody('');
+    if (compactLimit) setAddOpen(false);
+    await load();
   };
   const toggle = async row => {
     if (pending) return;
@@ -45,9 +49,47 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
     else setError('');
     setPending('');
   };
-  return <Card><CardTitle>{title}</CardTitle>
+
+  const sortedRows = rows === null
+    ? null
+    : kind === 'task'
+      ? [...rows].sort((a, b) => Number(Boolean(a.done)) - Number(Boolean(b.done)))
+      : rows;
+  const hasCompactCap = Number.isFinite(compactLimit) && compactLimit > 0;
+  const visibleRows = sortedRows && hasCompactCap && !showAll ? sortedRows.slice(0, compactLimit) : sortedRows;
+  const hasMore = Boolean(sortedRows && hasCompactCap && sortedRows.length > compactLimit);
+  const canAdd = !preview && (role === 'owner' || kind !== 'research');
+
+  const aside = (hasMore || (hasCompactCap && canAdd)) ? (
+    <div className="flex flex-wrap items-center gap-3">
+      {hasMore && (
+        <button
+          type="button"
+          data-tasks-see-all
+          aria-expanded={showAll}
+          onClick={() => setShowAll((v) => !v)}
+          className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+        >
+          {showAll ? 'Show fewer' : `See all (${sortedRows.length})`}
+        </button>
+      )}
+      {hasCompactCap && canAdd && (
+        <button
+          type="button"
+          data-tasks-add-toggle
+          aria-expanded={addOpen}
+          onClick={() => setAddOpen((v) => !v)}
+          className="inline-flex min-h-[40px] items-center rounded-full border border-line bg-paper px-3 py-1 text-xs font-semibold text-ink hover:border-ink"
+        >
+          {addOpen ? 'Cancel' : `+ Add ${kind}`}
+        </button>
+      )}
+    </div>
+  ) : null;
+
+  return <Card><CardTitle aside={aside}>{title}</CardTitle>
     {error && <p role="alert" className="mb-3 text-sm text-red-700">{error}</p>}
-    {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The buyer posts findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{rows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
+    {visibleRows === null ? <Empty>Loading…</Empty> : !visibleRows.length ? <Empty>{kind === 'research' ? 'No research shared yet. The buyer posts findings here.' : kind === 'update' ? 'No updates yet.' : 'No tasks yet.'}</Empty> : <ul className="divide-y divide-line">{visibleRows.map(r => <li key={r.id} className="flex gap-3 py-3 text-sm">
       {kind === 'task' && (
         <label className="inline-flex min-h-[40px] min-w-[40px] shrink-0 cursor-pointer items-center justify-center">
           <input type="checkbox" aria-label={`Complete ${r.body}`} checked={r.done} disabled={Boolean(pending) || preview || (role !== 'owner' && r.author_role !== 'owner' && r.author_email !== me.email)} onChange={() => toggle(r)} className="h-5 w-5 rounded border-line accent-ink" />
@@ -55,7 +97,7 @@ export function WorkBoard({ deal, role, me, preview, kind = 'task', title = 'Tas
       )}
       <div className="flex min-w-0 items-start gap-2"><p className={`min-w-0 whitespace-pre-wrap ${r.done ? 'line-through text-ink-soft' : ''}`}><LinkedText text={r.body} /></p><InfoTip label="Who this is for" lines={[`${r.assignee ? `For ${r.assignee}` : r.author_email === me.email ? 'Added by you' : `Added by ${roleLabel[r.author_role] || 'the team'}`}${role === 'owner' && !r.assignee ? ` · seen by ${r.audience.join(', ') || 'only you'}` : ''}`]} /></div>
     </li>)}</ul>}
-    {!preview && (role === 'owner' || kind !== 'research') && <form onSubmit={add} className="mt-4 space-y-2">
+    {canAdd && (!hasCompactCap || addOpen) && <form onSubmit={add} className="mt-4 space-y-2">
       <DictatedField as="textarea" aria-label={`New ${kind}`} required maxLength={4000} value={body} onChange={e => setBody(e.target.value)} placeholder={kind === 'task' ? 'A task or question…' : kind === 'update' ? 'An update…' : 'Research to share…'} className="w-full rounded-xl border border-line px-3 py-2" />
       <div className="flex flex-wrap gap-2">{role === 'owner' && <select aria-label={kind === 'task' ? 'Who it is for' : 'Share with'} value={audience} onChange={e => setAudience(e.target.value)} className="rounded-xl border border-line px-3 py-2">{FOR().filter(([k]) => kind === 'task' || k !== 'shared').map(([k, l]) => <option key={k} value={k}>{kind === 'task' ? `For ${l}` : k === 'owner' ? 'Only me' : `Share with ${l.toLowerCase()}`}</option>)}</select>}<Button type="submit" disabled={!body.trim()}>Add {kind}</Button></div>
     </form>}

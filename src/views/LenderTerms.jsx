@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { when } from '../lib/format.js';
 import { lenderBoard } from '../lib/v63.js';
-import { Card, CardTitle, Button, Empty } from '../components/Shell.jsx';
+import { Card, CardTitle, Button, Empty, OverlayTrigger } from '../components/Shell.jsx';
 import { BASE_DEFAULTS, money } from '../lib/dealmath.js';
-import { buildLenderPackage, LENDER_LENSES } from '../lib/lenderModel.js';
+import { buildLenderPackage, computeTermsOutcome, LENDER_LENSES, moneyCents } from '../lib/lenderModel.js';
 import { sendToOwner } from '../components/Messages.jsx';
 
 export const LENDER_PROGRAMS = {
@@ -222,7 +222,7 @@ export function wantedTerms(program, guide, base, offer = null) {
 const termTypes = (terms) => Object.entries(terms || {}).filter(([k]) => !k.startsWith('_'));
 
 // Owner reads every lender by company; each lender reads only their own submission.
-export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
+export function LenderBoard({ deal, me, refresh = 0, role = 'lender', embedded = false }) {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     let live = true;
@@ -234,38 +234,42 @@ export function LenderBoard({ deal, me, refresh = 0, role = 'lender' }) {
     return () => { live = false; };
   }, [deal.id, refresh, role, me?.uid]);
 
+  const content = rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>No terms submitted yet.</Empty> : (
+    <ul className="grid gap-4 md:grid-cols-2">
+      {rows.map((r) => (
+        <li key={r.id} className="rounded-2xl border border-line bg-paper p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-lg font-semibold">
+              {r.company_name}
+              {r.terms?._contact && r.terms._contact !== r.company_name ? `, ${r.terms._contact}` : ''}
+              {r.lender_uid === me?.uid ? ' (you)' : ''}
+            </h3>
+            <span className="text-sm text-ink" title={when(r.updated_at || r.created_at)}>{LENDER_BOARD_LABELS[r.lender_type]?.label || ''}</span>
+          </div>
+          {termTypes(r.terms).map(([type, fields]) => (
+            <div key={type} className="mt-3">
+              {termTypes(r.terms).length > 1 && <p className="text-sm font-semibold">{LENDER_BOARD_LABELS[type]?.label || type}</p>}
+              <dl className="mt-1 space-y-1">
+                {Object.entries(fields || {}).filter(([, v]) => String(v || '').trim()).map(([k, v]) => (
+                  <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 text-base">
+                    <dt className="text-ink-soft">{k}</dt>
+                    <dd className="font-medium break-words">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
+
+  if (embedded) return content;
+
   return (
     <Card>
       <CardTitle>{role === 'owner' ? 'Terms from every lender' : 'Your submitted terms'}</CardTitle>
-      {rows === null ? <Empty>Loading…</Empty> : !rows.length ? <Empty>No terms submitted yet.</Empty> : (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {rows.map((r) => (
-            <li key={r.id} className="rounded-2xl border border-line bg-paper p-4">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-lg font-semibold">
-                  {r.company_name}
-                  {r.terms?._contact && r.terms._contact !== r.company_name ? `, ${r.terms._contact}` : ''}
-                  {r.lender_uid === me?.uid ? ' (you)' : ''}
-                </h3>
-                <span className="text-sm text-ink" title={when(r.updated_at || r.created_at)}>{LENDER_BOARD_LABELS[r.lender_type]?.label || ''}</span>
-              </div>
-              {termTypes(r.terms).map(([type, fields]) => (
-                <div key={type} className="mt-3">
-                  {termTypes(r.terms).length > 1 && <p className="text-sm font-semibold">{LENDER_BOARD_LABELS[type]?.label || type}</p>}
-                  <dl className="mt-1 space-y-1">
-                    {Object.entries(fields || {}).filter(([, v]) => String(v || '').trim()).map(([k, v]) => (
-                      <div key={k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 text-base">
-                        <dt className="text-ink-soft">{k}</dt>
-                        <dd className="font-medium break-words">{v}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
-              ))}
-            </li>
-          ))}
-        </ul>
-      )}
+      {content}
     </Card>
   );
 }
@@ -580,6 +584,11 @@ export default function LenderTerms({
   lenderLens = null,
   onLensChange = null,
   hideProgramTabs = false,
+  rent: controlledRent = null,
+  onRentChange = null,
+  unitsRented: controlledUnits = null,
+  onUnitsRentedChange = null,
+  defaultRent = null,
 }) {
   const identity = resolveLenderIdentity(me, member, preview);
   const controlledProgram = lenderLens && LENDER_PROGRAMS[LENDER_LENSES[lenderLens]?.program]
@@ -596,7 +605,22 @@ export default function LenderTerms({
   const [busy, setBusy] = useState(false);
   const [mine, setMine] = useState(null);
   const [refresh, setRefresh] = useState(0);
-  const [extrasOpen, setExtrasOpen] = useState({ ext: false, collateral: false });
+  const [extrasOpen, setExtrasOpen] = useState({ ext: false, collateral: false, outcome: false, test: false, notes: false, board: false });
+  const mr = guide?.rentValue?.marketRange || null;
+  const minRent = Math.round(mr?.low ?? base?.marketRentLow ?? 780);
+  const maxRent = Math.round(mr?.high ?? base?.marketRentHigh ?? 1115);
+  const resolvedDefaultRent = Math.round(defaultRent ?? mr?.defaultRent ?? base?.rent ?? 1000);
+  const [internalRent, setInternalRent] = useState(resolvedDefaultRent);
+  const [internalUnits, setInternalUnits] = useState(10);
+  const [testParticipation, setTestParticipation] = useState(null);
+  const activeRent = controlledRent !== null && controlledRent !== undefined && Number.isFinite(+controlledRent)
+    ? +controlledRent
+    : internalRent;
+  const setActiveRent = typeof onRentChange === 'function' ? onRentChange : setInternalRent;
+  const activeUnits = controlledUnits !== null && controlledUnits !== undefined && Number.isFinite(+controlledUnits)
+    ? +controlledUnits
+    : internalUnits;
+  const setActiveUnits = typeof onUnitsRentedChange === 'function' ? onUnitsRentedChange : setInternalUnits;
 
   useEffect(() => {
     if (identity.name) setName((cur) => cur || identity.name);
@@ -911,6 +935,201 @@ export default function LenderTerms({
               />
             </label>
 
+            {/* How it works out: collapsed by default, recalculates instantaneously when any term or slider changes */}
+            {(() => {
+              const privateMax = Math.max(pkg.minParticipation || 20000, Math.round(pkg.privatePool.totalFunds || pkg.minParticipation || 20000));
+              const activeShare = testParticipation !== null ? testParticipation : pkg.minParticipation;
+              const outcome = computeTermsOutcome({
+                pkg,
+                base,
+                offer,
+                guide,
+                lens: program,
+                termValues: values,
+                rent: activeRent,
+                unitsRented: activeUnits,
+                participation: program === 'private' ? activeShare : null,
+              });
+              const slidersTouched = Math.round(activeRent) !== Math.round(resolvedDefaultRent) || activeUnits !== pkg.units || (program === 'private' && testParticipation !== null && testParticipation !== pkg.minParticipation);
+              return (
+                <>
+                  <div className="rounded-xl border border-line bg-paper p-3">
+                    <button
+                      type="button"
+                      aria-expanded={Boolean(extrasOpen.outcome)}
+                      data-terms-group="how-it-works"
+                      onClick={() => setExtrasOpen((p) => ({ ...p, outcome: !p.outcome }))}
+                      className="flex min-h-[40px] w-full items-center justify-between gap-2 text-left"
+                    >
+                      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                        <span aria-hidden="true">{extrasOpen.outcome ? '▴' : '▾'}</span>
+                        <span>How it works out</span>
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums text-ink">
+                        {outcome.paymentLabel} · {outcome.dscrLabel}
+                      </span>
+                    </button>
+                    {extrasOpen.outcome && (
+                      <dl data-terms-outcome className="mt-3 grid grid-cols-2 gap-2.5 border-t border-line pt-3 sm:grid-cols-4">
+                        <div className="rounded-xl bg-white p-2.5">
+                          <dt className="text-xs text-ink-soft">Payment</dt>
+                          <dd className="mt-1 font-display text-lg font-semibold tabular-nums text-ink">
+                            <OverlayTrigger lines={outcome.paymentOverlay}>{outcome.paymentLabel}</OverlayTrigger>
+                          </dd>
+                        </div>
+                        <div className="rounded-xl bg-white p-2.5">
+                          <dt className="text-xs text-ink-soft">DSCR</dt>
+                          <dd className="mt-1 font-display text-lg font-semibold tabular-nums text-ink">
+                            <OverlayTrigger lines={outcome.dscrOverlay}>{outcome.dscrLabel}</OverlayTrigger>
+                          </dd>
+                        </div>
+                        <div className="rounded-xl bg-white p-2.5">
+                          <dt className="text-xs text-ink-soft">Cash flow</dt>
+                          <dd className={`mt-1 font-display text-lg font-semibold tabular-nums ${outcome.cashFlowMonthly >= 0 ? 'text-good' : 'text-amber-800'}`}>
+                            <OverlayTrigger lines={outcome.cashFlowOverlay} className={outcome.cashFlowMonthly >= 0 ? 'text-good' : 'text-amber-800'}>
+                              {outcome.cashFlowLabel}
+                            </OverlayTrigger>
+                          </dd>
+                        </div>
+                        <div className="rounded-xl bg-white p-2.5">
+                          <dt className="text-xs text-ink-soft">Payoff</dt>
+                          <dd className="mt-1 font-display text-lg font-semibold tabular-nums text-ink">
+                            <OverlayTrigger lines={outcome.payoffOverlay}>{outcome.payoffLabel}</OverlayTrigger>
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
+                  </div>
+
+                  {/* Test the numbers: collapsed by default, shared rent + units-rented sliders */}
+                  <div className="rounded-xl border border-line bg-paper p-3">
+                    <button
+                      type="button"
+                      aria-expanded={Boolean(extrasOpen.test)}
+                      data-terms-group="test-numbers"
+                      onClick={() => setExtrasOpen((p) => ({ ...p, test: !p.test }))}
+                      className="flex min-h-[40px] w-full items-center justify-between gap-2 text-left"
+                    >
+                      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                        <span aria-hidden="true">{extrasOpen.test ? '▴' : '▾'}</span>
+                        <span>Test the numbers</span>
+                      </span>
+                      <span className="text-sm font-medium tabular-nums text-ink">
+                        {money(activeRent)}/mo · {activeUnits}/{pkg.units} units
+                      </span>
+                    </button>
+                    {extrasOpen.test && (
+                      <div data-terms-test-sliders className="mt-3 space-y-4 border-t border-line pt-3">
+                        <div>
+                          <label htmlFor="market-rent-what-if" className="flex items-center justify-between text-sm font-medium text-ink">
+                            <span>What if rent is</span>
+                            <span className="font-semibold tabular-nums">{money(activeRent)}/mo</span>
+                          </label>
+                          <input
+                            id="market-rent-what-if"
+                            type="range"
+                            min={minRent}
+                            max={Math.max(minRent, maxRent)}
+                            step={1}
+                            value={Math.min(Math.max(minRent, activeRent), Math.max(minRent, maxRent))}
+                            onChange={(e) => setActiveRent(+e.target.value)}
+                            className="mt-2 w-full accent-ink"
+                          />
+                          <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-ink-soft">
+                            <span>{money(minRent)}</span>
+                            <button type="button" onClick={() => setActiveRent(resolvedDefaultRent)} className="underline decoration-dotted underline-offset-4 hover:text-ink">
+                              {money(resolvedDefaultRent)}
+                            </button>
+                            <span>{money(Math.max(minRent, maxRent))}</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label htmlFor="units-rented-what-if" className="flex items-center justify-between text-sm font-medium text-ink">
+                            <span>Units rented</span>
+                            <span className="font-semibold tabular-nums">{activeUnits} of {pkg.units}</span>
+                          </label>
+                          <input
+                            id="units-rented-what-if"
+                            type="range"
+                            min={0}
+                            max={pkg.units}
+                            step={1}
+                            value={activeUnits}
+                            onChange={(e) => setActiveUnits(+e.target.value)}
+                            className="mt-2 w-full accent-ink"
+                          />
+                          <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-ink-soft">
+                            <span>0</span>
+                            <span>{Math.round(pkg.units / 2)}</span>
+                            <span>{pkg.units}</span>
+                          </div>
+                        </div>
+
+                        {program === 'private' && (
+                          <div>
+                            <label htmlFor="private-share-what-if" className="flex items-center justify-between text-sm font-medium text-ink">
+                              <span>Your share</span>
+                              <span className="font-semibold tabular-nums">{money(activeShare)} · {moneyCents(outcome.payment)}/mo</span>
+                            </label>
+                            <input
+                              id="private-share-what-if"
+                              type="range"
+                              min={pkg.minParticipation}
+                              max={privateMax}
+                              step={5000}
+                              value={Math.min(privateMax, Math.max(pkg.minParticipation, activeShare))}
+                              onChange={(e) => setTestParticipation(+e.target.value)}
+                              className="mt-2 w-full accent-ink"
+                            />
+                            <div className="mt-1 flex items-center justify-between text-xs tabular-nums text-ink-soft">
+                              <span>{money(pkg.minParticipation)}</span>
+                              <span>{money(privateMax)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <dl className="grid grid-cols-2 gap-2 text-sm tabular-nums sm:grid-cols-4">
+                          <div className="rounded-xl bg-white p-2.5">
+                            <dt className="text-xs text-ink-soft">Rent in /mo</dt>
+                            <dd className="font-semibold text-ink">{money(outcome.rentMo)}</dd>
+                          </div>
+                          <div className="rounded-xl bg-white p-2.5">
+                            <dt className="text-xs text-ink-soft">Cash flow</dt>
+                            <dd className={`font-semibold ${outcome.cashFlowMonthly >= 0 ? 'text-good' : 'text-amber-800'}`}>{outcome.cashFlowLabel}</dd>
+                          </div>
+                          <div className="rounded-xl bg-white p-2.5">
+                            <dt className="text-xs text-ink-soft">DSCR</dt>
+                            <dd className="font-semibold text-ink">{outcome.dscrLabel}</dd>
+                          </div>
+                          <div className="rounded-xl bg-white p-2.5">
+                            <dt className="text-xs text-ink-soft">Value</dt>
+                            <dd className="font-semibold text-ink">{money(outcome.value)}</dd>
+                          </div>
+                        </dl>
+
+                        {slidersTouched && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveRent(resolvedDefaultRent);
+                                setActiveUnits(pkg.units);
+                                setTestParticipation(null);
+                              }}
+                              className="text-xs font-medium text-ink underline underline-offset-4"
+                            >
+                              Reset sliders
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={preview || busy || !allAnswered}>
                 Send terms to the buyer
@@ -920,7 +1139,22 @@ export default function LenderTerms({
           </form>
         </div>
       </Card>
-      <LenderBoard deal={deal} me={me} refresh={refresh} role="lender" />
+      <Card>
+        <button
+          type="button"
+          aria-expanded={Boolean(extrasOpen.board)}
+          onClick={() => setExtrasOpen((p) => ({ ...p, board: !p.board }))}
+          className="flex min-h-[40px] w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="font-display text-lg font-semibold text-ink">Your submitted terms</span>
+          <span aria-hidden="true" className="text-sm text-ink-soft">{extrasOpen.board ? '▴' : '▾'}</span>
+        </button>
+        {extrasOpen.board && (
+          <div className="mt-3 border-t border-line pt-3">
+            <LenderBoard deal={deal} me={me} refresh={refresh} role="lender" embedded />
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

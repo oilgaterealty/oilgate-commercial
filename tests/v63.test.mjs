@@ -227,7 +227,7 @@ test('14 + 15. readable realtor and seller pages; respectful seller wording', ()
   assert.match(src('src/index.css'), /\.readable \.text-sm \{ font-size: 1rem/);
   assert.match(src('src/views/Realtor.jsx'), /className="readable"/);
   const s = src('src/views/Seller.jsx');
-  assert.match(s, /readable space-y-8/);
+  assert.match(s, /readable space-y-6/);
   for (const old of ['Three ways we could do this', 'What you carry now', 'What we’d ask of you', 'Worth knowing', 'This one looks good', 'Where are you at?']) {
     assert.ok(!s.includes(old), old);
   }

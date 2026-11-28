@@ -38,6 +38,7 @@ import {
   buildFallbackRentValue,
   buildLenderPackage,
   computePrivateReturn,
+  computeTermsOutcome,
   parseLenderProtections,
 } from '../src/lib/lenderModel.js';
 import { BASE_DEFAULTS, BASE_FIELDS, STRUCTURES, pct, syncOpexOverride } from '../src/lib/dealmath.js';
@@ -413,7 +414,7 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
     '../lib/format.js': { when: () => '' },
     '../lib/v63.js': { lenderBoard: () => [] },
     '../lib/dealmath.js': { BASE_DEFAULTS, money },
-    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES, parseLenderProtections },
+    '../lib/lenderModel.js': { buildLenderPackage, computeTermsOutcome, LENDER_LENSES, moneyCents, parseLenderProtections },
     './Shell.jsx': SHELL_STUB,
     '../components/Shell.jsx': SHELL_STUB,
     '../components/Messages.jsx': { sendToOwner: async () => null },
@@ -424,6 +425,7 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
     '../lib/dealmath.js': { evaluate, money, moneyCents, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue, buildLenderPackage, computePrivateReturn, LENDER_LENSES, parseLenderProtections },
     '../lib/rangeValue.js': { effectiveMarketRange },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../lib/useDealModel.js': {
       useDealModel: () => ({
         offers: [{ ...CHARLOTTE_OFFER, seller_summary: { ...sellerSummary, guide } }],
@@ -432,13 +434,17 @@ test('Part C & F: Lender, Reviewer, Realtor, and Seller render line items, share
       }),
     },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
-    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', null, children) : null),
+      OverviewActionButtons: () => null,
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': CostSummaryMod,
     '../components/LeadOfferCard.jsx': LeadOfferCardMod,
     '../components/UnitsRentedGuide.jsx': { isUnitsGuide: (g) => Boolean(g && Array.isArray(g.rows) && g.rows.length > 0 && g.refi) },
     '../components/RentValue.jsx': RentValueMod,
-    '../components/LenderWhatIf.jsx': LenderWhatIfMod,
     '../components/Shell.jsx': SHELL_STUB,
     '../components/Messages.jsx': { __esModule: true, default: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },

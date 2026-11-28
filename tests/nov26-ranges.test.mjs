@@ -41,7 +41,7 @@ test('market range shows for lender and owner, not the reviewer', () => {
 
 test('realtor overview: short phone-first overview with cover, address, units, repair budget, lead offer and next step', () => {
   const r = read('src/views/Realtor.jsx');
-  assert.match(r, /<Cover rows=\{photos\} compact \/>/);
+  assert.match(r, /<Cover items=\{gallery\.items\} compact/);
   assert.match(r, />Address</);
   assert.match(r, />Units</);
   assert.match(r, />Repair budget</);

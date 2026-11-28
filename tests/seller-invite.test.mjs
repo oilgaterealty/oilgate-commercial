@@ -71,7 +71,8 @@ test('photos by unit share the same way as the walkthrough', async () => {
   assert.match(gallery, /const canShare = role === 'owner' && !preview/);
   assert.match(read('src/views/Walkthrough.jsx'), /walkShareButtons\(row, toggleShare, busy\)/);
   const seller = read('src/views/Seller.jsx');
-  assert.match(seller, /const shownPhotos = \[\.\.\.coverRows\.filter\(\(r\) => r !== cover\), \.\.\.walk\]/);
+  assert.match(seller, /useDealGallery\(deal, 'seller', preview, \{ includeVideos: true, externalRows: rows \}\)/);
+  assert.match(seller, /<Cover items=\{gallery\.items\} compact/);
 });
 
 test('no qualifiers on any figure: no estimate, about, or what you owe, assumed', () => {

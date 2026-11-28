@@ -44,7 +44,7 @@ test('viewer has large Previous and Next buttons that hide at the ends', () => {
 
 test('viewer has a bottom action bar fed by the caller, with pressed state', () => {
   const v = read('src/components/PhotoViewer.jsx');
-  assert.match(v, /export default function PhotoViewer\(\{ items, index, onIndex, actions \}\)/);
+  assert.match(v, /export default function PhotoViewer\(\{ items, index, onIndex, actions, onOpenUnitGallery \}\)/);
   assert.match(v, /role="toolbar" aria-label="Photo actions"/);
   assert.match(v, /aria-pressed=\{a\.pressed === undefined \? undefined : Boolean\(a\.pressed\)\}/);
   const walk = read('src/views/Walkthrough.jsx');

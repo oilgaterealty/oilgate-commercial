@@ -25,7 +25,7 @@ import { computeOpex } from '../src/lib/opex.js';
 import * as opexLib from '../src/lib/opex.js';
 import { buildLeadGuide, overallRepairBudget } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, operatingBreakdownFor, rangeSummary, rangeValue, whatIfGrid, whatIfViews } from '../src/lib/rangeValue.js';
-import { LENDER_LENSES, buildFallbackRentValue, buildLenderPackage, computePrivateReturn, parseLenderProtections } from '../src/lib/lenderModel.js';
+import { LENDER_LENSES, buildFallbackRentValue, buildLenderPackage, computePrivateReturn, computeTermsOutcome, parseLenderProtections } from '../src/lib/lenderModel.js';
 
 const require = createRequire(import.meta.url);
 const jsxRuntime = require('react/jsx-runtime');
@@ -314,7 +314,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     '../lib/format.js': { when: () => '' },
     '../lib/v63.js': { lenderBoard: () => [] },
     '../lib/dealmath.js': { BASE_DEFAULTS, money },
-    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES, parseLenderProtections },
+    '../lib/lenderModel.js': { buildLenderPackage, computeTermsOutcome, LENDER_LENSES, moneyCents, parseLenderProtections },
     './Shell.jsx': SHELL_STUB,
     '../components/Shell.jsx': SHELL_STUB,
     '../components/Messages.jsx': { sendToOwner: async () => null },
@@ -325,6 +325,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     '../lib/dealmath.js': { evaluate, money, moneyCents, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue, buildLenderPackage, computePrivateReturn, LENDER_LENSES, parseLenderProtections },
     '../lib/rangeValue.js': { effectiveMarketRange },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../lib/useDealModel.js': {
       useDealModel: () => ({
         offers: [{ id: 'o1', structure: 'cash', inputs: {}, is_lead: true, seller_summary: { guide } }],
@@ -333,13 +334,17 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
       }),
     },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
-    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', null, children) : null),
+      OverviewActionButtons: () => null,
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': CostSummaryMod,
     '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': { isUnitsGuide: (g) => Boolean(g && Array.isArray(g.rows) && g.rows.length > 0 && g.refi) },
     '../components/RentValue.jsx': RentValueMod,
-    '../components/LenderWhatIf.jsx': LenderWhatIfMod,
     '../components/Shell.jsx': SHELL_STUB,
     '../components/Messages.jsx': { __esModule: true, default: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
@@ -363,12 +368,9 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     }
     if (lens === 'private') {
       assert.match(html, /Your return/);
-      assert.match(html, /type="range"[^>]*min="20000"[^>]*step="5000"/);
+      assert.match(html, /aria-expanded="false"[^>]*data-private-return-toggle|data-private-return-toggle[^>]*aria-expanded="false"/);
       assert.match(html, /\$133\.33\/mo/);
-      assert.match(html, /Per year at 8%/);
-      assert.match(html, /\$1,600\/yr/);
       assert.match(html, /First payment after month 1/);
-      assert.match(html, /No prepayment penalty/);
       assert.match(html, /Principal back at payoff/);
       assert.doesNotMatch(html, /defer|month 3|points/i);
     }
@@ -405,6 +407,7 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
   const DashboardMod = loadJsx('src/views/Dashboard.jsx', {
     '../lib/dealmath.js': { evaluate, money, valueSummary },
     '../lib/supabase.js': { supabase: { from: () => noopQuery } },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../lib/useDealModel.js': {
       useDealModel: () => ({
         offers: [{ id: 'o1', structure: 'cash', inputs: {}, is_lead: true }],
@@ -415,10 +418,13 @@ test('Lender, Realtor WhatIfNumbers, and Owner Dashboard render consistent opex 
     },
     '../components/Shell.jsx': SHELL_STUB,
     '../components/Files.jsx': { useUploads: () => [[], () => {}] },
-    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': { OverviewActionButtons: () => null },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/DealWorkspace.jsx': { WorkBoard: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
     '../components/Pulse.jsx': { SellerPulse: () => null },
+    '../components/Activity.jsx': { __esModule: true, default: () => null },
   });
   const ownerHtml = renderToStaticMarkup(React.createElement(DashboardMod.default, {
     deal: { id: 'd1', slug: 'charlotte' },

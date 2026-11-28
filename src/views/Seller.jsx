@@ -3,8 +3,9 @@ import { supabase } from '../lib/supabase.js';
 import { Card, CardTitle, Empty } from '../components/Shell.jsx';
 import Messages, { sendToOwner, useSellerMessagesTo } from '../components/Messages.jsx';
 import { useUploads, Uploader, FileList } from '../components/Files.jsx';
-import { Cover, PhotoGrid, photosOf, useSharedWalkPhotos, useSharedWalkVideos, WalkVideos } from '../components/Photos.jsx';
-import { coverOf } from '../lib/v63.js';
+import { Cover, useDealGallery } from '../components/Photos.jsx';
+import OverlaySheet, { OverviewActionButtons } from '../components/OverlaySheet.jsx';
+import { useSheetBadges } from '../lib/sheetBadges.js';
 import LoanPosition from '../components/LoanPosition.jsx';
 import { ExecutionPlanCard, LeadOfferCard, SellerProtectionsCard } from '../components/LeadOfferCard.jsx';
 import { coveredLabelOf } from '../components/SellerOffer.jsx';
@@ -18,28 +19,36 @@ const LEVELS = [
   ['not_now', 'Not right now'],
 ];
 
-export default function Seller({ deal, me, preview }) {
+export default function Seller({ deal, me, preview, tab }) {
   const c = deal.seller_content || {};
   const [rows, load] = useUploads(deal);
   const [level, setLevel] = useState(null);
   const [saveError, setSaveError] = useState('');
   const [sellerOffer, setSellerOffer] = useState(null);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(null);
+  const [activeSheet, setActiveSheet] = useState(null);
   const sellerTo = useSellerMessagesTo(deal);
-  // The seller sees one cover photo (the starred upload) and the photos and walkthrough videos shared with them.
-  const walk = useSharedWalkPhotos(deal, 'seller');
-  const walkVideos = useSharedWalkVideos(deal, 'seller');
-  const coverRows = photosOf((rows || []).filter((r) => r.visibility === 'seller'));
-  // Photos section: every uploaded photo shared with the seller (besides the cover), then the shared walkthrough photos.
-  const cover = coverOf(coverRows);
-  const shownPhotos = [...coverRows.filter((r) => r !== cover), ...walk];
-  const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email);
-  const galleryPhotos = [...(cover ? [cover] : []), ...shownPhotos];
-  const hasGallery = galleryPhotos.length > 0 || walkVideos.length > 0;
-  const [tab, setTab] = useState('offer');
-  const pick = (t) => {
-    setTab(t);
-    window.scrollTo(0, 0);
-  };
+
+  const gallery = useDealGallery(deal, 'seller', preview, { includeVideos: true, externalRows: rows });
+  const mine = (rows || []).filter((r) => r.uploaded_by_email === me.email && r.kind !== 'photo');
+  const { docBadge, msgBadge, markDocsSeen, markMsgsSeen } = useSheetBadges({
+    deal,
+    me,
+    role: 'seller',
+    preview,
+    docs: mine,
+  });
+
+  useEffect(() => {
+    if (tab === 'photos' && gallery.items.length > 0) setPhotoViewerOpen(0);
+    else if (tab === 'documents' || tab === 'files') {
+      setActiveSheet('documents');
+      markDocsSeen();
+    } else if (tab === 'messages') {
+      setActiveSheet('messages');
+      markMsgsSeen();
+    }
+  }, [tab, gallery.items.length]);
 
   useEffect(() => {
     let live = true;
@@ -65,36 +74,35 @@ export default function Seller({ deal, me, preview }) {
     if (!error) setLevel(l);
   };
 
+  const openDocs = () => {
+    markDocsSeen();
+    setActiveSheet('documents');
+  };
+  const openMsgs = () => {
+    markMsgsSeen();
+    setActiveSheet('messages');
+  };
+
   const rawSummary = sellerOffer?.seller_summary;
   const summary = rawSummary && ((Array.isArray(rawSummary.sellerTable) && rawSummary.sellerTable.length > 0) || (Array.isArray(rawSummary.terms) && rawSummary.terms.length > 0))
     ? rawSummary
     : null;
 
   return (
-    <div className="readable space-y-8">
-      <Cover rows={coverRows} compact />
+    <div className="readable space-y-6">
+      <Cover items={gallery.items} compact open={photoViewerOpen} onOpenChange={setPhotoViewerOpen} />
 
-      <div>
+      <div className="space-y-4">
         <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">{c.headline || deal.title}</h1>
+        <OverviewActionButtons
+          showDocuments
+          showMessages
+          docCount={docBadge}
+          msgCount={msgBadge}
+          onOpenDocuments={openDocs}
+          onOpenMessages={openMsgs}
+        />
       </div>
-
-      {hasGallery && (
-        <div className="sticky top-0 z-20 -mx-1 flex gap-2 bg-paper/95 px-1 py-2 backdrop-blur" role="tablist" aria-label="Seller page">
-          {[['offer', 'Offer'], ['photos', `Photos (${galleryPhotos.length})`]].map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => pick(k)}
-              className={`min-h-[44px] flex-1 rounded-full border px-4 text-sm font-semibold sm:flex-none ${tab === k ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === 'photos' && hasGallery ? (
-        <section className="space-y-4" aria-label="Photos">
-          {galleryPhotos.length > 0 && <PhotoGrid photos={galleryPhotos} />}
-          <WalkVideos videos={walkVideos} />
-        </section>
-      ) : (<>
 
       <LeadOfferCard
         deal={deal}
@@ -110,7 +118,7 @@ export default function Seller({ deal, me, preview }) {
 
       <ExecutionPlanCard content={c} summary={summary} sellerOnly />
 
-      <LoanPosition deal={deal} role="seller" preview={preview} me={me} sendTo={sellerTo} />
+      <LoanPosition deal={deal} role="seller" preview={preview} me={me} sendTo={sellerTo} collapsedByDefault />
 
       <Card>
         <CardTitle>How do you feel about it?</CardTitle>
@@ -126,15 +134,17 @@ export default function Seller({ deal, me, preview }) {
         {level && <p role="status" className="mt-3 text-sm text-ink">Saved. We’ll follow your pace.</p>}
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <Messages deal={deal} me={me} role="seller" preview={preview} sellerTo={sellerTo} />
+      <OverlaySheet open={activeSheet === 'documents'} kind="documents" title="Documents" onClose={() => setActiveSheet(null)}>
         <Card>
           <CardTitle>Share documents</CardTitle>
           <Uploader deal={deal} role="seller" me={me} onDone={load} label="Choose files" accept={DOCS} preview={preview} />
           <div className="mt-4">{mine.length ? <FileList rows={mine} /> : <Empty>No files shared yet.</Empty>}</div>
         </Card>
-      </div>
-      </>)}
+      </OverlaySheet>
+
+      <OverlaySheet open={activeSheet === 'messages'} kind="messages" title="Messages" onClose={() => setActiveSheet(null)}>
+        <Messages deal={deal} me={me} role="seller" preview={preview} sellerTo={sellerTo} />
+      </OverlaySheet>
     </div>
   );
 }

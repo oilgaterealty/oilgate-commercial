@@ -109,6 +109,7 @@ export default function Tenants({ deal, me, role, preview }) {
   const [refresh, setRefresh] = useState(0);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestingId, setSuggestingId] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     if (!access.tenants) return;
@@ -262,10 +263,21 @@ export default function Tenants({ deal, me, role, preview }) {
 
       {edit && (
         <Card className="!p-4">
-          <CardTitle>
-            Add a lead
-          </CardTitle>
-          <LeadForm key={formKey} disabled={pending} onSave={(v) => saveLead(v)} />
+          <button
+            type="button"
+            aria-expanded={addOpen}
+            data-tenants-add-toggle
+            onClick={() => setAddOpen((v) => !v)}
+            className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+          >
+            <span className="font-display text-xl font-semibold text-ink">Add a lead</span>
+            <span aria-hidden="true" className="text-sm text-ink-soft">{addOpen ? '▴' : '▾'}</span>
+          </button>
+          {addOpen && (
+            <div className="mt-3 border-t border-line pt-3">
+              <LeadForm key={formKey} disabled={pending} onSave={(v) => saveLead(v)} />
+            </div>
+          )}
         </Card>
       )}
 
@@ -282,11 +294,12 @@ export default function Tenants({ deal, me, role, preview }) {
             {STAGES.map(([stageKey, stageLabel]) => {
               const items = list.filter((l) => l.stage === stageKey);
               return (
-                <section key={stageKey} className="rounded-2xl border border-line bg-paper p-3">
-                  <div className="mb-2 flex items-center justify-between">
+                <details key={stageKey} open={items.length > 0} className="rounded-2xl border border-line bg-paper p-3">
+                  <summary className="flex min-h-[36px] cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                     <h3 className="text-sm font-semibold">{stageLabel}</h3>
                     <span className="rounded-full bg-white px-2 py-0.5 text-xs text-ink-soft">{items.length}</span>
-                  </div>
+                  </summary>
+                  <div className="mt-2">
                   {items.length === 0 ? (
                     <p className="text-xs text-ink-soft">None</p>
                   ) : (
@@ -393,7 +406,8 @@ export default function Tenants({ deal, me, role, preview }) {
                       ))}
                     </ul>
                   )}
-                </section>
+                  </div>
+                </details>
               );
             })}
           </div>

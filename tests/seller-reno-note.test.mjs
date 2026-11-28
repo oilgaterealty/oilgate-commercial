@@ -192,11 +192,12 @@ test('contingency counts in the seller renovation note only if used', () => {
   assert.ok(rehab.includes('Contingency'));
 });
 
-test('seller page has an Offer tab and a Photos tab with a full gallery grid', () => {
+test('seller page uses single Offer view with Cover PhotoViewer, Documents/Messages sheets, and Photos exports PhotoGrid', () => {
   const src = readFileSync(join(root, 'src/views/Seller.jsx'), 'utf8');
-  assert.match(src, /role="tablist"/);
-  assert.match(src, /Photos \(\$\{galleryPhotos\.length\}\)/);
-  assert.match(src, /<PhotoGrid photos=\{galleryPhotos\} \/>/);
+  assert.doesNotMatch(src, /role="tablist"/);
+  assert.match(src, /<Cover items=\{gallery\.items\} compact open=\{photoViewerOpen\} onOpenChange=\{setPhotoViewerOpen\} \/>/);
+  assert.match(src, /<OverviewActionButtons/);
+  assert.match(src, /<OverlaySheet open=\{activeSheet === 'documents'\}/);
   const photos = readFileSync(join(root, 'src/components/Photos.jsx'), 'utf8');
   assert.match(photos, /export function PhotoGrid/);
 });

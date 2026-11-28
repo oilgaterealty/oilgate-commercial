@@ -5,13 +5,18 @@ import { supabase } from '../lib/supabase.js';
 import { DictatedField } from './Dictation.jsx';
 
 // One top row: the page's own heading on the left, who is signed in on the right. No brand bar.
-export default function Shell({ children, session, head, role, wide }) {
+export default function Shell({ children, session, head, role, wide, headerAction = null }) {
   return (
     <div className="min-h-screen overflow-x-clip">
       <main className={`mx-auto ${wide ? 'max-w-7xl' : 'max-w-6xl'} px-4 pb-10 pt-4`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="min-w-0 max-w-full">{head}</div>
-          {session && <Account session={session} role={role} />}
+          {(headerAction || session) && (
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {headerAction}
+              {session && <Account session={session} role={role} />}
+            </div>
+          )}
         </div>
         {children}
       </main>

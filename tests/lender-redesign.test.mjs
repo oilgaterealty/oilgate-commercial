@@ -13,7 +13,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { transformSync } from 'esbuild';
 import { BASE_DEFAULTS, BASE_FIELDS, evaluate, money, moneyCents, operating, pct, valueSummary } from '../src/lib/dealmath.js';
-import { buildLenderPackage, computePrivateReturn, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
+import { buildLenderPackage, computePrivateReturn, computeTermsOutcome, LENDER_DEFAULTS, LENDER_LENSES, parseLenderProtections } from '../src/lib/lenderModel.js';
 import { buildLeadGuide, monthlyPlan, overallRepairBudget, rentValue } from '../src/lib/dealplan.js';
 import { defaultMarketRent, effectiveMarketRange, operatingBreakdownFor, rangeValue, whatIfViews, whatIfGrid } from '../src/lib/rangeValue.js';
 
@@ -257,7 +257,7 @@ async function buildLenderMocks(guide) {
     '../lib/format.js': await import('../src/lib/format.js'),
     '../lib/v63.js': await import('../src/lib/v63.js'),
     '../lib/dealmath.js': { BASE_DEFAULTS, money },
-    '../lib/lenderModel.js': { buildLenderPackage, LENDER_LENSES, parseLenderProtections },
+    '../lib/lenderModel.js': { buildLenderPackage, computeTermsOutcome, LENDER_LENSES, moneyCents, parseLenderProtections },
     '../components/Shell.jsx': Shell,
     '../components/Messages.jsx': { sendToOwner: async () => null },
   });
@@ -267,15 +267,20 @@ async function buildLenderMocks(guide) {
     '../lib/dealmath.js': { evaluate, money, moneyCents, valueSummary },
     '../lib/lenderModel.js': { buildFallbackRentValue: () => null, buildLenderPackage, computePrivateReturn, LENDER_LENSES, parseLenderProtections },
     '../lib/rangeValue.js': { effectiveMarketRange },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => true },
     '../lib/useDealModel.js': { useDealModel: () => ({ offers: [{ ...WHITEBOARD_OFFER, seller_summary: { guide } }], base: WHITEBOARD_BASE, error: '' }) },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], FileList: () => null },
-    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: ({ open, children }) => (open ? React.createElement('div', null, children) : null),
+      OverviewActionButtons: () => null,
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../components/CostSummary.jsx': CostSummaryMod,
     '../components/LeadOfferCard.jsx': { ExecutionPlanCard: () => null },
     '../components/UnitsRentedGuide.jsx': { isUnitsGuide: (g) => Boolean(g && Array.isArray(g.rows) && g.rows.length > 0 && g.refi) },
     '../components/RentValue.jsx': RentValueMod,
-    '../components/LenderWhatIf.jsx': LenderWhatIfMod,
     '../components/Shell.jsx': Shell,
     '../components/Messages.jsx': { __esModule: true, default: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
@@ -288,12 +293,11 @@ function sliceSections(html) {
   return {
     overview: html.slice(html.indexOf('id="sec-overview"'), html.indexOf('id="sec-terms"')),
     terms: html.slice(html.indexOf('id="sec-terms"'), html.indexOf('id="sec-plan"')),
-    plan: html.slice(html.indexOf('id="sec-plan"'), html.indexOf('id="sec-what-if"')),
-    whatIf: html.slice(html.indexOf('id="sec-what-if"'), html.indexOf('id="sec-city-records"')),
+    plan: html.slice(html.indexOf('id="sec-plan"')),
   };
 }
 
-test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Your terms, The plan, and What-if', async () => {
+test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Your terms, and The plan', async () => {
   const guide = buildLeadGuide(WHITEBOARD_BASE, WHITEBOARD_PLAN, WHITEBOARD_OFFER);
   const LenderMod = await buildLenderMocks(guide);
 
@@ -306,9 +310,10 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   }));
   const tabOrder = ['>Bridge<', '>Private<', '>DSCR<'].map((t) => bridgeHtml.indexOf(t));
   assert.ok(tabOrder[0] >= 0 && tabOrder[1] > tabOrder[0] && tabOrder[2] > tabOrder[1]);
+  assert.doesNotMatch(bridgeHtml, /id="sec-what-if"|data-section="what-if"/);
 
   const bSec = sliceSections(bridgeHtml);
-  const bAll = bSec.overview + bSec.terms + bSec.plan + bSec.whatIf;
+  const bAll = bSec.overview + bSec.terms + bSec.plan;
   assert.doesNotMatch(bSec.overview, /<p\b|<small\b|<caption\b/i);
   assert.doesNotMatch(bAll, /Seller financing/i);
   assert.match(bSec.overview, /Bridge loan/);
@@ -328,9 +333,9 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(bSec.terms, /Rehab draws/);
   assert.match(bSec.terms, /Draw fee/);
   assert.match(bSec.terms, /Prepayment penalty/);
+  assert.match(bSec.terms, /data-terms-group="how-it-works"[\s\S]*How it works out/);
+  assert.match(bSec.terms, /data-terms-group="test-numbers"[\s\S]*Test the numbers/);
   assert.match(bSec.plan, /Bridge loan plan/);
-  assert.match(bSec.whatIf, /Loan assumptions/);
-  assert.match(bSec.whatIf, /Deferred interest/);
   assert.doesNotMatch(bAll, /\bLTV\b|DSCR|amortiz|Refinance check|Refi fees|Takeout loan/i);
   assert.doesNotMatch(bAll, /\d+%\s*LTV\s*\(\$/i);
 
@@ -351,7 +356,7 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
     privateProtections: privProtections,
   }));
   const pSec = sliceSections(privHtml);
-  const pAll = pSec.overview + pSec.terms + pSec.plan + pSec.whatIf;
+  const pAll = pSec.overview + pSec.terms + pSec.plan;
   assert.doesNotMatch(pSec.overview, /<p\b|<small\b|<caption\b/i);
   assert.match(pSec.overview, /data-wb="private-protections"/);
   assert.match(pSec.overview, /aria-expanded="false"[^>]*data-protections-group="private"/);
@@ -363,15 +368,15 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(pSec.overview, /First-lien pooled/);
   assert.match(pSec.overview, /Your return/);
   assert.match(pSec.overview, /\$133\.33\/mo/);
-  assert.match(pSec.overview, /Per year at 8%/);
   assert.match(pSec.overview, /First payment after month 1/);
   assert.match(pSec.overview, /12 months, one 3-month extension\. Paid off early at refinance, no prepayment penalty\./);
   assert.match(pSec.overview, /Principal back at payoff/);
   assert.match(pSec.terms, /Private terms/);
   assert.match(pSec.terms, /Your participation/);
   assert.match(pSec.terms, />8%</);
+  assert.match(pSec.terms, /data-terms-group="how-it-works"/);
+  assert.match(pSec.terms, /data-terms-group="test-numbers"/);
   assert.match(pSec.plan, /Private pool plan/);
-  assert.match(pSec.whatIf, /Your share/);
   assert.doesNotMatch(pAll, /points|processing|\$1,295|DSCR|amortiz|Refinance check|Refi fees|Number of extensions|Surplus at refinance|Left over at refinance|Gap at refinance|deferred|deferral|month 3/i);
 
   // 3. DSCR TAB
@@ -383,7 +388,7 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
     privateProtections: privProtections,
   }));
   const dSec = sliceSections(dscrHtml);
-  const dAll = dSec.overview + dSec.terms + dSec.plan + dSec.whatIf;
+  const dAll = dSec.overview + dSec.terms + dSec.plan;
   assert.doesNotMatch(dSec.overview, /<p\b|<small\b|<caption\b/i);
   assert.doesNotMatch(dSec.overview, /data-wb="private-protections"/);
   assert.match(dSec.overview, /Commercial DSCR refinance/);
@@ -398,9 +403,10 @@ test('Lender.jsx strictly isolates Bridge, Private, and DSCR across Overview, Yo
   assert.match(dSec.terms, /Term &amp; amortization/);
   assert.match(dSec.terms, /Prepayment penalty/);
   assert.match(dSec.terms, /Refi fees/);
+  assert.match(dSec.terms, /75%/);
+  assert.match(dSec.terms, /data-terms-group="how-it-works"/);
+  assert.match(dSec.terms, /data-terms-group="test-numbers"/);
   assert.match(dSec.plan, /DSCR refinance plan/);
-  assert.match(dSec.whatIf, /75%/);
-  assert.match(dSec.whatIf, /80%/);
   assert.doesNotMatch(dAll, /points|processing|\$1,295|deferred|non-Dutch|\bLTC\b|Number of extensions|Surplus at refinance|Left over at refinance|Gap at refinance/i);
   assert.doesNotMatch(bAll, /Surplus at refinance|Left over at refinance|Gap at refinance/i);
   assert.doesNotMatch(dAll, /\d+%\s*LTV\s*\(\$/i);

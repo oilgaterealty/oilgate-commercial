@@ -539,12 +539,12 @@ test('PropertyFacts renders sources only in OverlayTrigger and shares exact layo
   const pfMap = pf.search(/>\s*Map\s*</);
   assert.ok(pfStats > 0 && pfNeighborhood > pfStats && pfSchools > pfNeighborhood && pfNearby > pfSchools && pfMap > pfNearby);
 
-  // Verify section order in OpenViewer: hero -> PropertyFacts -> photo gallery -> Request access
+  // Verify section order in OpenViewer: hero -> PropertyFacts -> Request access (UnitGallery lives inside InPagePanel)
   const idxHero = ov.indexOf('aria-label="Property hero"');
   const idxFacts = ov.indexOf('<PropertyFacts');
-  const idxPhotos = ov.indexOf('<UnitGallery');
   const idxRequest = ov.indexOf('aria-label="Request access"');
-  assert.ok(idxHero > 0 && idxFacts > idxHero && idxPhotos > idxFacts && idxRequest > idxPhotos);
+  assert.ok(idxHero > 0 && idxFacts > idxHero && idxRequest > idxFacts);
+  assert.match(ov, /<InPagePanel[^>]*open=\{unitGalleryOpen\}[\s\S]*?<UnitGallery/);
 
   // Render PropertyFacts directly for charlotte and unknown slugs.
   const pfMod = loadJsx('src/components/PropertyFacts.jsx', {
@@ -586,6 +586,7 @@ test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and 
   const makeViewerReact = (roleOverride) => ({
     ...React,
     useState(init) {
+      if (init === false) return [true, () => {}];
       if (init === 'lender') return [roleOverride, () => {}];
       return React.useState(init);
     },
@@ -597,6 +598,7 @@ test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and 
     '../lib/supabase.js': { supabase: { rpc: async () => ({ data: null, error: null }) } },
     '../lib/dealmath.js': { evaluate: () => ({}), operating: () => ({ b: { rent: 0, value: 0, rehab: 0, refiRate: 0, refiYears: 0 }, noi: 0, capRate: 0 }), money: (v) => String(v), pct: (v) => String(v), valueSummary: () => ({}) },
     '../lib/useDealModel.js': { useDealModel: () => ({ base: {} }) },
+    '../lib/site.js': { SITE_KIND: '', canAccessCityRecords: () => false },
     '../components/Shell.jsx': {
       Button: ({ children, ...p }) => React.createElement('button', p, children),
       Card: ({ children }) => React.createElement('section', null, children),
@@ -610,7 +612,13 @@ test('Signed-in viewer mode uses PropertyFacts, removes bare property card, and 
     '../components/Dictation.jsx': { DictatedField: ({ as: Tag = 'input', ...p }) => React.createElement(Tag, p) },
     '../components/Messages.jsx': { __esModule: true, default: () => null, sendToOwner: async () => null },
     '../components/Files.jsx': { useUploads: () => [[], () => {}], Uploader: () => null, FileList: () => null },
-    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [] },
+    '../components/Photos.jsx': { Cover: () => null, photosOf: () => [], useDealGallery: () => ({ items: [] }) },
+    '../components/OverlaySheet.jsx': {
+      InPagePanel: () => null,
+      OverviewActionButtons: () => null,
+    },
+    '../lib/sheetBadges.js': { useSheetBadges: () => ({ docBadge: 0, msgBadge: 0, markDocsSeen: () => {}, markMsgsSeen: () => {} }) },
+    './CityRecords.jsx': { __esModule: true, default: () => null },
     '../components/PropertyFacts.jsx': { __esModule: true, default: () => null },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
     '../lib/visibility.js': { seenBy: (_r, rows) => rows || [] },
@@ -694,18 +702,25 @@ test('OpenViewer request access form requires Name/Email, shows Company only for
     photos: [],
     walkthroughPhotos: [],
   };
-  const makeOpenReact = (roleOverride) => ({
-    ...React,
-    useState(init) {
-      if (init && typeof init === 'object' && 'snapshot' in init) return [{ loading: false, snapshot }, () => {}];
-      if (init === false) return [true, () => {}];
-      if (init && typeof init === 'object' && 'role' in init) return [{ ...init, role: roleOverride }, () => {}];
-      return React.useState(init);
-    },
-  });
+  const makeOpenReact = (roleOverride) => {
+    let falseCalls = 0;
+    return {
+      ...React,
+      useState(init) {
+        if (init && typeof init === 'object' && 'snapshot' in init) return [{ loading: false, snapshot }, () => {}];
+        if (init === false) {
+          falseCalls += 1;
+          return [falseCalls >= 2, () => {}];
+        }
+        if (init && typeof init === 'object' && 'role' in init) return [{ ...init, role: roleOverride }, () => {}];
+        return React.useState(init);
+      },
+    };
+  };
   const openMocks = {
     '../lib/supabase.js': { supabase: { rpc: async () => ({ data: null, error: null }), functions: { invoke: async () => ({ data: null, error: null }) } } },
     '../lib/site.js': { isOpenViewerToken: () => true },
+    '../lib/leaseUp.js': { ROOMS: [], AREA_ROOMS: [], spaceLabel: (u) => String(u) },
     '../lib/openViewer.js': {
       OPEN_REQUEST_ROLES,
       filterOpenViewerSnapshot,
@@ -729,6 +744,7 @@ test('OpenViewer request access form requires Name/Email, shows Company only for
     '../components/PhotoViewer.jsx': { __esModule: true, default: () => null },
     '../components/PropertyFacts.jsx': { __esModule: true, default: () => null },
     '../components/UnitGallery.jsx': { __esModule: true, default: () => null },
+    '../components/OverlaySheet.jsx': { InPagePanel: ({ open, children }) => (open ? React.createElement('div', null, children) : null) },
   };
 
   const inputTag = (html, label) => {

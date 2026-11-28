@@ -34,7 +34,7 @@ export function ActivityTimelineList({ rows }) {
   );
 }
 
-export default function Activity({ deal, title = 'Activity', mode = 'owner', preview = false, empty = 'Nothing yet.' }) {
+export default function Activity({ deal, title = 'Activity', mode = 'owner', preview = false, empty = 'Nothing yet.', compactLimit = null, onSeeAll = null }) {
   const [rows, setRows] = useState(null);
   const [hasSeller, setHasSeller] = useState(null);
 
@@ -113,20 +113,36 @@ export default function Activity({ deal, title = 'Activity', mode = 'owner', pre
     return () => { supabase.removeChannel(sub); };
   }, [deal.id, mode, load]);
 
+  const hasCap = Number.isFinite(compactLimit) && compactLimit > 0;
+  const shownRows = rows && hasCap ? rows.slice(0, compactLimit) : rows;
+
   return (
     <Card>
-      <CardTitle>{title}</CardTitle>
-      {rows === null ? (
+      <CardTitle
+        aside={onSeeAll ? (
+          <button
+            type="button"
+            data-activity-see-all
+            onClick={onSeeAll}
+            className="inline-flex min-h-[40px] items-center text-sm font-medium text-ink underline underline-offset-4 hover:text-ink-soft"
+          >
+            See all
+          </button>
+        ) : null}
+      >
+        {title}
+      </CardTitle>
+      {shownRows === null ? (
         <Empty>Loading…</Empty>
-      ) : mode === 'realtor-seller' && hasSeller === false && rows.length === 0 ? (
+      ) : mode === 'realtor-seller' && hasSeller === false && shownRows.length === 0 ? (
         <div>
           <Empty>The seller hasn’t been invited yet.</Empty>
-          <InviteSeller deal={deal} preview={preview} inline onInvited={load} />
+          {!hasCap && <InviteSeller deal={deal} preview={preview} inline onInvited={load} />}
         </div>
-      ) : rows.length === 0 ? (
+      ) : shownRows.length === 0 ? (
         <Empty>{empty}</Empty>
       ) : (
-        <ActivityTimelineList rows={rows} />
+        <ActivityTimelineList rows={shownRows} />
       )}
     </Card>
   );

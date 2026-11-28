@@ -42,6 +42,7 @@ export default function Comps({ deal, me, role, preview }) {
   const [previewPicks, setPreviewPicks] = useState([]);
   const [view, setView] = useState('all'); // 'all' or a picker's uid; only changes what this screen shows
   const [phoneAll, setPhoneAll] = useState(false); // phone list shows the first few comps until asked for all
+  const [addOpen, setAddOpen] = useState(false);
   const [loadErr, setLoadErr] = useState('');
   const [status, setStatus] = useState('');
   const [pending, setPending] = useState(false);
@@ -472,36 +473,47 @@ export default function Comps({ deal, me, role, preview }) {
       </Card>
 
       <Card>
-        <CardTitle>{owner ? 'Add a comp' : 'Try a comp (what-if)'}</CardTitle>
-        <form onSubmit={addComp} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm text-ink-soft sm:col-span-2">Address
-            <Field required aria-label="Comp address" autoComplete="street-address" placeholder="e.g. 123 Main St" maxLength={240} value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} className="mt-1" />
-          </label>
-          <label className="text-sm text-ink-soft">City
-            <Field aria-label="Comp city" autoComplete="address-level2" placeholder="City" maxLength={120} value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} className="mt-1" />
-          </label>
-          <label className="text-sm text-ink-soft">Distance (miles)
-            <Field aria-label="Distance in miles" inputMode="decimal" autoComplete="off" placeholder="0.8" value={draft.distance_mi} onChange={(e) => setDraft({ ...draft, distance_mi: decimal(e.target.value) })} className="mt-1" />
-          </label>
-          <label className="text-sm text-ink-soft">Units
-            <Field required aria-label="Comp units" inputMode="numeric" pattern="[0-9]*" autoComplete="off" placeholder="8" value={draft.units} onChange={(e) => setDraft({ ...draft, units: digits(e.target.value) })} className="mt-1" />
-          </label>
-          <label className="text-sm text-ink-soft">Sale price ($)
-            <Field required aria-label="Comp sale price" inputMode="decimal" autoComplete="off" placeholder="520000" value={draft.sale_price} onChange={(e) => setDraft({ ...draft, sale_price: decimal(e.target.value) })} className="mt-1" />
-          </label>
-          <label className="text-sm text-ink-soft">Sale date
-            <Field type="date" aria-label="Comp sale date" autoComplete="off" value={draft.sale_date} onChange={(e) => setDraft({ ...draft, sale_date: e.target.value })} className="mt-1" />
-          </label>
-          <div className="text-sm text-ink-soft">Filled in for you
-            <p className="mt-1 rounded-xl bg-paper px-3 py-2 text-base text-ink">{autoPerUnit ? `${money(autoPerUnit)}/unit` : '$ per unit'} · {autoYear || 'year'}</p>
-          </div>
-          <label className="text-sm text-ink-soft sm:col-span-2 lg:col-span-3">Source (optional)
-            <Field aria-label="Comp source" autoComplete="off" maxLength={600} placeholder="e.g. Broker name, company: data as of date" value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })} className="mt-1" />
-          </label>
-          <div className="flex items-end">
-            <Button type="submit" className="min-h-[44px] w-full" disabled={!canAdd || pending || Boolean(loadErr)}>{owner ? 'Add comp' : 'Add what-if comp'}</Button>
-          </div>
-        </form>
+        <button
+          type="button"
+          aria-expanded={addOpen}
+          data-comps-add-toggle
+          onClick={() => setAddOpen((v) => !v)}
+          className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="font-display text-xl font-semibold text-ink">{owner ? 'Add a comp' : 'Try a comp (what-if)'}</span>
+          <span aria-hidden="true" className="text-sm text-ink-soft">{addOpen ? '▴' : '▾'}</span>
+        </button>
+        {addOpen && (
+          <form onSubmit={addComp} className="mt-4 grid gap-3 border-t border-line pt-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm text-ink-soft sm:col-span-2">Address
+              <Field required aria-label="Comp address" autoComplete="street-address" placeholder="e.g. 123 Main St" maxLength={240} value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} className="mt-1" />
+            </label>
+            <label className="text-sm text-ink-soft">City
+              <Field aria-label="Comp city" autoComplete="address-level2" placeholder="City" maxLength={120} value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} className="mt-1" />
+            </label>
+            <label className="text-sm text-ink-soft">Distance (miles)
+              <Field aria-label="Distance in miles" inputMode="decimal" autoComplete="off" placeholder="0.8" value={draft.distance_mi} onChange={(e) => setDraft({ ...draft, distance_mi: decimal(e.target.value) })} className="mt-1" />
+            </label>
+            <label className="text-sm text-ink-soft">Units
+              <Field required aria-label="Comp units" inputMode="numeric" pattern="[0-9]*" autoComplete="off" placeholder="8" value={draft.units} onChange={(e) => setDraft({ ...draft, units: digits(e.target.value) })} className="mt-1" />
+            </label>
+            <label className="text-sm text-ink-soft">Sale price ($)
+              <Field required aria-label="Comp sale price" inputMode="decimal" autoComplete="off" placeholder="520000" value={draft.sale_price} onChange={(e) => setDraft({ ...draft, sale_price: decimal(e.target.value) })} className="mt-1" />
+            </label>
+            <label className="text-sm text-ink-soft">Sale date
+              <Field type="date" aria-label="Comp sale date" autoComplete="off" value={draft.sale_date} onChange={(e) => setDraft({ ...draft, sale_date: e.target.value })} className="mt-1" />
+            </label>
+            <div className="text-sm text-ink-soft">Filled in for you
+              <p className="mt-1 rounded-xl bg-paper px-3 py-2 text-base text-ink">{autoPerUnit ? `${money(autoPerUnit)}/unit` : '$ per unit'} · {autoYear || 'year'}</p>
+            </div>
+            <label className="text-sm text-ink-soft sm:col-span-2 lg:col-span-3">Source (optional)
+              <Field aria-label="Comp source" autoComplete="off" maxLength={600} placeholder="e.g. Broker name, company: data as of date" value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })} className="mt-1" />
+            </label>
+            <div className="flex items-end">
+              <Button type="submit" className="min-h-[44px] w-full" disabled={!canAdd || pending || Boolean(loadErr)}>{owner ? 'Add comp' : 'Add what-if comp'}</Button>
+            </div>
+          </form>
+        )}
       </Card>
 
       {dirty && (

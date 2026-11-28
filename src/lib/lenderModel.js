@@ -982,3 +982,204 @@ export function buildFallbackRentValue(base = {}, pkg = null) {
       : null,
   };
 }
+
+export function parseNumericTerm(val, fallback = 0) {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : fallback;
+  const s = String(val ?? '').trim();
+  if (!s) return fallback;
+  if (/^none$/i.test(s)) return 0;
+  const cleaned = s.replace(/[$,]/g, '');
+  const m = cleaned.match(/-?\d+(?:\.\d+)?/);
+  if (!m) return fallback;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseRefiFeesTerm(val, defaultFlat, defaultPct) {
+  const s = String(val ?? '').trim();
+  if (!s) return { flat: defaultFlat, pct: defaultPct };
+  if (/^none$/i.test(s)) return { flat: 0, pct: 0 };
+  const flatMatch = s.match(/\$([\d,]+(?:\.\d+)?)/);
+  const pctMatch = s.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (flatMatch || pctMatch) {
+    return {
+      flat: flatMatch ? Number(flatMatch[1].replace(/,/g, '')) : 0,
+      pct: pctMatch ? Number(pctMatch[1]) : 0,
+    };
+  }
+  const plain = parseNumericTerm(s, defaultFlat);
+  return plain <= 10 ? { flat: 0, pct: plain } : { flat: plain, pct: 0 };
+}
+
+// Live outcome summary for Lender "Your terms" ("How it works out" + "Test the numbers").
+export function computeTermsOutcome({
+  pkg = null,
+  base = {},
+  offer = null,
+  guide = null,
+  lens = 'bridge',
+  termValues = {},
+  rent = null,
+  unitsRented = null,
+  participation = null,
+} = {}) {
+  const basePkg = pkg || buildLenderPackage({ base, offer, guide, lens });
+  const totalUnits = Math.max(1, num(base?.units, basePkg.units || 10) || 10);
+  const occupiedUnits = unitsRented === null || unitsRented === undefined
+    ? totalUnits
+    : Math.max(0, Math.min(totalUnits, Math.round(num(unitsRented, totalUnits))));
+  const rentPerUnit = rent !== null && rent !== undefined && Number.isFinite(+rent) && +rent > 0
+    ? +rent
+    : pos(base?.rent, guide?.rentValue?.ourRent, guide?.rent, 1000);
+
+  const v = termValues || {};
+  const rateVal = parseNumericTerm(v['Interest rate'], lens === 'private' ? basePkg.privatePool.ratePct : lens === 'dscr' ? basePkg.refiCheck.refiRate : basePkg.ratePct);
+  const pointsVal = parseNumericTerm(v['Origination points'], basePkg.pointsPct);
+  const deferredVal = parseNumericTerm(v['Deferred interest'], basePkg.deferredMonths);
+  const processingVal = parseNumericTerm(v['Processing fee'], basePkg.processing);
+  const ltvVal = parseNumericTerm(v['Max LTV (% of value)'], basePkg.refiCheck.refiLtv);
+  const minDscrVal = parseNumericTerm(v['Minimum DSCR'], basePkg.refiCheck.refiDscr);
+  const amortVal = parseNumericTerm(v['Term & amortization'], basePkg.refiCheck.refiYears);
+  const feesParsed = parseRefiFeesTerm(v['Refi fees'], basePkg.refiCheck.refiFeesFlat, basePkg.refiCheck.refiFeesPct);
+  const partVal = participation !== null && participation !== undefined && Number.isFinite(+participation)
+    ? Math.max(0, +participation)
+    : parseNumericTerm(v['Your participation'], basePkg.minParticipation);
+
+  const opexSrc = base?.opex || guide?.opex || null;
+  const laundrySrc = base?.laundry || guide?.laundry || opexSrc?.laundry || null;
+  const upsideSrc = normalizeUpside(base?.upside || guide?.upside || opexSrc?.upside || null);
+  const capRate = pos(base?.valueCapRate, 9);
+
+  // Compute stabilized NOI at rentPerUnit & current NOI at (rentPerUnit, occupiedUnits)
+  const stabilizedOpex = opexSrc && rentPerUnit > 0
+    ? computeOpex({ opex: opexSrc, laundry: laundrySrc, upside: upsideSrc, units: totalUnits, rentedUnits: totalUnits, grossRentMonthly: totalUnits * rentPerUnit, applyVacancy: true, capRate })
+    : null;
+  const currentOpex = opexSrc && rentPerUnit > 0
+    ? computeOpex({ opex: opexSrc, laundry: laundrySrc, upside: upsideSrc, units: totalUnits, rentedUnits: occupiedUnits, grossRentMonthly: occupiedUnits * rentPerUnit, applyVacancy: occupiedUnits > 0, capRate })
+    : null;
+
+  const fallbackFixedMo = (Math.max(0, num(base?.taxes, 0)) + Math.max(0, num(base?.insurance, 0))) / 12 + Math.max(0, num(base?.waterMo, 0));
+  const fallbackMgmtPct = num(base?.mgmtPct, BASE_DEFAULTS.mgmtPct);
+  const fallbackVacPct = num(base?.vacancyPct, BASE_DEFAULTS.vacancyPct);
+  const currentRentMo = currentOpex
+    ? currentOpex.effectiveRentMonthly
+    : occupiedUnits * rentPerUnit * (occupiedUnits > 0 ? 1 - fallbackVacPct / 100 : 1);
+  const currentNoiMo = currentOpex
+    ? currentOpex.noiMonthly
+    : (currentRentMo * (1 - fallbackMgmtPct / 100) - fallbackFixedMo);
+  const stabilizedNoiAnnual = stabilizedOpex
+    ? stabilizedOpex.noiAnnual
+    : Math.max(0, ((totalUnits * rentPerUnit * (1 - fallbackVacPct / 100)) * (1 - fallbackMgmtPct / 100) - fallbackFixedMo) * 12);
+
+  const simBase = {
+    ...base,
+    units: totalUnits,
+    rent: rentPerUnit,
+    purchasePrice: basePkg.purchase,
+    bridgeClosing: basePkg.closing,
+    bridgeRate: lens === 'bridge' ? Math.max(0, rateVal) : basePkg.ratePct,
+    bridgePointsPct: lens === 'bridge' ? Math.max(0, pointsVal) : basePkg.pointsPct,
+    bridgeDeferredMonths: lens === 'bridge' ? Math.max(0, deferredVal) : basePkg.deferredMonths,
+    bridgeProcessing: lens === 'bridge' ? Math.max(0, processingVal) : basePkg.processing,
+    privateRate: lens === 'private' ? Math.max(0, rateVal) : basePkg.privatePool.ratePct,
+    privateMinParticipation: lens === 'private' ? Math.max(1000, partVal || basePkg.minParticipation) : basePkg.minParticipation,
+    refiLtv: lens === 'dscr' ? Math.max(0, Math.min(100, ltvVal)) : basePkg.refiCheck.refiLtv,
+    refiRate: lens === 'dscr' ? Math.max(0, rateVal) : basePkg.refiCheck.refiRate,
+    refiYears: lens === 'dscr' ? Math.max(1, amortVal || 30) : basePkg.refiCheck.refiYears,
+    refiDscr: lens === 'dscr' ? Math.max(0.5, minDscrVal || 1.25) : basePkg.refiCheck.refiDscr,
+    refiFeesFlat: lens === 'dscr' ? Math.max(0, feesParsed.flat) : basePkg.refiCheck.refiFeesFlat,
+    refiFeesPct: lens === 'dscr' ? Math.max(0, feesParsed.pct) : basePkg.refiCheck.refiFeesPct,
+  };
+  const simPkg = buildLenderPackage({ base: simBase, offer, guide, lens });
+
+  if (lens === 'private') {
+    const share = Math.max(simPkg.minParticipation, Math.min(Math.max(simPkg.minParticipation, simPkg.privatePool.totalFunds), partVal || simPkg.minParticipation));
+    const ret = computePrivateReturn(share, simPkg.privatePool.ratePct);
+    const poolPayMo = simPkg.privatePool.monthlyInterest;
+    const cashFlowMo = currentNoiMo - poolPayMo;
+    const dscr = poolPayMo > 0 ? currentNoiMo / poolPayMo : null;
+    return {
+      simPkg,
+      rentPerUnit,
+      unitsRented: occupiedUnits,
+      participation: share,
+      rentMo: currentRentMo,
+      noiAnnual: currentNoiMo * 12,
+      value: stabilizedOpex ? stabilizedOpex.value : simPkg.value,
+      payment: ret.monthly,
+      paymentLabel: `${moneyCents(ret.monthly)}/mo`,
+      paymentOverlay: [
+        `Your share (${money(share)}) at ${simPkg.privatePool.ratePct}% IO = ${moneyCents(ret.monthly)}/mo.`,
+        `Whole pool (${money(simPkg.privatePool.totalFunds)}): ${moneyCents(poolPayMo)}/mo.`,
+      ],
+      dscr,
+      dscrLabel: dscr !== null ? `${dscr.toFixed(2)}x` : '—',
+      dscrOverlay: [`${occupiedUnits} of ${totalUnits} units at ${money(rentPerUnit)}/mo: NOI ${money(currentNoiMo)}/mo ÷ ${money(poolPayMo)}/mo pool interest.`],
+      cashFlowMonthly: cashFlowMo,
+      cashFlowLabel: `${cashFlowMo < 0 ? '−' : ''}${money(Math.abs(cashFlowMo))}/mo`,
+      cashFlowOverlay: [`Operating NOI ${money(currentNoiMo)}/mo − ${money(poolPayMo)}/mo pool interest.`],
+      payoff: share,
+      payoffLabel: money(share),
+      payoffOverlay: [`Your ${money(share)} principal returned in full at refinance payoff (pool total ${money(simPkg.privatePool.totalFunds)}).`],
+    };
+  }
+
+  if (lens === 'dscr') {
+    const payMo = simPkg.refiCheck.refiPayment;
+    const dscr = payMo > 0 ? currentNoiMo / payMo : null;
+    const cashFlowMo = currentNoiMo - payMo;
+    return {
+      simPkg,
+      rentPerUnit,
+      unitsRented: occupiedUnits,
+      participation: 0,
+      rentMo: currentRentMo,
+      noiAnnual: currentNoiMo * 12,
+      value: stabilizedOpex ? stabilizedOpex.value : simPkg.value,
+      payment: payMo,
+      paymentLabel: `${money(payMo)}/mo`,
+      paymentOverlay: [`${money(simPkg.refiCheck.newLoan)} (${simPkg.refiCheck.refiLtv}% LTV) over ${simPkg.refiCheck.refiYears} yrs at ${simPkg.refiCheck.refiRate}%.`],
+      dscr,
+      dscrLabel: dscr !== null ? `${dscr.toFixed(2)}x` : '—',
+      dscrOverlay: [`${occupiedUnits} of ${totalUnits} units at ${money(rentPerUnit)}/mo: NOI ${money(currentNoiMo)}/mo ÷ ${money(payMo)}/mo P&I (min ${simPkg.refiCheck.refiDscr}x).`],
+      cashFlowMonthly: cashFlowMo,
+      cashFlowLabel: `${cashFlowMo < 0 ? '−' : ''}${money(Math.abs(cashFlowMo))}/mo`,
+      cashFlowOverlay: [`Operating NOI ${money(currentNoiMo)}/mo − ${money(payMo)}/mo P&I.`],
+      payoff: simPkg.refiCheck.bridgePayoff,
+      payoffLabel: money(simPkg.refiCheck.newLoan),
+      payoffOverlay: [`Takeout loan ${money(simPkg.refiCheck.newLoan)} pays off ${money(simPkg.refiCheck.bridgePayoff)} bridge + ${money(simPkg.refiCheck.refiFeesTotal)} fees.`],
+    };
+  }
+
+  // Bridge lens
+  const payMo = simPkg.initialMonthlyInterest;
+  const dscr = payMo > 0 ? currentNoiMo / payMo : null;
+  const cashFlowMo = currentNoiMo - simPkg.fullMonthlyInterest;
+  return {
+    simPkg,
+    rentPerUnit,
+    unitsRented: occupiedUnits,
+    participation: 0,
+    rentMo: currentRentMo,
+    noiAnnual: currentNoiMo * 12,
+    value: stabilizedOpex ? stabilizedOpex.value : simPkg.value,
+    payment: payMo,
+    paymentLabel: `${money(payMo)}/mo`,
+    paymentOverlay: [
+      `At close (${money(simPkg.initialDrawn)} drawn at ${simPkg.ratePct}% IO): ${money(payMo)}/mo.`,
+      `Once all ${money(simPkg.repairs)} repairs drawn: ${money(simPkg.fullMonthlyInterest)}/mo.`,
+    ],
+    dscr,
+    dscrLabel: dscr !== null ? `${dscr.toFixed(2)}x` : '—',
+    dscrOverlay: [
+      `${occupiedUnits} of ${totalUnits} units at ${money(rentPerUnit)}/mo: NOI ${money(currentNoiMo)}/mo ÷ ${money(payMo)}/mo initial interest.`,
+      `Stabilized NOI (${money(stabilizedNoiAnnual)}/yr) covers takeout refi.`,
+    ],
+    cashFlowMonthly: cashFlowMo,
+    cashFlowLabel: `${cashFlowMo < 0 ? '−' : ''}${money(Math.abs(cashFlowMo))}/mo`,
+    cashFlowOverlay: [`Operating NOI ${money(currentNoiMo)}/mo − ${money(simPkg.fullMonthlyInterest)}/mo full interest.`],
+    payoff: simPkg.bridgePayoff,
+    payoffLabel: money(simPkg.bridgePayoff),
+    payoffOverlay: [`${money(simPkg.totalLoan)} bridge loan + ${money(simPkg.deferredInterest)} (${simPkg.deferredMonths} mo deferred) = ${money(simPkg.bridgePayoff)}.`],
+  };
+}

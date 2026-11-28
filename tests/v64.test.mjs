@@ -7,12 +7,12 @@ import { setDealNames, buyerName } from '../src/lib/people.js';
 
 const src = (p) => readFileSync(p, 'utf8');
 
-test('seller page: short cover, no intro line, plain "Photos" title', () => {
+test('seller page: short cover with PhotoViewer, no intro line, single view', () => {
   const s = src('src/views/Seller.jsx');
-  assert.match(s, /<Cover rows=\{coverRows\} compact \/>/);
+  assert.match(s, /<Cover items=\{gallery\.items\} compact open=\{photoViewerOpen\} onOpenChange=\{setPhotoViewerOpen\} \/>/);
   assert.doesNotMatch(s, /c\.intro/);
   assert.doesNotMatch(s, /Photos from our visit/);
-  assert.match(s, /'Photos \(\$\{galleryPhotos\.length\}\)'|`Photos \(\$\{galleryPhotos\.length\}\)`/);
+  assert.doesNotMatch(s, /role="tablist"/);
   const p = src('src/components/Photos.jsx');
   assert.match(p, /compact \? 'h-36 w-full object-cover sm:h-48'/);
 });

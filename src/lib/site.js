@@ -15,7 +15,9 @@ export const siteRules = (kind) => ({
 });
 
 export const canAccessCityRecords = (kind, role, preview = false) =>
-  role === 'lender' || Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);
+  kind !== 'seller' &&
+  (['lender', 'realtor', 'reviewer'].includes(role) ||
+    Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview));
 
 export const canAccessDealPlan = (kind, role, preview = false) =>
   Boolean(siteRules(kind).ownerAllowed && role === 'owner' && !preview);

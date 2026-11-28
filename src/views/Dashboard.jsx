@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { evaluate, money, valueSummary } from '../lib/dealmath.js';
 import { supabase } from '../lib/supabase.js';
 import { useDealModel } from '../lib/useDealModel.js';
+import { SITE_KIND, canAccessCityRecords } from '../lib/site.js';
 import { Card, CardTitle } from '../components/Shell.jsx';
 import { useUploads } from '../components/Files.jsx';
-import { Cover, photosOf } from '../components/Photos.jsx';
+import { Cover, useDealGallery } from '../components/Photos.jsx';
+import { OverviewActionButtons } from '../components/OverlaySheet.jsx';
+import { useSheetBadges } from '../lib/sheetBadges.js';
 import { WorkBoard } from '../components/DealWorkspace.jsx';
-import { seenBy } from '../lib/visibility.js';
 import { SellerPulse } from '../components/Pulse.jsx';
+import Activity from '../components/Activity.jsx';
 
 // Owner-only dynamic import so public and seller builds never bundle dealplan or deal_plan data.
 const loadPlanLib =
@@ -16,6 +19,7 @@ const loadPlanLib =
     : () => import('../lib/dealplan.js');
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
+const PREVIEWS = [['seller', 'Seller'], ['realtor', 'Realtor'], ['reviewer', 'Reviewer'], ['lender', 'Lender'], ['viewer', 'Viewer']];
 
 function Tile({ label, children, strong }) {
   return (
@@ -44,10 +48,13 @@ function CurrentOffer({ base, setBase, owner, field = 'askPrice', label = 'Selle
 }
 
 // Short phone-first overview for the owner.
-export default function Dashboard({ deal, me, role = 'owner', preview, onJump }) {
+export default function Dashboard({ deal, me, role = 'owner', preview, onJump, onOpenPanel }) {
   const owner = role === 'owner' && !preview;
   const root = preview ? `#/d/${deal.slug}/view/${role}` : `#/d/${deal.slug}`;
   const [rows] = useUploads(deal);
+  const gallery = useDealGallery(deal, role, preview, { externalRows: rows });
+  const docs = (rows || []).filter((r) => r.kind === 'document');
+  const { docBadge, msgBadge } = useSheetBadges({ deal, me, role, preview, docs });
   const model = useDealModel(deal, { owner, onlyShared: role === 'owner' ? undefined : role });
   const { offers, base, setBase } = model;
   const [planRepairBudget, setPlanRepairBudget] = useState(0);
@@ -80,8 +87,6 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
     })();
     return () => { alive = false; };
   }, [deal.slug, owner]);
-  const visible = preview ? seenBy(role, rows) : rows || [];
-  const photos = photosOf(visible);
   const effectiveBase = {
     ...base,
     ...(planRepairBudget > 0 ? { rehab: planRepairBudget } : {}),
@@ -95,14 +100,30 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
     ? (valueSummary({ base: { ...o.b, ...effectiveBase }, noi: o.noi, units: o.b.units }).income ?? o.b.value)
     : o.b.value;
   const ready = offers !== null;
+  const openPanel = (kind) => (onOpenPanel ? onOpenPanel(kind) : onJump?.(kind, root));
 
   return (
     <div className="space-y-4">
       {model.error && <p role="alert" className="text-sm text-red-700">{model.error}</p>}
-      {photos.length > 0 && (
-        <div className="space-y-1.5">
-          <Cover rows={photos} compact />
-          <a href={`${root}/photos`} onClick={onJump ? (e) => { e.preventDefault(); onJump('photos', root); } : undefined} className="inline-flex min-h-[40px] items-center text-sm underline">See all {photos.length} photos</a>
+      {gallery.items.length > 0 && (
+        <Cover items={gallery.items} compact onOpenUnitGallery={() => openPanel('photos')} />
+      )}
+      <OverviewActionButtons
+        showDocuments
+        showMessages
+        showCityRecords={canAccessCityRecords(SITE_KIND, role, preview)}
+        showComps
+        docCount={docBadge}
+        msgCount={msgBadge}
+        onOpenDocuments={() => openPanel('documents')}
+        onOpenMessages={() => openPanel('messages')}
+        onOpenCityRecords={() => openPanel('city-records')}
+        onOpenComps={() => openPanel('comps')}
+      />
+      {owner && (
+        <div className="flex flex-wrap items-center gap-1.5 text-sm">
+          <span className="mr-1 text-ink-soft">See as</span>
+          {PREVIEWS.map(([k, l]) => <a key={k} href={`#/d/${deal.slug}/view/${k}`} className="inline-flex min-h-[40px] shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-white px-3 py-1 hover:border-ink">{l}</a>)}
         </div>
       )}
       <Card>
@@ -118,7 +139,8 @@ export default function Dashboard({ deal, me, role = 'owner', preview, onJump })
         {owner && model.saved && model.saved !== 'Saved' && <p role="status" className="mt-2 text-sm text-ink">{model.saved}</p>}
       </Card>
       <SellerPulse deal={deal} />
-      <WorkBoard deal={deal} me={me} role={role} preview={preview} />
+      <WorkBoard deal={deal} me={me} role={role} preview={preview} compactLimit={3} />
+      <Activity deal={deal} title="Latest" compactLimit={3} onSeeAll={() => openPanel('activity')} />
     </div>
   );
 }

@@ -83,7 +83,8 @@ test('offers are readable only by the owner, or a reviewer/lender it was shared 
 test('lender page shows the plan and local what-if only: no saving, no editing owner records or repair costs', () => {
   const src = readFileSync(new URL('../src/views/Lender.jsx', import.meta.url), 'utf8');
   for (const t of ['owner_notes', 'deal_private', 'canSave={true}', 'setBase', 'tenthUnitRepair', 'Try different terms', '<Offers', '.update(', '.insert(', '.upsert(']) assert.ok(!src.includes(t), t);
-  assert.match(src, /<LenderWhatIf\b/);
+  assert.doesNotMatch(src, /<LenderWhatIf\b/);
+  assert.match(src, /<LenderTerms\b/);
 });
 
 test('messages are fixed by role: nobody picks people by hand, and research boards are gone', () => {
@@ -143,8 +144,8 @@ test('v5 comps tab and tables are hidden from lender, seller and viewer', () => 
     assert.doesNotMatch(s, /Comps|commercial_comps|commercial_comp_settings/, f);
   }
   const rev = readFileSync(new URL('../src/views/Reviewer.jsx', import.meta.url), 'utf8');
-  // Reviewer gets Overview, The offer, Rent & value (when available), Comps, Photos, Documents, Messages; viewer gets Overview + Photos; Ideas removed.
-  assert.match(rev, /\['overview', 'Overview'\], \['photos', 'Photos'\]/);
+  // Reviewer gets Overview, The offer (collapsed Rent & value), Comps; viewer gets Overview only; Ideas removed.
+  assert.match(rev, /const sections = viewer\s*\?\s*\[\['overview', 'Overview'\]\]\s*:\s*\[\s*\['overview', 'Overview'\],\s*\['offers', 'The offer'\],\s*\['comps', 'Comps'\],?\s*\];/);
   assert.match(rev, /!viewer &&[\s\S]*?<Comps /);
   assert.doesNotMatch(rev, /StrategyIdeas|sec-ideas|data-section="ideas"/);
 });

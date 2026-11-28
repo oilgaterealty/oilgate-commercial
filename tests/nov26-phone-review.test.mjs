@@ -220,10 +220,13 @@ test('UnitSummary renders unit name, repair budget, occupancy, and note; InfoTip
 });
 
 test('Phone-first cleanup structural guards across all 15 items', () => {
-  // 1 & 2: Dashboard has no Activity and no Switches; Owner & Realtor have Recent activity section
-  assert.doesNotMatch(read('src/views/Dashboard.jsx'), /<Activity|Switches/);
-  assert.match(read('src/views/Owner.jsx'), /\['activity', 'Recent activity'\]/);
-  assert.match(read('src/views/Realtor.jsx'), /\['activity', 'Recent activity'\]/);
+  // 1 & 2: Dashboard shows compact Latest (3) Activity and no Switches; Owner & Realtor open full Recent activity via InPagePanel
+  assert.doesNotMatch(read('src/views/Dashboard.jsx'), /Switches/);
+  assert.match(read('src/views/Dashboard.jsx'), /<Activity[\s\S]*?title="Latest"[\s\S]*?compactLimit=\{3\}/);
+  assert.match(read('src/views/Owner.jsx'), /activity:\s*'Recent activity'/);
+  assert.match(read('src/views/Owner.jsx'), /panel === 'activity'[\s\S]*?<Activity/);
+  assert.match(read('src/views/Realtor.jsx'), /activity:\s*'Recent activity'/);
+  assert.match(read('src/views/Realtor.jsx'), /panel === 'activity'[\s\S]*?<Activity/);
 
   // 3: LeadGuest deleted and removed from UI
   assert.equal(existsSync(join(root, 'src/views/LeadGuest.jsx')), false);

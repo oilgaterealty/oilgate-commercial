@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { isOpenViewerToken } from '../lib/site.js';
+import { ROOMS, AREA_ROOMS, spaceLabel } from '../lib/leaseUp.js';
 import {
   OPEN_REQUEST_ROLES,
   filterOpenViewerSnapshot,
@@ -11,10 +12,13 @@ import {
   validateAccessRequest,
 } from '../lib/openViewer.js';
 import Shell, { Button, Card, CardTitle, Empty, Field } from '../components/Shell.jsx';
-import { PhotoGrid, photosOf } from '../components/Photos.jsx';
+import { photosOf } from '../components/Photos.jsx';
 import PhotoViewer from '../components/PhotoViewer.jsx';
 import PropertyFacts from '../components/PropertyFacts.jsx';
 import UnitGallery from '../components/UnitGallery.jsx';
+import { InPagePanel } from '../components/OverlaySheet.jsx';
+
+const roomName = (k) => [...ROOMS, ...AREA_ROOMS].find(([x]) => x === k)?.[1] || k;
 
 const BUTTON_LABEL = {
   idle: 'Request access',
@@ -28,6 +32,7 @@ const BUTTON_LABEL = {
 export default function OpenViewer({ slug, token, tab }) {
   const [state, setState] = useState({ loading: true, snapshot: null });
   const [heroOpen, setHeroOpen] = useState(null);
+  const [unitGalleryOpen, setUnitGalleryOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [form, setForm] = useState({ name: '', company: '', email: '', role: 'lender', note: '', honeypot: '' });
   const [submitState, setSubmitState] = useState('idle');
@@ -77,17 +82,65 @@ export default function OpenViewer({ slug, token, tab }) {
     return () => { alive = false; };
   }, [slug, token]);
 
-  useEffect(() => {
-    if (tab === 'photos' && state.snapshot) {
-      document.getElementById('sec-photos')?.scrollIntoView?.();
+  const snapshot = state.snapshot;
+  const coverPhotos = photosOf(snapshot?.photos);
+  const walkthroughPhotos = snapshot?.walkthroughPhotos || [];
+  const featuredPhoto = snapshot ? selectFeaturedPhoto(coverPhotos, walkthroughPhotos) : null;
+
+  const galleryItems = useMemo(() => {
+    if (!snapshot) return [];
+    const seen = new Set();
+    const out = [];
+    const pushItem = (item) => {
+      if (!item?.url || seen.has(item.url)) return;
+      seen.add(item.url);
+      out.push(item);
+    };
+    if (featuredPhoto?.url) {
+      pushItem({
+        url: featuredPhoto.url,
+        alt: featuredPhoto.alt || snapshot.deal.title || 'Property photo',
+        group: 'property',
+        groupLabel: 'Property',
+        type: 'photo',
+      });
     }
-  }, [tab, Boolean(state.snapshot)]);
+    for (const p of coverPhotos) {
+      pushItem({
+        url: p.url,
+        alt: p.note || 'Property photo',
+        group: 'property',
+        groupLabel: 'Property',
+        type: 'photo',
+      });
+    }
+    for (const wp of walkthroughPhotos) {
+      if (!wp?.url) continue;
+      const u = wp.unit_number;
+      const gLabel = u ? spaceLabel(u) : 'Property';
+      pushItem({
+        url: wp.url,
+        alt: `${gLabel}${wp.room && wp.room !== 'general' ? ` · ${roomName(wp.room)}` : ''}`,
+        group: u ? `unit-${u}` : 'property',
+        groupLabel: gLabel,
+        type: 'photo',
+      });
+    }
+    return out;
+  }, [snapshot, featuredPhoto, coverPhotos, walkthroughPhotos]);
+
+  useEffect(() => {
+    if (tab === 'photos') {
+      if (walkthroughPhotos.length > 0) setUnitGalleryOpen(true);
+      else if (galleryItems.length > 0) setHeroOpen(0);
+    }
+  }, [tab, galleryItems.length, walkthroughPhotos.length]);
 
   if (state.loading) {
     return <Shell><Empty>Loading…</Empty></Shell>;
   }
 
-  if (!state.snapshot) {
+  if (!snapshot) {
     return (
       <Shell head={<h1 className="font-display text-3xl font-semibold">Link unavailable</h1>}>
         <Card><Empty>This link is no longer active.</Empty></Card>
@@ -95,9 +148,7 @@ export default function OpenViewer({ slug, token, tab }) {
     );
   }
 
-  const { deal, photos, walkthroughPhotos } = state.snapshot;
-  const coverPhotos = photosOf(photos);
-  const featuredPhoto = selectFeaturedPhoto(coverPhotos, walkthroughPhotos);
+  const { deal } = snapshot;
   const facts = getOpenViewerFacts(deal.slug);
   const city = (deal.address || '').split(',').slice(1).join(',').trim();
 
@@ -140,163 +191,176 @@ export default function OpenViewer({ slug, token, tab }) {
   return (
     <Shell>
       <div className="space-y-6">
-        <section aria-label="Property hero" className="overflow-hidden rounded-3xl border border-line bg-ink text-white shadow-[0_1px_0_rgba(20,33,61,0.04)]">
-          {featuredPhoto && (
-            <>
-              <button
-                type="button"
-                onClick={() => setHeroOpen(0)}
-                aria-label="Open featured photo"
-                className="block w-full cursor-zoom-in bg-ink"
-              >
-                <img
-                  src={featuredPhoto.url}
-                  alt={featuredPhoto.alt}
-                  className="aspect-[16/10] max-h-[420px] w-full object-cover sm:aspect-[16/7]"
-                />
-              </button>
-              <PhotoViewer
-                items={[{ url: featuredPhoto.url, alt: featuredPhoto.alt }]}
-                index={heroOpen}
-                onIndex={setHeroOpen}
-              />
-            </>
-          )}
-          <div className="p-5 sm:p-8">
-            {city && (
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-warm sm:text-sm">
-                {city}
-              </p>
-            )}
-            <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight break-words sm:text-5xl">
-              {deal.title || deal.address}
-            </h1>
-            {deal.address && deal.address !== deal.title && !city && (
-              <p className="mt-1 text-sm font-medium text-white/85">{deal.address}</p>
-            )}
-          </div>
-        </section>
+        <InPagePanel open={unitGalleryOpen} kind="photos" title="Photos by unit" backLabel="Overview" onClose={() => setUnitGalleryOpen(false)}>
+          <UnitGallery deal={deal} role="viewer" preview snapshotPhotos={walkthroughPhotos} />
+        </InPagePanel>
 
-        {facts ? (
-          <PropertyFacts slug={deal.slug} />
-        ) : (
-          <Card>
-            <CardTitle>The property</CardTitle>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <div><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
-              <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">{deal.units}</dd></div>
-              <div className="sm:col-span-2"><dt className="text-ink-soft">Summary</dt><dd className="font-medium leading-relaxed">{deal.summary}</dd></div>
-            </dl>
-          </Card>
-        )}
-
-        <section id="sec-photos" data-section="photos" className="scroll-mt-6 space-y-4">
-          {coverPhotos.length > 1 && (
-            <Card>
-              <CardTitle>Property photos</CardTitle>
-              <PhotoGrid photos={coverPhotos} />
-            </Card>
-          )}
-          <UnitGallery deal={deal} role="viewer" snapshotPhotos={walkthroughPhotos} />
-        </section>
-
-        <section aria-label="Request access">
-          <Card>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-xl font-semibold">Request access</h2>
-              <Button
-                type="button"
-                kind={requestOpen ? 'secondary' : 'primary'}
-                aria-expanded={requestOpen}
-                onClick={() => setRequestOpen((v) => !v)}
-              >
-                {requestOpen ? 'Close' : 'Request access'}
-              </Button>
-            </div>
-
-            {requestOpen && (
-              <form onSubmit={submitRequest} className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input
-                  type="text"
-                  name="website"
-                  value={form.honeypot}
-                  onChange={(e) => setForm({ ...form, honeypot: e.target.value })}
-                  tabIndex={-1}
-                  autoComplete="off"
-                  aria-hidden="true"
-                  className="hidden"
-                />
-                <label className="grid gap-1 text-xs font-medium text-ink-soft">
-                  Name
-                  <Field
-                    required
-                    maxLength={120}
-                    aria-label="Name"
-                    placeholder="Name"
-                    value={form.name}
-                    onChange={(e) => { setForm({ ...form, name: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                  />
-                </label>
-                <label className="grid gap-1 text-xs font-medium text-ink-soft">
-                  Email
-                  <Field
-                    type="email"
-                    required
-                    maxLength={254}
-                    aria-label="Email"
-                    placeholder="Email"
-                    value={form.email}
-                    onChange={(e) => { setForm({ ...form, email: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
-                  />
-                </label>
-                <label className={`grid gap-1 text-xs font-medium text-ink-soft ${form.role === 'lender' ? '' : 'sm:col-span-2'}`}>
-                  Role
-                  <select
-                    aria-label="Role"
-                    value={form.role}
-                    onChange={(e) => {
-                      const role = e.target.value;
-                      setForm((prev) => ({ ...prev, role, company: role === 'lender' ? prev.company : '' }));
-                      if (submitState !== 'idle') setSubmitState('idle');
-                    }}
-                    className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+        {!unitGalleryOpen && (
+          <>
+            <section aria-label="Property hero" className="overflow-hidden rounded-3xl border border-line bg-ink text-white shadow-[0_1px_0_rgba(20,33,61,0.04)]">
+              {featuredPhoto && (
+                <>
+                  <button
+                    type="button"
+                    data-hero-photo
+                    onClick={() => setHeroOpen(0)}
+                    aria-label={galleryItems.length > 1 ? `Open all ${galleryItems.length} photos` : 'Open featured photo'}
+                    className="relative block w-full cursor-zoom-in bg-ink"
                   >
-                    {OPEN_REQUEST_ROLES.map(([k, label]) => (
-                      <option key={k} value={k}>{label}</option>
-                    ))}
-                  </select>
-                </label>
-                {form.role === 'lender' && (
-                  <label className="grid gap-1 text-xs font-medium text-ink-soft">
-                    Company
-                    <Field
-                      maxLength={120}
-                      aria-label="Company"
-                      placeholder="Company"
-                      value={form.company}
-                      onChange={(e) => { setForm({ ...form, company: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                    <img
+                      src={featuredPhoto.url}
+                      alt={featuredPhoto.alt}
+                      className="aspect-[16/10] max-h-[420px] w-full object-cover sm:aspect-[16/7]"
                     />
-                  </label>
-                )}
-                <label className="grid gap-1 text-xs font-medium text-ink-soft sm:col-span-2">
-                  Note
-                  <Field
-                    maxLength={1000}
-                    aria-label="Note"
-                    placeholder="Note"
-                    value={form.note}
-                    onChange={(e) => { setForm({ ...form, note: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                    {galleryItems.length > 0 && (
+                      <span
+                        data-photo-count-badge
+                        className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-ink/80 px-3 py-1 text-xs font-semibold tabular-nums text-white shadow backdrop-blur"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <rect x="2.5" y="4" width="15" height="12" rx="2" />
+                          <circle cx="7.5" cy="8.5" r="1.25" fill="currentColor" stroke="none" />
+                          <path d="M3.5 14l4.5-4 3 2.5 2.5-2 3 3.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <span>{galleryItems.length === 1 ? '1 photo' : `${galleryItems.length} photos`}</span>
+                      </span>
+                    )}
+                  </button>
+                  <PhotoViewer
+                    items={galleryItems}
+                    index={heroOpen}
+                    onIndex={setHeroOpen}
+                    onOpenUnitGallery={walkthroughPhotos.length > 0 ? () => setUnitGalleryOpen(true) : undefined}
                   />
-                </label>
-                <div className="sm:col-span-2">
-                  <Button type="submit" disabled={submitState === 'sending' || submitState === 'sent'}>
-                    {BUTTON_LABEL[submitState] || 'Request access'}
+                </>
+              )}
+              <div className="p-5 sm:p-8">
+                {city && (
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-warm sm:text-sm">
+                    {city}
+                  </p>
+                )}
+                <h1 className="mt-1 font-display text-3xl font-semibold tracking-tight break-words sm:text-5xl">
+                  {deal.title || deal.address}
+                </h1>
+                {deal.address && deal.address !== deal.title && !city && (
+                  <p className="mt-1 text-sm font-medium text-white/85">{deal.address}</p>
+                )}
+              </div>
+            </section>
+
+            {facts ? (
+              <PropertyFacts slug={deal.slug} />
+            ) : (
+              <Card>
+                <CardTitle>The property</CardTitle>
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><dt className="text-ink-soft">Address</dt><dd className="font-semibold">{deal.address || deal.title}</dd></div>
+                  <div><dt className="text-ink-soft">Units</dt><dd className="font-semibold">{deal.units}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-ink-soft">Summary</dt><dd className="font-medium leading-relaxed">{deal.summary}</dd></div>
+                </dl>
+              </Card>
+            )}
+
+            <section aria-label="Request access">
+              <Card>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="font-display text-xl font-semibold">Request access</h2>
+                  <Button
+                    type="button"
+                    kind={requestOpen ? 'secondary' : 'primary'}
+                    aria-expanded={requestOpen}
+                    onClick={() => setRequestOpen((v) => !v)}
+                  >
+                    {requestOpen ? 'Close' : 'Request access'}
                   </Button>
                 </div>
-              </form>
-            )}
-          </Card>
-        </section>
+
+                {requestOpen && (
+                  <form onSubmit={submitRequest} className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <input
+                      type="text"
+                      name="website"
+                      value={form.honeypot}
+                      onChange={(e) => setForm({ ...form, honeypot: e.target.value })}
+                      tabIndex={-1}
+                      autoComplete="off"
+                      aria-hidden="true"
+                      className="hidden"
+                    />
+                    <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                      Name
+                      <Field
+                        required
+                        maxLength={120}
+                        aria-label="Name"
+                        placeholder="Name"
+                        value={form.name}
+                        onChange={(e) => { setForm({ ...form, name: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                      Email
+                      <Field
+                        type="email"
+                        required
+                        maxLength={254}
+                        aria-label="Email"
+                        placeholder="Email"
+                        value={form.email}
+                        onChange={(e) => { setForm({ ...form, email: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                      />
+                    </label>
+                    <label className={`grid gap-1 text-xs font-medium text-ink-soft ${form.role === 'lender' ? '' : 'sm:col-span-2'}`}>
+                      Role
+                      <select
+                        aria-label="Role"
+                        value={form.role}
+                        onChange={(e) => {
+                          const role = e.target.value;
+                          setForm((prev) => ({ ...prev, role, company: role === 'lender' ? prev.company : '' }));
+                          if (submitState !== 'idle') setSubmitState('idle');
+                        }}
+                        className="min-h-[40px] w-full rounded-xl border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-ink"
+                      >
+                        {OPEN_REQUEST_ROLES.map(([k, label]) => (
+                          <option key={k} value={k}>{label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {form.role === 'lender' && (
+                      <label className="grid gap-1 text-xs font-medium text-ink-soft">
+                        Company
+                        <Field
+                          maxLength={120}
+                          aria-label="Company"
+                          placeholder="Company"
+                          value={form.company}
+                          onChange={(e) => { setForm({ ...form, company: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                        />
+                      </label>
+                    )}
+                    <label className="grid gap-1 text-xs font-medium text-ink-soft sm:col-span-2">
+                      Note
+                      <Field
+                        maxLength={1000}
+                        aria-label="Note"
+                        placeholder="Note"
+                        value={form.note}
+                        onChange={(e) => { setForm({ ...form, note: e.target.value }); if (submitState !== 'idle') setSubmitState('idle'); }}
+                      />
+                    </label>
+                    <div className="sm:col-span-2">
+                      <Button type="submit" disabled={submitState === 'sending' || submitState === 'sent'}>
+                        {BUTTON_LABEL[submitState] || 'Request access'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </Card>
+            </section>
+          </>
+        )}
       </div>
     </Shell>
   );

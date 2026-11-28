@@ -132,8 +132,8 @@ test('0018 scopes lender City Records to city_records prefix/folder and updates 
   assert.match(termsReadPol, /lender_uid = auth\.uid\(\)/);
 
   const lenderSrc = read('src/views/Lender.jsx');
-  assert.match(lenderSrc, /\['city-records', 'City records'\]/);
-  assert.match(lenderSrc, /\['documents', 'Documents'\]/);
+  assert.match(lenderSrc, /showDocuments/);
+  assert.match(lenderSrc, /showCityRecords=\{canAccessCityRecords/);
   assert.match(lenderSrc, /<CityRecords /);
 
   const formatMod = await import('../src/lib/format.js');

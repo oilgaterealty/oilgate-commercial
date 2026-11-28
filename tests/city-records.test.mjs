@@ -526,22 +526,26 @@ test('compact sections cap visible rows at 5, render counts, dates, and expanded
   assert.equal((active.match(/role="tooltip"/g) || []).length, 1);
 });
 
-test('City Records page is restricted to non-preview owner (owner site) and non-preview lender', async () => {
+test('City Records page is restricted to non-preview owner (owner site), lender, realtor, and reviewer (never seller/viewer)', async () => {
   assert.equal(siteRules('public').ownerAllowed, false);
   assert.equal(canAccessCityRecords('public', 'owner', false), false);
   assert.equal(canAccessCityRecords('owner', 'owner', true), false);
-  assert.equal(canAccessCityRecords('owner', 'lender', true), true);
-  assert.equal(canAccessCityRecords('owner', 'lender', false), true);
-  assert.equal(canAccessCityRecords('public', 'lender', false), true);
-  for (const r of ['seller', 'realtor', 'reviewer', 'viewer', 'guest', 'lead_guest', '']) {
+  for (const r of ['lender', 'realtor', 'reviewer']) {
+    assert.equal(canAccessCityRecords('owner', r, true), true, `allowed in owner preview for ${r}`);
+    assert.equal(canAccessCityRecords('owner', r, false), true, `allowed in owner site for ${r}`);
+    assert.equal(canAccessCityRecords('public', r, false), true, `allowed in public site for ${r}`);
+    assert.equal(canAccessCityRecords('seller', r, false), false, `blocked in seller site for ${r}`);
+  }
+  for (const r of ['seller', 'viewer', 'guest', 'lead_guest', '']) {
     assert.equal(canAccessCityRecords('owner', r, false), false, `blocked for ${r}`);
   }
   assert.equal(canAccessCityRecords('owner', 'owner', false), true);
 
-  for (const view of ['Seller.jsx', 'Realtor.jsx', 'Reviewer.jsx', 'Home.jsx', 'Join.jsx']) {
+  for (const view of ['Seller.jsx', 'Home.jsx', 'Join.jsx']) {
     const s = read(`src/views/${view}`);
     assert.doesNotMatch(s, /CityRecords|city-records|city_records:/, `${view} must not reference City Records`);
   }
+  assert.match(read('src/views/Reviewer.jsx'), /!viewer && panel === 'city-records' && canAccessCityRecords\(SITE_KIND, 'reviewer', preview\)/);
 
   const ownerSrc = read('src/views/Owner.jsx');
   assert.match(ownerSrc, /import\.meta\.env\.VITE_SITE_KIND === 'public' \|\| import\.meta\.env\.VITE_SITE_KIND === 'seller' \? null : lazy/);

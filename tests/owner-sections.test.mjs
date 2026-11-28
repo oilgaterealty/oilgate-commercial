@@ -9,12 +9,15 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
-test('owner renders only the chosen section; Overview by default', () => {
+test('owner renders 5 consolidated tabs plus Settings gear and InPagePanel drawers; Overview by default', () => {
   const src = read('src/views/Owner.jsx');
-  assert.match(src, /const active = SECTIONS\.some\(\(\[k\]\) => k === wanted\) \? wanted : 'overview';/);
+  assert.match(src, /const active = panel \? 'overview' : \(SECTIONS\.some\(\(\[k\]\) => k === mappedTab\) \? mappedTab : 'overview'\);/);
   assert.match(src, /<JumpNav sections=\{SECTIONS\} active=\{active\}/);
-  for (const k of ['overview', 'offers', 'plans', 'rent-value', 'lenders', 'walkthrough', 'tenants', 'comps', 'photos', 'messages', 'files', 'city-records', 'activity', 'settings']) {
-    assert.match(src, new RegExp(`\\{show\\('${k}'\\) && `), k);
+  for (const k of ['overview', 'offers', 'walkthrough', 'tenants']) {
+    assert.match(src, new RegExp(`\\['${k}',`), k);
+  }
+  for (const k of ['photos', 'documents', 'messages', 'city-records', 'comps', 'activity', 'settings']) {
+    assert.match(src, new RegExp(`panel === '${k}'`), k);
   }
   assert.doesNotMatch(src, /useSectionScroll\(/);
 });

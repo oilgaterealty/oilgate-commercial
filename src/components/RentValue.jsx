@@ -106,9 +106,11 @@ export function mergeViews(views) {
   return out;
 }
 
-export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false, rent: controlledRent = null, onRentChange = null }) {
+export default function RentValue({ data, editable = false, onSave, Trigger = OverlayTrigger, showMarket = false, sourceLines = null, hideUnits = false, hideSlider = false, hideValueRange = false, collapseTables = false, rent: controlledRent = null, onRentChange = null }) {
   const [draft, setDraft] = useState({});
   const [state, setState] = useState('');
+  const [tablesOpen, setTablesOpen] = useState({ units: false, views: false, grid: false });
+  const toggleTable = (k) => setTablesOpen((p) => ({ ...p, [k]: !p[k] }));
   const mr = showMarket && data?.marketRange ? data.marketRange : null;
   const [internalRent, setInternalRent] = useState(mr ? midRent(mr) : 0);
   const isControlled = controlledRent !== null && controlledRent !== undefined && typeof onRentChange === 'function';
@@ -155,97 +157,179 @@ export default function RentValue({ data, editable = false, onSave, Trigger = Ov
     ['All in', (v) => money(v.allIn), (v) => v.allInOverlay],
   ];
 
+  const showRangesCard = !hideValueRange && (!hideSlider || Boolean(data.valueRange));
+  const unitsTable = (
+    <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">
+      <table className="w-full min-w-[560px] border-collapse text-right text-sm tabular-nums">
+        <thead className="bg-ink text-xs text-white">
+          <tr>
+            <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Unit</th>
+            <th scope="col" className="px-3 py-2.5">Repairs</th>
+            <th scope="col" className="px-3 py-2.5">Rent today</th>
+            <th scope="col" className="px-3 py-2.5">Our rent</th>
+            {showMarket ? <th scope="col" className="px-3 py-2.5">Market rent</th> : null}
+            {showMarket ? <th scope="col" className="px-3 py-2.5">Gap</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {data.units.map((u) => (
+            <tr key={u.id} className="border-t border-line">
+              <th scope="row" className="sticky left-0 z-10 bg-white px-3 py-2 text-left">{u.id}</th>
+              <td className="px-3 py-2">{money(u.repairs)}</td>
+              <td className="px-3 py-2">{editable ? input(u, 'rentToday', 'rent today') : u.rentToday === null && !u.occupied ? 'Empty' : cash(u.rentToday)}</td>
+              <td className="px-3 py-2 font-semibold">{money(u.ourRent)}</td>
+              {showMarket ? <td className="px-3 py-2">{editable ? input(u, 'marketRent', 'market rent') : cash(u.marketRent)}</td> : null}
+              {showMarket ? <td className={`px-3 py-2 font-semibold ${u.gap > 0 ? 'text-good' : u.gap < 0 ? 'text-red-700' : 'text-ink'}`}>{signed(u.gap)}</td> : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+  const viewsTable = (
+    <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Three views side by side">
+      <table className={`w-full ${views.length >= 3 ? 'min-w-[480px] ' : ''}border-collapse text-right text-sm tabular-nums`}>
+        <thead className="bg-ink text-xs text-white">
+          <tr>
+            <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left"><span className="sr-only">Line</span></th>
+            {views.map((v) => <th key={v.key} scope="col" className="px-3 py-2.5">{v.label}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, show, overlay]) => (
+            <tr key={label} className={`border-t border-line ${label === 'Value' ? 'bg-paper font-semibold' : ''}`}>
+              <th scope="row" className={`sticky left-0 z-10 px-3 py-2 text-left ${label === 'Value' ? 'bg-paper' : 'bg-white'}`}>{label}</th>
+              {views.map((v) => (
+                <td key={v.key} className={`px-3 py-2 ${label === 'Net /yr' && v.netYr < 0 ? 'text-red-700' : ''}`}>
+                  <Trigger lines={overlay(v)}>{show(v)}</Trigger>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+  const gridTable = (
+    <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Value by rent and cap rate">
+      <table className="w-full min-w-[420px] border-collapse text-right text-sm tabular-nums">
+        <thead className="bg-ink text-xs text-white">
+          <tr>
+            <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Rent / unit</th>
+            {data.caps.map((c) => <th key={c} scope="col" className="px-3 py-2.5">{c}% cap</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {grid.map((row) => (
+            <tr key={row.rent} className="border-t border-line">
+              <th scope="row" className={`sticky left-0 z-10 bg-white px-3 py-2 text-left ${row.rent === activeRent ? 'font-semibold' : 'font-normal'}`}>{money(row.rent)}</th>
+              {row.cells.map((c) => (
+                <td key={c.cap} className="p-1">
+                  <Trigger
+                    lines={c.overlay}
+                    className={`block w-full rounded-lg px-2 py-1.5 text-right ${c.clears ? 'bg-emerald-50 font-semibold text-good' : 'text-ink-soft'} ${c.stabilized ? 'ring-2 ring-ink' : ''}`}
+                  >
+                    {moneyK(c.value)}
+                  </Trigger>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
-      <Ranges data={data} showMarket={showMarket} sourceLines={sourceLines} Trigger={Trigger} rent={rent} setRent={setRent} />
+    <div className={collapseTables ? 'space-y-3.5' : 'space-y-5'}>
+      {showRangesCard && (
+        <Ranges data={data} showMarket={showMarket && !hideSlider} sourceLines={sourceLines} Trigger={Trigger} rent={rent} setRent={setRent} />
+      )}
       <OperatingBreakdown calc={opexBreakdown} Trigger={Trigger} card />
-      {!hideUnits && <Card>
-        <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
-        <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Unit by unit rent">
-          <table className="w-full min-w-[560px] border-collapse text-right text-sm tabular-nums">
-            <thead className="bg-ink text-xs text-white">
-              <tr>
-                <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Unit</th>
-                <th scope="col" className="px-3 py-2.5">Repairs</th>
-                <th scope="col" className="px-3 py-2.5">Rent today</th>
-                <th scope="col" className="px-3 py-2.5">Our rent</th>
-                {showMarket ? <th scope="col" className="px-3 py-2.5">Market rent</th> : null}
-                {showMarket ? <th scope="col" className="px-3 py-2.5">Gap</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {data.units.map((u) => (
-                <tr key={u.id} className="border-t border-line">
-                  <th scope="row" className="sticky left-0 z-10 bg-white px-3 py-2 text-left">{u.id}</th>
-                  <td className="px-3 py-2">{money(u.repairs)}</td>
-                  <td className="px-3 py-2">{editable ? input(u, 'rentToday', 'rent today') : u.rentToday === null && !u.occupied ? 'Empty' : cash(u.rentToday)}</td>
-                  <td className="px-3 py-2 font-semibold">{money(u.ourRent)}</td>
-                  {showMarket ? <td className="px-3 py-2">{editable ? input(u, 'marketRent', 'market rent') : cash(u.marketRent)}</td> : null}
-                  {showMarket ? <td className={`px-3 py-2 font-semibold ${u.gap > 0 ? 'text-good' : u.gap < 0 ? 'text-red-700' : 'text-ink'}`}>{signed(u.gap)}</td> : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {editable && state && <p role="status" className="mt-2 text-sm text-ink-soft">{state}</p>}
-      </Card>}
+      {collapseTables ? (
+        <Card>
+          <div className="divide-y divide-line">
+            {!hideUnits && (
+              <div className="py-1 first:pt-0 last:pb-0">
+                <button
+                  type="button"
+                  aria-expanded={tablesOpen.units}
+                  data-rv-collapse="units"
+                  onClick={() => toggleTable('units')}
+                  className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+                >
+                  <span className="font-display text-lg font-semibold text-ink sm:text-xl">Unit by unit</span>
+                  <span className="flex items-center gap-2 text-sm text-ink-soft">
+                    <span>{data.units.length} units</span>
+                    <span aria-hidden="true">{tablesOpen.units ? '▴' : '▾'}</span>
+                  </span>
+                </button>
+                {tablesOpen.units && (
+                  <div className="mt-3 space-y-3 border-t border-line pt-3">
+                    {editable && <div className="flex justify-end"><Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button></div>}
+                    {unitsTable}
+                    {editable && state && <p role="status" className="text-sm text-ink-soft">{state}</p>}
+                  </div>
+                )}
+              </div>
+            )}
 
-      <Card>
-        <CardTitle>{views.map((v) => v.label).join(', ')}</CardTitle>
-        <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Three views side by side">
-          <table className={`w-full ${views.length >= 3 ? 'min-w-[480px] ' : ''}border-collapse text-right text-sm tabular-nums`}>
-            <thead className="bg-ink text-xs text-white">
-              <tr>
-                <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left"><span className="sr-only">Line</span></th>
-                {views.map((v) => <th key={v.key} scope="col" className="px-3 py-2.5">{v.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(([label, show, overlay]) => (
-                <tr key={label} className={`border-t border-line ${label === 'Value' ? 'bg-paper font-semibold' : ''}`}>
-                  <th scope="row" className={`sticky left-0 z-10 px-3 py-2 text-left ${label === 'Value' ? 'bg-paper' : 'bg-white'}`}>{label}</th>
-                  {views.map((v) => (
-                    <td key={v.key} className={`px-3 py-2 ${label === 'Net /yr' && v.netYr < 0 ? 'text-red-700' : ''}`}>
-                      <Trigger lines={overlay(v)}>{show(v)}</Trigger>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            <div className="py-1 first:pt-0 last:pb-0">
+              <button
+                type="button"
+                aria-expanded={tablesOpen.views}
+                data-rv-collapse="views"
+                onClick={() => toggleTable('views')}
+                className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+              >
+                <span className="font-display text-lg font-semibold text-ink sm:text-xl">{views.map((v) => v.label).join(', ')}</span>
+                <span className="flex items-center gap-2 text-sm text-ink-soft">
+                  <span>{views.length} views</span>
+                  <span aria-hidden="true">{tablesOpen.views ? '▴' : '▾'}</span>
+                </span>
+              </button>
+              {tablesOpen.views && <div className="mt-3 border-t border-line pt-3">{viewsTable}</div>}
+            </div>
 
-      <Card>
-        <CardTitle>Value by rent and cap rate</CardTitle>
-        <div className="overflow-x-auto rounded-2xl border border-line bg-white" tabIndex={0} role="region" aria-label="Value by rent and cap rate">
-          <table className="w-full min-w-[420px] border-collapse text-right text-sm tabular-nums">
-            <thead className="bg-ink text-xs text-white">
-              <tr>
-                <th scope="col" className="sticky left-0 z-10 bg-ink px-3 py-2.5 text-left">Rent / unit</th>
-                {data.caps.map((c) => <th key={c} scope="col" className="px-3 py-2.5">{c}% cap</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {grid.map((row) => (
-                <tr key={row.rent} className="border-t border-line">
-                  <th scope="row" className={`sticky left-0 z-10 bg-white px-3 py-2 text-left ${row.rent === activeRent ? 'font-semibold' : 'font-normal'}`}>{money(row.rent)}</th>
-                  {row.cells.map((c) => (
-                    <td key={c.cap} className="p-1">
-                      <Trigger
-                        lines={c.overlay}
-                        className={`block w-full rounded-lg px-2 py-1.5 text-right ${c.clears ? 'bg-emerald-50 font-semibold text-good' : 'text-ink-soft'} ${c.stabilized ? 'ring-2 ring-ink' : ''}`}
-                      >
-                        {moneyK(c.value)}
-                      </Trigger>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            <div className="py-1 first:pt-0 last:pb-0">
+              <button
+                type="button"
+                aria-expanded={tablesOpen.grid}
+                data-rv-collapse="grid"
+                onClick={() => toggleTable('grid')}
+                className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left"
+              >
+                <span className="font-display text-lg font-semibold text-ink sm:text-xl">Value by rent and cap rate</span>
+                <span className="flex items-center gap-2 text-sm text-ink-soft">
+                  <span>{grid.length} × {data.caps.length}</span>
+                  <span aria-hidden="true">{tablesOpen.grid ? '▴' : '▾'}</span>
+                </span>
+              </button>
+              {tablesOpen.grid && <div className="mt-3 border-t border-line pt-3">{gridTable}</div>}
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {!hideUnits && (
+            <Card>
+              <CardTitle aside={editable ? <Button kind="secondary" onClick={save} disabled={!dirty}>Save</Button> : null}>Unit by unit</CardTitle>
+              {unitsTable}
+              {editable && state && <p role="status" className="mt-2 text-sm text-ink-soft">{state}</p>}
+            </Card>
+          )}
+
+          <Card>
+            <CardTitle>{views.map((v) => v.label).join(', ')}</CardTitle>
+            {viewsTable}
+          </Card>
+
+          <Card>
+            <CardTitle>Value by rent and cap rate</CardTitle>
+            {gridTable}
+          </Card>
+        </>
+      )}
     </div>
   );
 }

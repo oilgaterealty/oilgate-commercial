@@ -19,7 +19,7 @@ test('Plans is owner-only, blocked in previews, and lazy-loaded outside public b
   }
   const owner = read('src/views/Owner.jsx');
   assert.match(owner, /const DealPlan = import\.meta\.env\.VITE_SITE_KIND === 'public' \|\| import\.meta\.env\.VITE_SITE_KIND === 'seller' \? null : lazy\(\(\) => import\('\.\/DealPlan\.jsx'\)\)/);
-  assert.match(owner, /BASE_SECTIONS\.slice\(0, 2\), \['plans', 'Plans'\]/);
+  assert.match(owner, /\[\.\.\.BASE_SECTIONS, \['plans', 'Plans'\]\]/);
   assert.match(owner, /DealPlan && canAccessDealPlan/);
   const view = read('src/views/DealPlan.jsx');
   assert.match(view, /if \(!canAccessDealPlan\(SITE_KIND, role, preview\)\) return null/);

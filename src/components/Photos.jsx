@@ -1,13 +1,121 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase, BUCKET } from '../lib/supabase.js';
 import { Card, CardTitle, Empty, InfoTip } from './Shell.jsx';
 import { useUploads, Uploader, ShareChips, uploadShareButtons } from './Files.jsx';
-import { sharedPhotos } from '../lib/leaseUp.js';
+import { ROOMS, AREA_ROOMS, sharedPhotos, spaceLabel } from '../lib/leaseUp.js';
 import { coverOf } from '../lib/v63.js';
+import { seenBy } from '../lib/visibility.js';
 import PhotoViewer, { ThumbOverlay } from './PhotoViewer.jsx';
 
 const IMAGES = 'image/jpeg,image/png,image/webp,image/heic';
+const roomName = (k) => [...ROOMS, ...AREA_ROOMS].find(([x]) => x === k)?.[1] || k;
 export const photosOf = (rows) => (rows || []).filter((r) => r.kind === 'photo' && r.url).sort((a, b) => (b.featured - a.featured));
+
+// Loads every photo (and shared video) permitted for this role, grouped by Property / Unit / Area.
+export function useDealGallery(deal, role, preview = false, { includeWalkthrough = true, includeVideos = false, externalRows = null } = {}) {
+  const [internalRows, reload] = useUploads(deal);
+  const rows = externalRows ?? internalRows;
+  const [walkPhotos, setWalkPhotos] = useState([]);
+  const [walkVideos, setWalkVideos] = useState([]);
+
+  useEffect(() => {
+    if (!deal?.id || !includeWalkthrough) {
+      setWalkPhotos([]);
+      setWalkVideos([]);
+      return undefined;
+    }
+    let live = true;
+    (async () => {
+      let pq = supabase
+        .from('commercial_walkthrough_photos')
+        .select(`id,unit_number,room,storage_path,created_at${role === 'owner' || preview ? ',share_seller,share_lender' : ''}`)
+        .eq('deal_id', deal.id)
+        .order('unit_number')
+        .order('created_at');
+      if (role === 'seller') pq = pq.eq('share_seller', true);
+      if (role === 'lender') pq = pq.eq('share_lender', true);
+
+      let vq = null;
+      if (includeVideos) {
+        vq = supabase
+          .from('commercial_walkthrough_videos')
+          .select('*')
+          .eq('deal_id', deal.id)
+          .order('unit_number')
+          .order('created_at');
+        if (role === 'seller') vq = vq.eq('share_seller', true);
+        if (role === 'lender') vq = vq.eq('share_lender', true);
+      }
+
+      const [pRes, vRes] = await Promise.all([pq, vq || Promise.resolve({ data: [] })]);
+      if (!live) return;
+      const pList = (role === 'seller' || role === 'lender') ? sharedPhotos(role, pRes.data) : (pRes.data || []);
+      const vList = (role === 'seller' || role === 'lender') ? sharedPhotos(role, vRes.data) : (vRes.data || []);
+      const paths = [...pList.map((p) => p.storage_path), ...vList.map((v) => v.storage_path)].filter(Boolean);
+      let urlMap = {};
+      if (paths.length) {
+        const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrls(paths, 3600);
+        urlMap = Object.fromEntries((signed || []).filter((s) => s.signedUrl).map((s) => [s.path, s.signedUrl]));
+      }
+      if (!live) return;
+      setWalkPhotos(
+        pList
+          .filter((p) => urlMap[p.storage_path])
+          .map((p) => ({
+            id: `walk-${p.id}`,
+            rawId: p.id,
+            source: 'walkthrough',
+            unitNumber: p.unit_number,
+            group: `unit-${p.unit_number}`,
+            groupLabel: spaceLabel(p.unit_number),
+            url: urlMap[p.storage_path],
+            alt: `${spaceLabel(p.unit_number)}${p.room && p.room !== 'general' ? ` · ${roomName(p.room)}` : ''}`,
+            type: 'photo',
+            share_seller: p.share_seller,
+            share_lender: p.share_lender,
+          })),
+      );
+      setWalkVideos(
+        vList
+          .filter((v) => urlMap[v.storage_path])
+          .map((v) => ({
+            id: `walkvid-${v.id}`,
+            unitNumber: v.unit_number,
+            group: `unit-${v.unit_number}`,
+            groupLabel: spaceLabel(v.unit_number),
+            url: urlMap[v.storage_path],
+            alt: `${spaceLabel(v.unit_number)} video`,
+            type: 'video',
+          })),
+      );
+    })();
+    return () => { live = false; };
+  }, [deal?.id, role, preview, includeWalkthrough, includeVideos]);
+
+  const visibleUploads = useMemo(() => {
+    let base = rows || [];
+    if (preview) base = seenBy(role, base);
+    else if (role === 'seller') base = base.filter((r) => r.visibility === 'seller');
+    return photosOf(base);
+  }, [rows, preview, role]);
+
+  const items = useMemo(() => {
+    const uploadItems = visibleUploads.map((r) => ({
+      id: r.id,
+      upload: r,
+      source: 'upload',
+      group: 'property',
+      groupLabel: 'Property',
+      url: r.url,
+      alt: r.note || r.file_name || 'Property photo',
+      featured: Boolean(r.featured),
+      type: 'photo',
+    }));
+    return [...uploadItems, ...walkPhotos, ...walkVideos];
+  }, [visibleUploads, walkPhotos, walkVideos]);
+
+  return { items, uploadRows: visibleUploads, allRows: rows, count: items.length, reload };
+}
 
 export function PhotoStrip({ photos }) {
   const [view, setView] = useState(null);
@@ -42,18 +150,52 @@ export function PhotoGrid({ photos }) {
   );
 }
 
-// One cover photo up top: the starred upload. No slideshow, no arrows, no thumbnail strip. Tap to open full screen.
-// compact: a short banner (the seller page), about a quarter of the full cover's height.
-export function Cover({ rows, empty, compact }) {
-  const p = coverOf(rows);
-  const [open, setOpen] = useState(null);
-  if (!p) return empty ? <p className="rounded-2xl bg-warm-soft/60 px-5 py-4 text-base text-ink-soft">{empty}</p> : null;
+// Tappable hero cover photo with photo count badge; opens the full-screen PhotoViewer across all permitted items.
+export function Cover({ rows, items = null, empty, compact, open: controlledOpen, onOpenChange, actions, onOpenUnitGallery }) {
+  const rowItems = useMemo(() => photosOf(rows).map((r) => ({
+    id: r.id,
+    upload: r,
+    group: 'property',
+    groupLabel: 'Property',
+    url: r.url,
+    alt: r.note || r.file_name || 'The property',
+    featured: Boolean(r.featured),
+    type: 'photo',
+  })), [rows]);
+  const gallery = (items && items.length > 0) ? items : rowItems;
+  const hero = gallery.find((x) => x.featured && x.type !== 'video') || coverOf(photosOf(rows)) || gallery.find((x) => x.type !== 'video') || gallery[0] || null;
+  const [internalOpen, setInternalOpen] = useState(null);
+  const isControlled = controlledOpen !== undefined;
+  const viewerIndex = isControlled ? controlledOpen : internalOpen;
+  const setViewerIndex = isControlled ? (onOpenChange || (() => {})) : setInternalOpen;
+
+  if (!hero) return empty ? <p className="rounded-2xl bg-warm-soft/60 px-5 py-4 text-base text-ink-soft">{empty}</p> : null;
+  const count = gallery.length;
   return (
     <div className="overflow-hidden rounded-3xl bg-ink">
-      <button type="button" onClick={() => setOpen(0)} aria-label="Open the cover photo" className="block w-full cursor-zoom-in">
-        <img src={p.url} alt={p.note || 'The property'} className={compact ? 'h-36 w-full object-cover sm:h-48' : 'aspect-[16/9] max-h-[460px] w-full object-cover sm:aspect-[16/7]'} />
+      <button
+        type="button"
+        data-hero-photo
+        onClick={() => setViewerIndex(0)}
+        aria-label={count > 1 ? `Open all ${count} photos` : 'Open the cover photo'}
+        className="relative block w-full cursor-zoom-in"
+      >
+        <img src={hero.url} alt={hero.alt || hero.note || 'The property'} className={compact ? 'h-36 w-full object-cover sm:h-48' : 'aspect-[16/9] max-h-[460px] w-full object-cover sm:aspect-[16/7]'} />
+        {count > 0 && (
+          <span
+            data-photo-count-badge
+            className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full bg-ink/80 px-3 py-1 text-xs font-semibold tabular-nums text-white shadow backdrop-blur"
+          >
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="2.5" y="4" width="15" height="12" rx="2" />
+              <circle cx="7.5" cy="8.5" r="1.25" fill="currentColor" stroke="none" />
+              <path d="M3.5 14l4.5-4 3 2.5 2.5-2 3 3.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>{count === 1 ? '1 photo' : `${count} photos`}</span>
+          </span>
+        )}
       </button>
-      <PhotoViewer items={[{ url: p.url, alt: p.note || 'The property' }]} index={open} onIndex={setOpen} />
+      <PhotoViewer items={gallery} index={viewerIndex} onIndex={setViewerIndex} actions={actions} onOpenUnitGallery={onOpenUnitGallery} />
     </div>
   );
 }
@@ -65,9 +207,7 @@ export default function Photos({ deal, role, me, preview }) {
   const owner = role === 'owner';
   const [view, setView] = useState(null);
   const [shareError, setShareError] = useState('');
-  // Same share toggles as the chips under each photo; none in the read-only preview.
   const shareButtons = (r) => (preview ? [] : uploadShareButtons(r, owner, load, setShareError));
-  // One cover: starring a photo un-stars the others.
   const star = async (r) => {
     if (!r.featured) {
       const others = photos.filter((x) => x.featured && x.id !== r.id).map((x) => x.id);
